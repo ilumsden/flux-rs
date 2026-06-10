@@ -1,12 +1,15 @@
+use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_void;
 
 use flux_sys::core::{
     flux_future_and_then, flux_future_continue, flux_future_continue_error, flux_future_destroy,
-    flux_future_error_string, flux_future_fatal_error, flux_future_fulfill,
-    flux_future_fulfill_error, flux_future_fulfill_next, flux_future_fulfill_with,
-    flux_future_has_error, flux_future_incref, flux_future_or_then, flux_future_reset,
-    flux_future_t, flux_future_then, flux_future_wait_for,
+    flux_future_error_string, flux_future_fatal_error, flux_future_first_child,
+    flux_future_fulfill, flux_future_fulfill_error, flux_future_fulfill_next,
+    flux_future_fulfill_with, flux_future_get, flux_future_get_child, flux_future_has_error,
+    flux_future_incref, flux_future_next_child, flux_future_or_then, flux_future_push,
+    flux_future_reset, flux_future_t, flux_future_then, flux_future_wait_all_create,
+    flux_future_wait_any_create, flux_future_wait_for,
 };
 
 use crate::error::{FluxError, Result};
@@ -253,8 +256,40 @@ impl FluxFuture {
         Ok(true)
     }
 
-    pub fn get(&mut self) -> *const c_void {
-        unimplemented!();
+    pub fn first_child(&self) -> Result<Option<String>> {
+        let c_str_ptr = unsafe { flux_future_first_child(self.c_future) };
+        if c_str_ptr.is_null() {
+            return Ok(None);
+        }
+        let c_str = unsafe { CStr::from_ptr(c_str_ptr) };
+        Ok(Some(c_str.to_str()?.to_owned()))
+    }
+
+    pub fn next_child(&self) -> Result<Option<String>> {
+        let c_str_ptr = unsafe { flux_future_next_child(self.c_future) };
+        if c_str_ptr.is_null() {
+            return Ok(None);
+        }
+        let c_str = unsafe { CStr::from_ptr(c_str_ptr) };
+        Ok(Some(c_str.to_str()?.to_owned()))
+    }
+
+    pub fn get_child(&self, name: &str) -> Result<Option<FluxFuture>> {
+        let c_name = CString::new(name)?;
+        let flux_future_ptr = unsafe { flux_future_get_child(self.c_future, c_name.as_ptr()) };
+        if flux_future_ptr.is_null() {
+            return Ok(None);
+        }
+        Ok(Some(FluxFuture::new(flux_future_ptr)))
+    }
+
+    pub fn get(&mut self) -> Result<*const c_void> {
+        let mut result_ptr: *const c_void = std::ptr::null();
+        let rc = unsafe { flux_future_get(self.c_future, &mut result_ptr) };
+        if rc == -1 {
+            return Err(FluxError::System(std::io::Error::last_os_error()));
+        }
+        Ok(result_ptr)
     }
 }
 
@@ -275,4 +310,45 @@ impl Clone for FluxFuture {
         }
         Self::new(self.c_future)
     }
+}
+
+fn push_to_collective_future(
+    coll_future: &mut FluxFuture,
+    name: &str,
+    child_future: FluxFuture,
+) -> Result<()> {
+    let c_name = CString::new(name)?;
+    // Increment the ref count of the future since it will be auto-decremented by drop at the
+    // end of this function.
+    unsafe { flux_future_incref(child_future.c_future) };
+    let rc =
+        unsafe { flux_future_push(coll_future.c_future, c_name.as_ptr(), child_future.c_future) };
+    if rc == -1 {
+        return Err(FluxError::System(std::io::Error::last_os_error()));
+    }
+    Ok(())
+}
+
+pub fn create_wait_all_future(futures: HashMap<String, FluxFuture>) -> Result<FluxFuture> {
+    let raw_coll_future = unsafe { flux_future_wait_all_create() };
+    if raw_coll_future.is_null() {
+        return Err(FluxError::System(std::io::Error::last_os_error()));
+    }
+    let mut coll_future = FluxFuture::new(raw_coll_future);
+    for (name, child_future) in futures.into_iter() {
+        push_to_collective_future(&mut coll_future, &name, child_future)?;
+    }
+    Ok(coll_future)
+}
+
+pub fn create_wait_any_future(futures: HashMap<String, FluxFuture>) -> Result<FluxFuture> {
+    let raw_coll_future = unsafe { flux_future_wait_any_create() };
+    if raw_coll_future.is_null() {
+        return Err(FluxError::System(std::io::Error::last_os_error()));
+    }
+    let mut coll_future = FluxFuture::new(raw_coll_future);
+    for (name, child_future) in futures.into_iter() {
+        push_to_collective_future(&mut coll_future, &name, child_future)?;
+    }
+    Ok(coll_future)
 }
