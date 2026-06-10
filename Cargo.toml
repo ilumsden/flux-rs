@@ -1,16 +1,12 @@
 [package]
-name = "flux-rs"
+name = "flux-core-rs"
 version = "0.1.0"
-authors = ["Tom Scogland <scogland1@llnl.gov>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
-error-chain = "0.12.0"
-serde = "1.0.89"
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-lazy_static = "^1.4.0"
-
-[dependencies.flux-sys]
-git = "https://github.com/flux-framework/flux-sys-rs"
-branch = "master"
-
+bitflags = "2.8"
+flux-sys = { git = "https://github.com/ilumsden/flux-sys-rs.git", branch = "rust_2021_modernization" }
+libc = "0.2"
+thiserror = "~2.0"
