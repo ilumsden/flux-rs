@@ -1,5 +1,4 @@
-use std::ffi::CString;
-use std::os::raw::c_void;
+use std::ffi::{c_void, CString};
 
 use flux_sys::core::{
     flux_kvs_txn_create, flux_kvs_txn_destroy, flux_kvs_txn_mkdir, flux_kvs_txn_put_raw,

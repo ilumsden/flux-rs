@@ -1,5 +1,4 @@
-use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_void};
+use std::ffi::{c_char, c_void, CStr, CString};
 
 use flux_sys::core::{
     flux_kvs_commit, flux_kvs_commit_get_sequence, flux_kvs_copy, flux_kvs_getroot,

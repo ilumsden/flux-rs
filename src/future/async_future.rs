@@ -1,5 +1,5 @@
+use std::ffi::c_void;
 use std::future::Future;
-use std::os::raw::c_void;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};

@@ -5,9 +5,10 @@ use std::thread::{self, JoinHandle};
 use bitflags::bitflags;
 use errno::{set_errno, Errno};
 use flux_sys::core::{
-    flux_pollevents, flux_pollfd, flux_reactor_create, flux_reactor_destroy, flux_reactor_run,
-    flux_reactor_stop, flux_reactor_stop_error, flux_reactor_t, flux_t, FLUX_POLLERR, FLUX_POLLIN,
-    FLUX_POLLOUT, FLUX_REACTOR_NOWAIT, FLUX_REACTOR_ONCE,
+    flux_pollevents, flux_pollfd, flux_reactor_active_incref, flux_reactor_create,
+    flux_reactor_destroy, flux_reactor_run, flux_reactor_stop, flux_reactor_stop_error,
+    flux_reactor_t, flux_t, FLUX_POLLERR, FLUX_POLLIN, FLUX_POLLOUT, FLUX_REACTOR_NOWAIT,
+    FLUX_REACTOR_ONCE,
 };
 
 use crate::error::{FluxError, Result};
@@ -23,7 +24,7 @@ bitflags! {
 }
 
 pub struct Reactor {
-    c_reactor: *mut flux_reactor_t,
+    pub(crate) c_reactor: *mut flux_reactor_t,
 }
 
 unsafe impl Send for Reactor {}
@@ -87,6 +88,19 @@ impl Drop for Reactor {
 impl From<*mut flux_reactor_t> for Reactor {
     fn from(value: *mut flux_reactor_t) -> Self {
         Self { c_reactor: value }
+    }
+}
+
+impl Clone for Reactor {
+    fn clone(&self) -> Self {
+        if !self.c_reactor.is_null() {
+            unsafe {
+                flux_reactor_active_incref(self.c_reactor);
+            }
+        }
+        Self {
+            c_reactor: self.c_reactor,
+        }
     }
 }
 

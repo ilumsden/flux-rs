@@ -1,6 +1,5 @@
 use std::collections::HashMap;
-use std::ffi::{CStr, CString};
-use std::os::raw::c_void;
+use std::ffi::{c_void, CStr, CString};
 
 use flux_sys::core::{
     flux_future_and_then, flux_future_continue, flux_future_continue_error, flux_future_destroy,
