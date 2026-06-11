@@ -87,6 +87,7 @@ name = "flux-core-rs"
 version = "0.1.0"
 dependencies = [
  "bitflags",
+ "errno",
  "flux-sys",
  "libc",
  "serde",

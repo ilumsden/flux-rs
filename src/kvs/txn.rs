@@ -24,15 +24,6 @@ impl KvsTransaction {
         Ok(Self { c_txn: txn })
     }
 
-    pub fn from_ptr(txn: *mut flux_kvs_txn_t) -> Result<Self> {
-        if txn.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot create a KvsTransaction from a null pointer",
-            )));
-        }
-        Ok(Self { c_txn: txn })
-    }
-
     pub fn put(&mut self, key: &str, data: &[u8], flags: KvsFlags) -> Result<()> {
         if self.c_txn.is_null() {
             return Err(FluxError::Logic(String::from(
@@ -153,5 +144,11 @@ impl Drop for KvsTransaction {
                 flux_kvs_txn_destroy(self.c_txn);
             }
         }
+    }
+}
+
+impl From<*mut flux_kvs_txn_t> for KvsTransaction {
+    fn from(value: *mut flux_kvs_txn_t) -> Self {
+        Self { c_txn: value }
     }
 }

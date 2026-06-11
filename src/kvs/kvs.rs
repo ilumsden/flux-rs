@@ -51,7 +51,7 @@ impl Kvs {
         if future_ptr.is_null() {
             return Err(FluxError::System(std::io::Error::last_os_error()));
         }
-        Ok(FluxFuture::new(future_ptr))
+        Ok(FluxFuture::from(future_ptr))
     }
 
     pub fn create_namespace_with(
@@ -81,7 +81,7 @@ impl Kvs {
         if future_ptr.is_null() {
             return Err(FluxError::System(std::io::Error::last_os_error()));
         }
-        Ok(FluxFuture::new(future_ptr))
+        Ok(FluxFuture::from(future_ptr))
     }
 
     pub fn remove_namespace(&mut self, namespace: &str) -> Result<FluxFuture> {
@@ -95,7 +95,7 @@ impl Kvs {
         if future_ptr.is_null() {
             return Err(FluxError::System(std::io::Error::last_os_error()));
         }
-        Ok(FluxFuture::new(future_ptr))
+        Ok(FluxFuture::from(future_ptr))
     }
 
     pub fn lookup(
@@ -131,7 +131,7 @@ impl Kvs {
         if future_ptr.is_null() {
             return Err(FluxError::System(std::io::Error::last_os_error()));
         }
-        Ok(FluxFuture::new(future_ptr))
+        Ok(FluxFuture::from(future_ptr))
     }
 
     pub fn getroot(&mut self, namespace: &str) -> Result<FluxFuture> {
@@ -146,7 +146,7 @@ impl Kvs {
         if future_ptr.is_null() {
             return Err(FluxError::System(std::io::Error::last_os_error()));
         }
-        Ok(FluxFuture::new(future_ptr))
+        Ok(FluxFuture::from(future_ptr))
     }
 
     pub fn copy_entry(
@@ -187,7 +187,7 @@ impl Kvs {
         if future_ptr.is_null() {
             return Err(FluxError::System(std::io::Error::last_os_error()));
         }
-        Ok(FluxFuture::new(future_ptr))
+        Ok(FluxFuture::from(future_ptr))
     }
 
     pub fn move_entry(
@@ -228,7 +228,7 @@ impl Kvs {
         if future_ptr.is_null() {
             return Err(FluxError::System(std::io::Error::last_os_error()));
         }
-        Ok(FluxFuture::new(future_ptr))
+        Ok(FluxFuture::from(future_ptr))
     }
 
     pub fn commit(
@@ -263,7 +263,7 @@ impl Kvs {
         if future_ptr.is_null() {
             return Err(FluxError::System(std::io::Error::last_os_error()));
         }
-        Ok(FluxFuture::new(future_ptr))
+        Ok(FluxFuture::from(future_ptr))
     }
 }
 

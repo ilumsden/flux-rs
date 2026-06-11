@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 
-use flux_sys::core::{flux_future_destroy, flux_future_incref, flux_future_t, flux_future_then};
+use flux_sys::core::{flux_future_incref, flux_future_t, flux_future_then};
 
 use crate::error::{FluxError, Result};
 use crate::future::sync_future::FluxFuture;
@@ -19,7 +19,7 @@ struct SharedState {
 
 /// A Rust Future wrapper around `flux_future_t`.
 pub struct AsyncFluxFuture {
-    inner: *mut flux_future_t,
+    _inner: FluxFuture,
     state: Arc<Mutex<SharedState>>,
 }
 
@@ -43,12 +43,8 @@ impl AsyncFluxFuture {
             return Err(FluxError::Logic(String::from("Cannot create an async Flux future handle when the provided FluxFuture has a NULL internal handle")));
         }
 
-        let rc = unsafe {
-            flux_future_incref(future_ptr);
-
-            // Register the continuation callback with no timeout (-1.0)
-            flux_future_then(future_ptr, -1.0, Some(Self::c_callback), arg)
-        };
+        // Register the continuation callback with no timeout (-1.0)
+        let rc = unsafe { flux_future_then(future_ptr, -1.0, Some(Self::c_callback), arg) };
 
         if rc == -1 {
             // If `then` fails, we must reclaim the Arc to avoid a memory leak
@@ -57,7 +53,7 @@ impl AsyncFluxFuture {
         }
 
         Ok(Self {
-            inner: future_ptr,
+            _inner: future,
             state,
         })
     }
@@ -73,7 +69,7 @@ impl AsyncFluxFuture {
 
         // Update the shared state with the result
         let mut lock = state.lock().unwrap();
-        lock.result = Some(FluxFuture::new(f));
+        lock.result = Some(FluxFuture::from(f));
 
         // Wake the Rust async runtime to make progress
         if let Some(waker) = lock.waker.take() {
@@ -98,17 +94,6 @@ impl Future for AsyncFluxFuture {
             // Store the waker so the C callback can wake this task later
             state.waker = Some(cx.waker().clone());
             Poll::Pending
-        }
-    }
-}
-
-impl Drop for AsyncFluxFuture {
-    fn drop(&mut self) {
-        // When destroying the AsyncFluxFuture object, destroy the C-level flux_future_t too.
-        unsafe {
-            if !self.inner.is_null() {
-                flux_future_destroy(self.inner);
-            }
         }
     }
 }
