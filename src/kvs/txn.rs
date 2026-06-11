@@ -1,11 +1,6 @@
 use std::ffi::CString;
 use std::os::raw::c_void;
 
-use bitflags::bitflags;
-use flux_sys::core::kvs_op::{
-    FLUX_KVS_APPEND, FLUX_KVS_READDIR, FLUX_KVS_READLINK, FLUX_KVS_TREEOBJ, FLUX_KVS_WAITCREATE,
-    FLUX_KVS_WATCH, FLUX_KVS_WATCH_APPEND, FLUX_KVS_WATCH_FULL, FLUX_KVS_WATCH_UNIQ,
-};
 use flux_sys::core::{
     flux_kvs_txn_create, flux_kvs_txn_destroy, flux_kvs_txn_mkdir, flux_kvs_txn_put_raw,
     flux_kvs_txn_symlink, flux_kvs_txn_t, flux_kvs_txn_unlink,
@@ -14,26 +9,10 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::error::{FluxError, Result};
-
-bitflags! {
-    #[repr(transparent)]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub struct KvsFlags: u32 {
-        const NONE = 0;
-        const APPEND = FLUX_KVS_APPEND;
-        const READDIR = FLUX_KVS_READDIR;
-        const READLINK = FLUX_KVS_READLINK;
-        const TREEOBJ = FLUX_KVS_TREEOBJ;
-        const WAITCREATE = FLUX_KVS_WAITCREATE;
-        const WATCH = FLUX_KVS_WATCH;
-        const WATCH_APPEND = FLUX_KVS_WATCH_APPEND;
-        const WATCH_FULL = FLUX_KVS_WATCH_FULL;
-        const WATCH_UNIQ = FLUX_KVS_WATCH_UNIQ;
-    }
-}
+use crate::kvs::flags::KvsFlags;
 
 pub struct KvsTransaction {
-    c_txn: *mut flux_kvs_txn_t,
+    pub(crate) c_txn: *mut flux_kvs_txn_t,
 }
 
 impl KvsTransaction {
@@ -55,9 +34,14 @@ impl KvsTransaction {
     }
 
     pub fn put(&mut self, key: &str, data: &[u8], flags: KvsFlags) -> Result<()> {
+        if self.c_txn.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot put a string into a NULL KVS transaction",
+            )));
+        }
         let c_key = CString::new(key)?;
-        // TODO figure out why flux-sys has the length field be an int (i.e., i32) instead of size_t (i.e., usize)
         let rc = unsafe {
+            // TODO figure out why flux-sys has the length field be an int (i.e., i32) instead of size_t (i.e., usize)
             flux_kvs_txn_put_raw(
                 self.c_txn,
                 flags.bits() as i32,
@@ -88,6 +72,11 @@ impl KvsTransaction {
     }
 
     pub fn mkdir(&mut self, key: &str, flags: KvsFlags) -> Result<()> {
+        if self.c_txn.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot put bytes into a NULL KVS transaction",
+            )));
+        }
         let c_key = CString::new(key)?;
         let rc = unsafe { flux_kvs_txn_mkdir(self.c_txn, flags.bits() as i32, c_key.as_ptr()) };
         if rc == -1 {
@@ -97,6 +86,11 @@ impl KvsTransaction {
     }
 
     pub fn unlink(&mut self, key: &str, flags: KvsFlags) -> Result<()> {
+        if self.c_txn.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot unlink a NULL KVS transaction",
+            )));
+        }
         let c_key = CString::new(key)?;
         let rc = unsafe { flux_kvs_txn_unlink(self.c_txn, flags.bits() as i32, c_key.as_ptr()) };
         if rc == -1 {
@@ -112,6 +106,11 @@ impl KvsTransaction {
         namespace: Option<&str>,
         flags: KvsFlags,
     ) -> Result<()> {
+        if self.c_txn.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot symlink a NULL KVS transaction",
+            )));
+        }
         // Convert 'key' to a C String
         let c_key = CString::new(key)?;
         // Optionally convert 'namespace' to a C String.
