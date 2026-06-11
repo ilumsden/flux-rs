@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { version = "~1.0", features = ["derive"] }
+serde_json = "~1.0"
 bitflags = "2.8"
 flux-sys = { git = "https://github.com/ilumsden/flux-sys-rs.git", branch = "rust_2021_modernization" }
 libc = "0.2"

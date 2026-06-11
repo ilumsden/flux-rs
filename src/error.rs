@@ -17,6 +17,10 @@ pub enum FluxError {
     #[error("Invalid UTF-8 from C API: {0}")]
     Utf8Error(#[from] std::str::Utf8Error),
 
+    /// Error when serializing or deserializing JSON data.
+    #[error("JSON serialization error: {0}")]
+    Json(#[from] serde_json::Error),
+
     /// A custom error specific to your higher-level crate logic.
     #[error("Flux logic error: {0}")]
     Logic(String),
