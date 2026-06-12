@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use crate::error::{FluxError, Result};
 use crate::kvs::flags::KvsFlags;
+use crate::AsRawFluxPtr;
 
 pub struct KvsTransaction {
     pub(crate) c_txn: *mut flux_kvs_txn_t,
@@ -149,5 +150,11 @@ impl Drop for KvsTransaction {
 impl From<*mut flux_kvs_txn_t> for KvsTransaction {
     fn from(value: *mut flux_kvs_txn_t) -> Self {
         Self { c_txn: value }
+    }
+}
+
+impl AsRawFluxPtr<flux_kvs_txn_t> for KvsTransaction {
+    fn as_flux_ptr(&self) -> *mut flux_kvs_txn_t {
+        self.c_txn
     }
 }

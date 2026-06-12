@@ -4,3 +4,8 @@ pub mod handle;
 pub mod kvs;
 pub mod msg;
 pub mod reactor;
+pub mod watcher;
+
+pub trait AsRawFluxPtr<PtrType> {
+    fn as_flux_ptr(&self) -> *mut PtrType;
+}

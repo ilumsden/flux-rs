@@ -13,6 +13,7 @@ use flux_sys::core::{
 
 use crate::error::{FluxError, Result};
 use crate::handle::FluxHandle;
+use crate::AsRawFluxPtr;
 
 bitflags! {
     #[repr(transparent)]
@@ -137,6 +138,12 @@ impl Clone for Reactor {
         Self {
             c_reactor: self.c_reactor,
         }
+    }
+}
+
+impl AsRawFluxPtr<flux_reactor_t> for Reactor {
+    fn as_flux_ptr(&self) -> *mut flux_reactor_t {
+        self.c_reactor
     }
 }
 

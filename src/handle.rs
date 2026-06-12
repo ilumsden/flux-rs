@@ -14,6 +14,7 @@ use flux_sys::core::{
 use crate::error::{check_ptr, check_rc, FluxError, Result};
 use crate::msg::{Message, MessageMatch};
 use crate::reactor::Reactor;
+use crate::AsRawFluxPtr;
 
 bitflags! {
     #[repr(transparent)]
@@ -306,7 +307,12 @@ impl FluxHandle {
         self.comm_error_handler_cb = Some(Box::new(handler));
         // Get a mutable reference to the Box itself. By getting a reference to the Box instead of the closure,
         // we ensure we can get a thin pointer to pass to C.
-        let box_ref = self.comm_error_handler_cb.as_mut().unwrap();
+        let box_ref = self
+            .comm_error_handler_cb
+            .as_mut()
+            .ok_or(FluxError::Logic(String::from(
+                "Cannot unpack the callback for interacting with Flux's C API",
+            )))?;
         // Get a thin pointer to the closure.
         let arg_ptr = box_ref as *mut Box<dyn FnMut(FluxHandle) -> i32> as *mut c_void;
 
@@ -534,5 +540,11 @@ impl TryFrom<&FluxHandle> for FluxHandle {
             h: cloned_flux_handle,
             comm_error_handler_cb: None,
         })
+    }
+}
+
+impl AsRawFluxPtr<flux_t> for FluxHandle {
+    fn as_flux_ptr(&self) -> *mut flux_t {
+        self.h
     }
 }

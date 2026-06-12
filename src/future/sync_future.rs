@@ -12,6 +12,7 @@ use flux_sys::core::{
 };
 
 use crate::error::{FluxError, Result};
+use crate::AsRawFluxPtr;
 
 pub struct FluxFuture {
     pub(crate) c_future: *mut flux_future_t,
@@ -386,6 +387,12 @@ impl Clone for FluxFuture {
 impl From<*mut flux_future_t> for FluxFuture {
     fn from(value: *mut flux_future_t) -> Self {
         Self { c_future: value }
+    }
+}
+
+impl AsRawFluxPtr<flux_future_t> for FluxFuture {
+    fn as_flux_ptr(&self) -> *mut flux_future_t {
+        self.c_future
     }
 }
 
