@@ -33,7 +33,7 @@ struct AuxThinPtrWrapper {
 }
 
 pub struct FluxHandle {
-    h: *mut flux_t,
+    pub(crate) h: *mut flux_t,
     comm_error_handler_cb: Option<Box<dyn FnMut(FluxHandle) -> i32>>,
 }
 

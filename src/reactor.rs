@@ -5,13 +5,13 @@ use std::thread::{self, JoinHandle};
 use bitflags::bitflags;
 use errno::{set_errno, Errno};
 use flux_sys::core::{
-    flux_pollevents, flux_pollfd, flux_reactor_active_incref, flux_reactor_create,
-    flux_reactor_destroy, flux_reactor_run, flux_reactor_stop, flux_reactor_stop_error,
-    flux_reactor_t, flux_t, FLUX_POLLERR, FLUX_POLLIN, FLUX_POLLOUT, FLUX_REACTOR_NOWAIT,
-    FLUX_REACTOR_ONCE,
+    flux_reactor_active_incref, flux_reactor_create, flux_reactor_destroy, flux_reactor_run,
+    flux_reactor_stop, flux_reactor_stop_error, flux_reactor_t, FLUX_POLLERR, FLUX_POLLIN,
+    FLUX_POLLOUT, FLUX_REACTOR_NOWAIT, FLUX_REACTOR_ONCE,
 };
 
 use crate::error::{FluxError, Result};
+use crate::handle::FluxHandle;
 
 bitflags! {
     #[repr(transparent)]
@@ -155,31 +155,27 @@ impl Drop for FluxReactorThread {
 /// If you want to use your async runtime's native epoll (e.g., Tokio's AsyncFd),
 /// use `flux_pollfd` to get the FD, register it with your runtime, and call
 /// this function whenever the runtime indicates the FD is readable.
-pub struct FluxAsyncDriver {
-    h: *mut flux_t,
+pub struct FluxAsyncDriver<'a> {
+    handle: &'a FluxHandle,
     reactor: Reactor,
 }
 
-impl FluxAsyncDriver {
-    pub fn new(h: *mut flux_t, reactor: Reactor) -> Self {
-        Self { h, reactor }
+impl<'a> FluxAsyncDriver<'a> {
+    pub fn new(handle: &'a FluxHandle) -> Result<Self> {
+        let reactor = handle.get_reactor()?;
+        Ok(Self { handle, reactor })
     }
 
     /// Returns the edge-triggered file descriptor to register with your async runtime.
     pub fn get_poll_fd(&self) -> Result<c_int> {
-        let fd = unsafe { flux_pollfd(self.h) };
-        if fd == -1 {
-            Err(FluxError::System(io::Error::last_os_error()))
-        } else {
-            Ok(fd)
-        }
+        self.handle.get_pollfd()
     }
 
     /// Call this when your async runtime indicates the FD is readable.
     /// It clears the edge-triggered state and processes pending callbacks without blocking.
     pub fn process_readable_event(&mut self) -> Result<()> {
         // 1. Get events and clear the edge-triggered POLLIN state
-        let events = unsafe { flux_pollevents(self.h) };
+        let events = self.handle.get_pollevents()?;
         if events == -1 {
             return Err(FluxError::System(io::Error::last_os_error()));
         }

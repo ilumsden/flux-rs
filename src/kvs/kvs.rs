@@ -5,30 +5,26 @@ use flux_sys::core::{
     flux_kvs_getroot_get_owner, flux_kvs_getroot_get_sequence, flux_kvs_lookup,
     flux_kvs_lookup_cancel, flux_kvs_lookup_get_key, flux_kvs_lookup_get_raw,
     flux_kvs_lookup_get_symlink, flux_kvs_move, flux_kvs_namespace_create,
-    flux_kvs_namespace_create_with, flux_kvs_namespace_remove, flux_t, FLUX_USERID_UNKNOWN,
+    flux_kvs_namespace_create_with, flux_kvs_namespace_remove, FLUX_USERID_UNKNOWN,
 };
 use serde::Deserialize;
 use serde_json::{from_slice, Value};
 
 use crate::error::{FluxError, Result};
 use crate::future::FluxFuture;
+use crate::handle::FluxHandle;
 use crate::kvs::flags::KvsFlags;
 use crate::kvs::txn::KvsTransaction;
 
-pub struct Kvs {
-    h: *mut flux_t,
+pub struct Kvs<'a> {
+    handle: &'a FluxHandle,
 }
 
-impl Kvs {
+impl<'a> Kvs<'a> {
     // TODO implement support for functions related to treeobj and kvsdir
 
-    pub fn from_ptr(h: *mut flux_t) -> Result<Self> {
-        if h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot create `Kvs` object from NULL flux handle",
-            )));
-        }
-        Ok(Self { h })
+    pub fn new(handle: &'a FluxHandle) -> Self {
+        Self { handle }
     }
 
     pub fn create_namespace(
@@ -37,7 +33,7 @@ impl Kvs {
         flags: KvsFlags,
         owner: Option<u32>,
     ) -> Result<FluxFuture> {
-        if self.h.is_null() {
+        if self.handle.h.is_null() {
             return Err(FluxError::Logic(String::from(
                 "Cannot create namespace with a NULL flux handle",
             )));
@@ -45,7 +41,12 @@ impl Kvs {
         let c_namespace = CString::new(namespace)?;
         let c_owner = owner.unwrap_or(FLUX_USERID_UNKNOWN);
         let future_ptr = unsafe {
-            flux_kvs_namespace_create(self.h, c_namespace.as_ptr(), c_owner, flags.bits() as i32)
+            flux_kvs_namespace_create(
+                self.handle.h,
+                c_namespace.as_ptr(),
+                c_owner,
+                flags.bits() as i32,
+            )
         };
         if future_ptr.is_null() {
             return Err(FluxError::System(std::io::Error::last_os_error()));
@@ -60,7 +61,7 @@ impl Kvs {
         flags: KvsFlags,
         owner: Option<u32>,
     ) -> Result<FluxFuture> {
-        if self.h.is_null() {
+        if self.handle.h.is_null() {
             return Err(FluxError::Logic(String::from(
                 "Cannot create namespace with a NULL flux handle",
             )));
@@ -70,7 +71,7 @@ impl Kvs {
         let c_owner = owner.unwrap_or(FLUX_USERID_UNKNOWN);
         let future_ptr = unsafe {
             flux_kvs_namespace_create_with(
-                self.h,
+                self.handle.h,
                 c_namespace.as_ptr(),
                 c_rootref.as_ptr(),
                 c_owner,
@@ -84,13 +85,13 @@ impl Kvs {
     }
 
     pub fn remove_namespace(&mut self, namespace: &str) -> Result<FluxFuture> {
-        if self.h.is_null() {
+        if self.handle.h.is_null() {
             return Err(FluxError::Logic(String::from(
                 "Cannot remove namespace with a NULL flux handle",
             )));
         }
         let c_namespace = CString::new(namespace)?;
-        let future_ptr = unsafe { flux_kvs_namespace_remove(self.h, c_namespace.as_ptr()) };
+        let future_ptr = unsafe { flux_kvs_namespace_remove(self.handle.h, c_namespace.as_ptr()) };
         if future_ptr.is_null() {
             return Err(FluxError::System(std::io::Error::last_os_error()));
         }
@@ -103,7 +104,7 @@ impl Kvs {
         flags: KvsFlags,
         namespace: Option<&str>,
     ) -> Result<FluxFuture> {
-        if self.h.is_null() {
+        if self.handle.h.is_null() {
             return Err(FluxError::Logic(String::from(
                 "Cannot lookup KVS entry with a NULL flux handle",
             )));
@@ -119,7 +120,7 @@ impl Kvs {
         let c_key = CString::new(key)?;
         let future_ptr = unsafe {
             flux_kvs_lookup(
-                self.h,
+                self.handle.h,
                 c_namespace
                     .as_ref()
                     .map_or(std::ptr::null(), |cstr_ns| cstr_ns.as_ptr()),
@@ -134,14 +135,14 @@ impl Kvs {
     }
 
     pub fn getroot(&mut self, namespace: &str) -> Result<FluxFuture> {
-        if self.h.is_null() {
+        if self.handle.h.is_null() {
             return Err(FluxError::Logic(String::from(
                 "Cannot get namespace root with a NULL flux handle",
             )));
         }
         let c_namespace = CString::new(namespace)?;
         // TODO if flags are ever used with `flux_kvs_getroot`, update the call appropriately
-        let future_ptr = unsafe { flux_kvs_getroot(self.h, c_namespace.as_ptr(), 0) };
+        let future_ptr = unsafe { flux_kvs_getroot(self.handle.h, c_namespace.as_ptr(), 0) };
         if future_ptr.is_null() {
             return Err(FluxError::System(std::io::Error::last_os_error()));
         }
@@ -156,7 +157,7 @@ impl Kvs {
         src_namespace: Option<&str>,
         dst_namespace: Option<&str>,
     ) -> Result<FluxFuture> {
-        if self.h.is_null() {
+        if self.handle.h.is_null() {
             return Err(FluxError::Logic(String::from(
                 "Cannot copy entry with a NULL flux handle",
             )));
@@ -171,7 +172,7 @@ impl Kvs {
             .transpose()?;
         let future_ptr = unsafe {
             flux_kvs_copy(
-                self.h,
+                self.handle.h,
                 c_src_namespace
                     .as_ref()
                     .map_or(std::ptr::null(), |cstr| cstr.as_ptr()),
@@ -197,7 +198,7 @@ impl Kvs {
         src_namespace: Option<&str>,
         dst_namespace: Option<&str>,
     ) -> Result<FluxFuture> {
-        if self.h.is_null() {
+        if self.handle.h.is_null() {
             return Err(FluxError::Logic(String::from(
                 "Cannot move entry with a NULL flux handle",
             )));
@@ -212,7 +213,7 @@ impl Kvs {
             .transpose()?;
         let future_ptr = unsafe {
             flux_kvs_move(
-                self.h,
+                self.handle.h,
                 c_src_namespace
                     .as_ref()
                     .map_or(std::ptr::null(), |cstr| cstr.as_ptr()),
@@ -236,7 +237,7 @@ impl Kvs {
         flags: KvsFlags,
         namespace: Option<&str>,
     ) -> Result<FluxFuture> {
-        if self.h.is_null() {
+        if self.handle.h.is_null() {
             return Err(FluxError::Logic(String::from(
                 "Cannot commit with a NULL flux handle",
             )));
@@ -251,7 +252,7 @@ impl Kvs {
             .transpose()?;
         let future_ptr = unsafe {
             flux_kvs_commit(
-                self.h,
+                self.handle.h,
                 c_namespace
                     .as_ref()
                     .map_or(std::ptr::null(), |cstr| cstr.as_ptr()),
