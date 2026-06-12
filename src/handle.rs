@@ -4,18 +4,20 @@ use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use bitflags::bitflags;
 use flux_sys::core::{
     flux_attr_get, flux_attr_set, flux_aux_get, flux_aux_set, flux_clone, flux_close,
-    flux_comms_error_set, flux_get_rank, flux_get_reactor, flux_get_size, flux_incref, flux_open,
-    flux_reconnect, flux_set_reactor, flux_t, FLUX_O_CLONE, FLUX_O_MATCHDEBUG, FLUX_O_NONBLOCK,
+    flux_comms_error_set, flux_get_rank, flux_get_reactor, flux_get_size, flux_incref, flux_match,
+    flux_msg_t, flux_open, flux_pollevents, flux_pollfd, flux_reconnect, flux_recv, flux_requeue,
+    flux_send_new, flux_set_reactor, flux_t, FLUX_O_CLONE, FLUX_O_MATCHDEBUG, FLUX_O_NONBLOCK,
     FLUX_O_RPCTRACK, FLUX_O_TEST_NOSUB, FLUX_O_TRACE,
 };
 
-use crate::error::{FluxError, Result};
+use crate::error::{check_ptr, check_rc, FluxError, Result};
+use crate::msg::{Message, MessageMatch};
 use crate::reactor::Reactor;
 
 bitflags! {
     #[repr(transparent)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub struct OpenFlags: u32 {
+    pub struct HandleFlags: u32 {
         const NONE = 0;
         const TRACE = FLUX_O_TRACE;
         const CLONE = FLUX_O_CLONE;
@@ -38,7 +40,7 @@ pub struct FluxHandle {
 impl FluxHandle {
     // TODO remaining methods: flux_opt_set, flux_opt_get, flux_get_conf, flux_set_conf_new, flux_flags*, flux_send, flux_recv, flux_requeue
 
-    pub fn new(uri: &str, flags: OpenFlags) -> Result<Self> {
+    pub fn new(uri: &str, flags: HandleFlags) -> Result<Self> {
         let c_uri = CString::new(uri)?;
         let flux_handle = unsafe { flux_open(c_uri.as_ptr(), flags.bits() as i32) };
         Ok(Self {
@@ -283,6 +285,78 @@ impl FluxHandle {
             return Err(FluxError::System(std::io::Error::last_os_error()));
         }
         Ok(())
+    }
+
+    pub fn send(&self, mut msg: Message, flags: HandleFlags) -> Result<()> {
+        if self.h.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot send message with a NULL handle",
+            )));
+        }
+        if msg.c_msg.is_null() {
+            return Err(FluxError::Logic(String::from("Cannot send NULL message")));
+        }
+        let rc = unsafe {
+            flux_send_new(
+                self.h,
+                &mut msg.c_msg as *mut *mut flux_msg_t,
+                flags.bits() as i32,
+            )
+        };
+        // To be safe, explicitly set the Message pointer to NULL to prevent a double free
+        if !msg.c_msg.is_null() {
+            msg.c_msg = std::ptr::null_mut();
+        }
+        check_rc(rc)
+    }
+
+    pub fn recv(&self, msg_match: MessageMatch, flags: HandleFlags) -> Result<Message> {
+        if self.h.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot receive message with a NULL handle",
+            )));
+        }
+        let c_match: flux_match = (&msg_match).into();
+        let msg_ptr = unsafe { flux_recv(self.h, c_match, flags.bits() as i32) };
+        check_ptr(msg_ptr)?;
+        Ok(Message::from(msg_ptr))
+    }
+
+    pub fn requeue(&self, msg: Message, flags: HandleFlags) -> Result<()> {
+        if self.h.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot requeue message with a NULL handle",
+            )));
+        }
+        if msg.c_msg.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot requeue a NULL message",
+            )));
+        }
+        let rc = unsafe { flux_requeue(self.h, msg.c_msg, flags.bits() as i32) };
+        check_rc(rc)
+    }
+
+    pub fn get_pollfd(&self) -> Result<i32> {
+        if self.h.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot get polling fd with a NULL handle",
+            )));
+        }
+        let fd = unsafe { flux_pollfd(self.h) };
+        check_rc(fd)?;
+        Ok(fd)
+    }
+
+    pub fn get_pollevents(&self) -> Result<i32> {
+        if self.h.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot get polling events bitmask with a NULL handle",
+            )));
+        }
+        let bitmask = unsafe { flux_pollevents(self.h) };
+        check_rc(bitmask)?;
+        Ok(bitmask)
     }
 }
 
