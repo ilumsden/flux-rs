@@ -13,6 +13,10 @@ pub enum FluxError {
     #[error("String contains null byte: {0}")]
     NulError(#[from] std::ffi::NulError),
 
+    /// Error when interpreting null bytes in a Rust string.
+    #[error("String's use of null bytes cannot be handled: {0}")]
+    NulInterpretError(#[from] std::ffi::FromBytesWithNulError),
+
     /// Error when a C string is not valid UTF-8.
     #[error("Invalid UTF-8 from C API: {0}")]
     Utf8Error(#[from] std::str::Utf8Error),

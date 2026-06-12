@@ -4,10 +4,11 @@ use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use bitflags::bitflags;
 use flux_sys::core::{
     flux_attr_get, flux_attr_set, flux_aux_get, flux_aux_set, flux_clone, flux_close,
-    flux_comms_error_set, flux_get_rank, flux_get_reactor, flux_get_size, flux_incref, flux_match,
-    flux_msg_t, flux_open, flux_pollevents, flux_pollfd, flux_reconnect, flux_recv, flux_requeue,
-    flux_send_new, flux_set_reactor, flux_t, FLUX_O_CLONE, FLUX_O_MATCHDEBUG, FLUX_O_NONBLOCK,
-    FLUX_O_RPCTRACK, FLUX_O_TEST_NOSUB, FLUX_O_TRACE,
+    flux_comms_error_set, flux_get_rank, flux_get_reactor, flux_get_size, flux_incref, flux_log,
+    flux_log_set_appname, flux_log_set_procid, flux_match, flux_msg_t, flux_open, flux_pollevents,
+    flux_pollfd, flux_reconnect, flux_recv, flux_requeue, flux_send_new, flux_set_reactor, flux_t,
+    FLUX_O_CLONE, FLUX_O_MATCHDEBUG, FLUX_O_NONBLOCK, FLUX_O_RPCTRACK, FLUX_O_TEST_NOSUB,
+    FLUX_O_TRACE,
 };
 
 use crate::error::{check_ptr, check_rc, FluxError, Result};
@@ -26,6 +27,82 @@ bitflags! {
         const TEST_NOSUB = FLUX_O_TEST_NOSUB;
         const RPCTRACK = FLUX_O_RPCTRACK;
     }
+}
+
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LogLevel {
+    Emergency = libc::LOG_EMERG,
+    Alert = libc::LOG_ALERT,
+    Critical = libc::LOG_CRIT,
+    Error = libc::LOG_ERR,
+    Warning = libc::LOG_WARNING,
+    Notice = libc::LOG_NOTICE,
+    Info = libc::LOG_INFO,
+    Debug = libc::LOG_DEBUG,
+}
+
+#[macro_export]
+macro_rules! flux_log {
+    ($handle:expr, $level:expr, $($arg:tt)*) => {
+        $handle.log($level, $format!($($arg)*))
+    };
+}
+
+#[macro_export]
+macro_rules! flux_log_emergency {
+    ($handle:expr, $($arg:tt)*) => {
+        $crate::flux_log!($handle, $crate::handle::LogLevel::Emergency, $($arg)*)
+    };
+}
+
+#[macro_export]
+macro_rules! flux_log_alert {
+    ($handle:expr, $($arg:tt)*) => {
+        $crate::flux_log!($handle, $crate::handle::LogLevel::Alert, $($arg)*)
+    };
+}
+
+#[macro_export]
+macro_rules! flux_log_critical {
+    ($handle:expr, $($arg:tt)*) => {
+        $crate::flux_log!($handle, $crate::handle::LogLevel::Critical, $($arg)*)
+    };
+}
+
+#[macro_export]
+macro_rules! flux_log_error {
+    ($handle:expr, $($arg:tt)*) => {
+        $crate::flux_log!($handle, $crate::handle::LogLevel::Error, $($arg)*)
+    };
+}
+
+#[macro_export]
+macro_rules! flux_log_warning {
+    ($handle:expr, $($arg:tt)*) => {
+        $crate::flux_log!($handle, $crate::handle::LogLevel::Warning, $($arg)*)
+    };
+}
+
+#[macro_export]
+macro_rules! flux_log_notice {
+    ($handle:expr, $($arg:tt)*) => {
+        $crate::flux_log!($handle, $crate::handle::LogLevel::Notice, $($arg)*)
+    };
+}
+
+#[macro_export]
+macro_rules! flux_log_info {
+    ($handle:expr, $($arg:tt)*) => {
+        $crate::flux_log!($handle, $crate::handle::LogLevel::Info, $($arg)*)
+    };
+}
+
+#[macro_export]
+macro_rules! flux_log_debug {
+    ($handle:expr, $($arg:tt)*) => {
+        $crate::flux_log!($handle, $crate::handle::LogLevel::Debug, $($arg)*)
+    };
 }
 
 struct AuxThinPtrWrapper {
@@ -357,6 +434,44 @@ impl FluxHandle {
         let bitmask = unsafe { flux_pollevents(self.h) };
         check_rc(bitmask)?;
         Ok(bitmask)
+    }
+
+    pub fn set_log_appname(&mut self, appname: &str) -> Result<()> {
+        if self.h.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot set logging appname with a NULL handle",
+            )));
+        }
+        let c_appname = CString::new(appname)?;
+        unsafe {
+            flux_log_set_appname(self.h, c_appname.as_ptr());
+        }
+        Ok(())
+    }
+
+    pub fn set_log_procid(&mut self, procid: &str) -> Result<()> {
+        if self.h.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot set logging procid with a NULL handle",
+            )));
+        }
+        let c_procid = CString::new(procid)?;
+        unsafe {
+            flux_log_set_procid(self.h, c_procid.as_ptr());
+        }
+        Ok(())
+    }
+
+    pub fn log(&self, level: LogLevel, msg: &str) -> Result<()> {
+        if self.h.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot log with a NULL handle",
+            )));
+        }
+        let c_fmt_str = CStr::from_bytes_with_nul(b"%s\0")?;
+        let c_msg = CString::new(msg)?;
+        let rc = unsafe { flux_log(self.h, level as i32, c_fmt_str.as_ptr(), c_msg.as_ptr()) };
+        check_rc(rc)
     }
 }
 
