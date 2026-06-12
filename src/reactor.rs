@@ -5,9 +5,10 @@ use std::thread::{self, JoinHandle};
 use bitflags::bitflags;
 use errno::{set_errno, Errno};
 use flux_sys::core::{
-    flux_reactor_active_incref, flux_reactor_create, flux_reactor_destroy, flux_reactor_run,
-    flux_reactor_stop, flux_reactor_stop_error, flux_reactor_t, FLUX_POLLERR, FLUX_POLLIN,
-    FLUX_POLLOUT, FLUX_REACTOR_NOWAIT, FLUX_REACTOR_ONCE,
+    flux_reactor_active_incref, flux_reactor_create, flux_reactor_destroy, flux_reactor_now,
+    flux_reactor_now_update, flux_reactor_run, flux_reactor_stop, flux_reactor_stop_error,
+    flux_reactor_t, flux_reactor_time, FLUX_POLLERR, FLUX_POLLIN, FLUX_POLLOUT,
+    FLUX_REACTOR_NOWAIT, FLUX_REACTOR_ONCE,
 };
 
 use crate::error::{FluxError, Result};
@@ -72,6 +73,41 @@ impl Reactor {
             flux_reactor_stop(self.c_reactor);
         }
         Ok(())
+    }
+
+    /// Get the current reactor time.
+    ///
+    /// *Note*: Flux's reactors are based on libev. For more information, see
+    /// the documentation for `ev_now`.
+    pub fn now(&self) -> Result<f64> {
+        if self.c_reactor.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot query a reactor's time when the internal pointer is NULL",
+            )));
+        }
+        Ok(unsafe { flux_reactor_now(self.c_reactor) })
+    }
+
+    /// Update the current reactor time.
+    ///
+    /// *Note*: Flux's reactors are based on libev. For more information, see
+    /// the documentation for `ev_now_update`.
+    pub fn now_update(&mut self) -> Result<()> {
+        if self.c_reactor.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot update a reactor's time when the internal pointer is NULL",
+            )));
+        }
+        unsafe { flux_reactor_now_update(self.c_reactor) }
+        Ok(())
+    }
+
+    /// Get the current system time.
+    ///
+    /// *Note*: Flux's reactors are based on libev. For more information, see
+    /// the documentation for `ev_time`.
+    pub fn time(&self) -> f64 {
+        unsafe { flux_reactor_time() }
     }
 }
 
