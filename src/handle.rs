@@ -10,10 +10,13 @@ use flux_sys::core::{
     FLUX_O_CLONE, FLUX_O_MATCHDEBUG, FLUX_O_NONBLOCK, FLUX_O_RPCTRACK, FLUX_O_TEST_NOSUB,
     FLUX_O_TRACE,
 };
+use serde::Serialize;
+use serde_json::Value;
 
 use crate::error::{check_ptr, check_rc, FluxError, Result};
 use crate::msg::{Message, MessageMatch};
 use crate::reactor::Reactor;
+use crate::rpc::{Rpc, RpcFlags, RpcNodeId};
 use crate::AsRawFluxPtr;
 
 bitflags! {
@@ -478,6 +481,45 @@ impl FluxHandle {
         let c_msg = CString::new(msg)?;
         let rc = unsafe { flux_log(self.h, level as i32, c_fmt_str.as_ptr(), c_msg.as_ptr()) };
         check_rc(rc)
+    }
+
+    pub fn send_rpc<'a>(
+        &'a self,
+        topic: &str,
+        data: &[u8],
+        nodeid: RpcNodeId,
+        flags: RpcFlags,
+    ) -> Result<Rpc<'a>> {
+        Rpc::create(self, topic, data, nodeid, flags)
+    }
+
+    pub fn send_rpc_json<'a>(
+        &'a self,
+        topic: &str,
+        data: &Value,
+        nodeid: RpcNodeId,
+        flags: RpcFlags,
+    ) -> Result<Rpc<'a>> {
+        Rpc::create_json(self, topic, data, nodeid, flags)
+    }
+
+    pub fn send_rpc_serializable<'a, T: Serialize>(
+        &'a self,
+        topic: &str,
+        data: &T,
+        nodeid: RpcNodeId,
+        flags: RpcFlags,
+    ) -> Result<Rpc<'a>> {
+        Rpc::create_serializable(self, topic, data, nodeid, flags)
+    }
+
+    pub fn send_rpc_message<'a>(
+        &'a self,
+        msg: &Message,
+        nodeid: RpcNodeId,
+        flags: RpcFlags,
+    ) -> Result<Rpc<'a>> {
+        Rpc::create_message(self, msg, nodeid, flags)
     }
 }
 

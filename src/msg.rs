@@ -357,12 +357,18 @@ impl Message {
     }
 
     pub fn get_payload_json(&self) -> Result<Value> {
-        let raw_payload = self.get_payload()?;
+        let mut raw_payload = self.get_payload()?;
+        if raw_payload.last() == Some(&0) {
+            raw_payload = &raw_payload[..raw_payload.len() - 1];
+        }
         Ok(serde_json::from_slice(raw_payload)?)
     }
 
     pub fn get_payload_deserializable<'a, D: Deserialize<'a>>(&'a self) -> Result<D> {
-        let raw_payload = self.get_payload()?;
+        let mut raw_payload = self.get_payload()?;
+        if raw_payload.last() == Some(&0) {
+            raw_payload = &raw_payload[..raw_payload.len() - 1];
+        }
         Ok(serde_json::from_slice(raw_payload)?)
     }
 
