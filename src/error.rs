@@ -28,6 +28,10 @@ pub enum FluxError {
     /// A custom error specific to your higher-level crate logic.
     #[error("Flux logic error: {0}")]
     Logic(String),
+
+    /// A custom error for request/response messages
+    #[error("Error occured in response/request.\nSystem Error: {0}\nError Message: {1}")]
+    RequestResponseError(io::Error, String),
 }
 
 /// A convenient Result alias for the crate.

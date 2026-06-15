@@ -577,7 +577,7 @@ impl Message {
         Ok(matchtag)
     }
 
-    // TODO add wrappres for flux_msg_fprint and flux_msg_fprint_ts
+    // TODO add wrappers for flux_msg_fprint and flux_msg_fprint_ts
 
     // TODO add wrappers for functions related to routes
 
