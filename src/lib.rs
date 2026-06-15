@@ -4,6 +4,7 @@ pub mod handle;
 pub mod kvs;
 pub mod msg;
 pub mod reactor;
+pub mod request;
 pub mod response;
 pub mod rpc;
 pub mod watcher;
