@@ -6,9 +6,9 @@ use flux_sys::core::{
     flux_attr_get, flux_attr_set, flux_aux_get, flux_aux_set, flux_clone, flux_close,
     flux_comms_error_set, flux_get_rank, flux_get_reactor, flux_get_size, flux_incref, flux_log,
     flux_log_set_appname, flux_log_set_procid, flux_match, flux_msg_t, flux_open, flux_pollevents,
-    flux_pollfd, flux_reconnect, flux_recv, flux_requeue, flux_send_new, flux_set_reactor, flux_t,
-    FLUX_O_CLONE, FLUX_O_MATCHDEBUG, FLUX_O_NONBLOCK, FLUX_O_RPCTRACK, FLUX_O_TEST_NOSUB,
-    FLUX_O_TRACE,
+    flux_pollfd, flux_reconnect, flux_recv, flux_requeue, flux_respond, flux_respond_error,
+    flux_respond_raw, flux_send_new, flux_set_reactor, flux_t, FLUX_O_CLONE, FLUX_O_MATCHDEBUG,
+    FLUX_O_NONBLOCK, FLUX_O_RPCTRACK, FLUX_O_TEST_NOSUB, FLUX_O_TRACE,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -16,6 +16,7 @@ use serde_json::Value;
 use crate::error::{check_ptr, check_rc, FluxError, Result};
 use crate::msg::{Message, MessageMatch};
 use crate::reactor::Reactor;
+use crate::request::Request;
 use crate::rpc::{Rpc, RpcFlags, RpcNodeId};
 use crate::AsRawFluxPtr;
 
@@ -520,6 +521,116 @@ impl FluxHandle {
         flags: RpcFlags,
     ) -> Result<Rpc<'a>> {
         Rpc::create_message(self, msg, nodeid, flags)
+    }
+
+    pub fn respond(&self, request: &Request, data: Option<&[u8]>) -> Result<()> {
+        if self.h.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot respond to a request with a NULL handle",
+            )));
+        }
+        if request.msg.c_msg.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot respond to a request with an underlying NULL message",
+            )));
+        }
+        let (data_ptr, data_len) = match data {
+            Some(data_slice) => (data_slice.as_ptr(), data_slice.len()),
+            None => (std::ptr::null(), 0),
+        };
+        let rc = unsafe {
+            flux_respond_raw(
+                self.h,
+                request.msg.c_msg,
+                data_ptr as *const c_void,
+                data_len as i32,
+            )
+        };
+        check_rc(rc)
+    }
+
+    pub fn respond_json(&self, request: &Request, data: Option<&Value>) -> Result<()> {
+        let data_vec_opt = data
+            .map(|data_value| serde_json::to_vec(data_value))
+            .transpose()?;
+        let data_slice_opt = data_vec_opt.as_ref().map(|v| v.as_slice());
+        self.respond(request, data_slice_opt)
+    }
+
+    pub fn respond_serializable<T: Serialize>(
+        &self,
+        request: &Request,
+        data: Option<&T>,
+    ) -> Result<()> {
+        let data_vec_opt = data
+            .map(|data_value| serde_json::to_vec(data_value))
+            .transpose()?;
+        let data_slice_opt = data_vec_opt.as_ref().map(|v| v.as_slice());
+        self.respond(request, data_slice_opt)
+    }
+
+    pub fn respond_string(&self, request: &Request, data: Option<&str>) -> Result<()> {
+        if self.h.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot respond to a request with a NULL handle",
+            )));
+        }
+        if request.msg.c_msg.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot respond to a request with an underlying NULL message",
+            )));
+        }
+        let c_data = data.map(|s| CString::new(s)).transpose()?;
+        let c_data_ptr = c_data.as_ref().map(|cs| cs.as_ptr());
+        let rc = unsafe {
+            flux_respond(
+                self.h,
+                request.msg.c_msg,
+                c_data_ptr.unwrap_or(std::ptr::null()),
+            )
+        };
+        check_rc(rc)
+    }
+
+    pub fn respond_error(
+        &self,
+        request: &Request,
+        error: std::io::Error,
+        errmsg: Option<&str>,
+    ) -> Result<()> {
+        let errnum = error.raw_os_error().ok_or(FluxError::Logic(String::from(
+            "Passed a std::io::Error to 'respond_error' that does not represent a OS error (i.e., errno). Consider using 'respond_raw_error'"
+        )))?;
+        self.respond_raw_error(request, errnum, errmsg)
+    }
+
+    pub fn respond_raw_error(
+        &self,
+        request: &Request,
+        errnum: i32,
+        errmsg: Option<&str>,
+    ) -> Result<()> {
+        if self.h.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot respond to a request with a NULL handle",
+            )));
+        }
+        if request.msg.c_msg.is_null() {
+            return Err(FluxError::Logic(String::from(
+                "Cannot respond to a request with an underlying NULL message",
+            )));
+        }
+        let c_errmsg = errmsg.map(|s| CString::new(s)).transpose()?;
+        let c_errmsg_ptr = c_errmsg.as_ref().map(|cs| cs.as_ptr());
+        let rc = unsafe {
+            flux_respond_error(
+                self.h,
+                request.msg.c_msg,
+                errnum,
+                c_errmsg_ptr.unwrap_or(std::ptr::null()),
+            )
+        };
+        check_rc(rc)
     }
 }
 

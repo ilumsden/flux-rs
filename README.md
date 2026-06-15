@@ -5,15 +5,15 @@ This repo provides a higher-level, more Rust-native API for Flux-Core.
 ## Outstanding Flux APIs
 The following APIs still need to be implemented. They are listed in order of highest priority to lowest priority.
 
-- Request (`flux_request` family of functions)
-- Response (`flux_response` family of functions)
-  - Request-to-Response conversion (`flux_response_derive`)
+_High Priority (needed for initial use)_
 - Message Handler (`flux_msg_handler_t` and associated functions)
 - Jobspec and Job (`job.h`, `jobspec1.h`)
 - Reactor (`flux_reactor_t`)
   - Integration with async runtimes (e.g., Tokio)
 - Modules (i.e., broker module support)
 - Jobtap Plugins (`flux_plugin` family of functions)
+
+_Medium Priority (good to have for initial release)_
 - Handle (`flux_t`)
   - Flux Attr Cache (`flux_attr_cache_first`, `flux_attr_cache_next`)
   - Host-by-Rank (`flux_get_hostbyrank`)
@@ -43,6 +43,8 @@ The following APIs still need to be implemented. They are listed in order of hig
   - KVS Lookup treeobj and dir (`flux_kvs_lookup_get_treeobj`, `flux_kvs_lookup_get_dir`)
   - KVS Transaction put_treeobj, clear, and is_empty(`flux_kvs_txn_put_treeobj`, `flux_kvs_txn_clear`, `flux_kvs_txn_is_empty`)
   - Everything related to `treeobj`
+  
+  _Low Priority (not necessary for initial release)_
 - Watchers (`flux_watcher_t`)
   - Handle watcher get Flux (`flux_handle_watcher_get_flux`)
   - FD Watcher get FD (`flux_fd_watcher_get_fd`)
