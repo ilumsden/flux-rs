@@ -1,3 +1,4 @@
+pub mod async_driver;
 pub mod error;
 pub mod future;
 pub mod handle;

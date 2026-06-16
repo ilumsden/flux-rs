@@ -8,7 +8,8 @@ use flux_sys::core::{
     flux_log_set_appname, flux_log_set_procid, flux_match, flux_msg_t, flux_open, flux_pollevents,
     flux_pollfd, flux_reconnect, flux_recv, flux_requeue, flux_respond, flux_respond_error,
     flux_respond_raw, flux_send_new, flux_set_reactor, flux_t, FLUX_O_CLONE, FLUX_O_MATCHDEBUG,
-    FLUX_O_NONBLOCK, FLUX_O_RPCTRACK, FLUX_O_TEST_NOSUB, FLUX_O_TRACE,
+    FLUX_O_NONBLOCK, FLUX_O_RPCTRACK, FLUX_O_TEST_NOSUB, FLUX_O_TRACE, FLUX_POLLERR, FLUX_POLLIN,
+    FLUX_POLLOUT,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -45,6 +46,17 @@ pub enum LogLevel {
     Notice = libc::LOG_NOTICE,
     Info = libc::LOG_INFO,
     Debug = libc::LOG_DEBUG,
+}
+
+bitflags! {
+    #[repr(transparent)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct PollEvents: u32 {
+        const NONE = 0;
+        const POLLIN = FLUX_POLLIN;
+        const POLLOUT = FLUX_POLLOUT;
+        const POLLERR = FLUX_POLLERR;
+    }
 }
 
 #[macro_export]
@@ -391,6 +403,7 @@ impl FluxHandle {
             )
         };
         // To be safe, explicitly set the Message pointer to NULL to prevent a double free
+        #[allow(unused_assignments)]
         if !msg.c_msg.is_null() {
             msg.c_msg = std::ptr::null_mut();
         }
@@ -435,7 +448,7 @@ impl FluxHandle {
         Ok(fd)
     }
 
-    pub fn get_pollevents(&self) -> Result<i32> {
+    pub fn get_pollevents(&self) -> Result<PollEvents> {
         if self.h.is_null() {
             return Err(FluxError::Logic(String::from(
                 "Cannot get polling events bitmask with a NULL handle",
@@ -443,7 +456,7 @@ impl FluxHandle {
         }
         let bitmask = unsafe { flux_pollevents(self.h) };
         check_rc(bitmask)?;
-        Ok(bitmask)
+        Ok(PollEvents::from_bits_retain(bitmask as u32))
     }
 
     pub fn set_log_appname(&mut self, appname: &str) -> Result<()> {
@@ -701,3 +714,5 @@ impl AsRawFluxPtr<flux_t> for FluxHandle {
         self.h
     }
 }
+
+unsafe impl Send for FluxHandle {}

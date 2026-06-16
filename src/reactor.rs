@@ -1,5 +1,3 @@
-use std::io;
-use std::os::raw::c_int;
 use std::thread::{self, JoinHandle};
 
 use bitflags::bitflags;
@@ -7,12 +5,10 @@ use errno::{set_errno, Errno};
 use flux_sys::core::{
     flux_reactor_active_incref, flux_reactor_create, flux_reactor_destroy, flux_reactor_now,
     flux_reactor_now_update, flux_reactor_run, flux_reactor_stop, flux_reactor_stop_error,
-    flux_reactor_t, flux_reactor_time, FLUX_POLLERR, FLUX_POLLIN, FLUX_POLLOUT,
-    FLUX_REACTOR_NOWAIT, FLUX_REACTOR_ONCE,
+    flux_reactor_t, flux_reactor_time, FLUX_REACTOR_NOWAIT, FLUX_REACTOR_ONCE,
 };
 
 use crate::error::{FluxError, Result};
-use crate::handle::FluxHandle;
 use crate::AsRawFluxPtr;
 
 bitflags! {
@@ -163,20 +159,23 @@ unsafe impl Send for FluxReactorThread {}
 unsafe impl Sync for FluxReactorThread {}
 
 impl FluxReactorThread {
+    pub fn new(reactor: Reactor) -> Self {
+        Self {
+            reactor,
+            handle: None,
+        }
+    }
+
     /// Spawns a background thread to drive the Flux reactor.
-    pub fn spawn(mut reactor: Reactor) -> Self {
-        let reactor_copy = Reactor {
-            c_reactor: reactor.c_reactor,
+    pub fn spawn(&mut self) {
+        let mut reactor_copy = Reactor {
+            c_reactor: self.reactor.c_reactor,
         };
         // This thread simply calls `flux_reactor_run` to run indefinitely.
         // If using an async runtime, this thread will ensure the callbacks registered
         // on flux_future_t objects by AsyncFluxFuture will fire.
-        let handle = thread::spawn(move || reactor.run(ReactorFlags::NONE));
-
-        Self {
-            reactor: reactor_copy,
-            handle: Some(handle),
-        }
+        let handle = thread::spawn(move || reactor_copy.run(ReactorFlags::NONE));
+        self.handle = Some(handle);
     }
 
     /// Stops the reactor and joins the background thread.
@@ -192,49 +191,5 @@ impl FluxReactorThread {
 impl Drop for FluxReactorThread {
     fn drop(&mut self) {
         let _ = self.stop();
-    }
-}
-
-/// If you want to use your async runtime's native epoll (e.g., Tokio's AsyncFd),
-/// use `flux_pollfd` to get the FD, register it with your runtime, and call
-/// this function whenever the runtime indicates the FD is readable.
-pub struct FluxAsyncDriver<'a> {
-    handle: &'a FluxHandle,
-    reactor: Reactor,
-}
-
-impl<'a> FluxAsyncDriver<'a> {
-    pub fn new(handle: &'a FluxHandle) -> Result<Self> {
-        let reactor = handle.get_reactor()?;
-        Ok(Self { handle, reactor })
-    }
-
-    /// Returns the edge-triggered file descriptor to register with your async runtime.
-    pub fn get_poll_fd(&self) -> Result<c_int> {
-        self.handle.get_pollfd()
-    }
-
-    /// Call this when your async runtime indicates the FD is readable.
-    /// It clears the edge-triggered state and processes pending callbacks without blocking.
-    pub fn process_readable_event(&mut self) -> Result<()> {
-        // 1. Get events and clear the edge-triggered POLLIN state
-        let events = self.handle.get_pollevents()?;
-        if events == -1 {
-            return Err(FluxError::System(io::Error::last_os_error()));
-        }
-
-        // 2. If there is data to read, tick the reactor ONCE without blocking
-        if (events as u32 & FLUX_POLLIN) != 0 || (events as u32 & FLUX_POLLOUT) != 0 {
-            self.reactor.run(ReactorFlags::NOWAIT)?;
-        }
-
-        // 3. Handle errors
-        if (events as u32 & FLUX_POLLERR) != 0 {
-            return Err(FluxError::Logic(
-                "Flux handle experienced a POLLERR".to_string(),
-            ));
-        }
-
-        Ok(())
     }
 }
