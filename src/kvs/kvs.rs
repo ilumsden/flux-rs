@@ -23,7 +23,7 @@ pub struct Kvs<'a> {
 impl<'a> Kvs<'a> {
     // TODO implement support for functions related to treeobj and kvsdir
 
-    pub fn new(handle: &'a FluxHandle) -> Self {
+    pub const fn new(handle: &'a FluxHandle) -> Self {
         Self { handle }
     }
 
@@ -274,7 +274,7 @@ pub struct Lookup {
 impl Lookup {
     // TODO implement get_dir and get_treeobj
 
-    pub fn new(future: FluxFuture) -> Self {
+    pub const fn new(future: FluxFuture) -> Self {
         Self { future }
     }
 
@@ -390,7 +390,7 @@ pub struct Getroot {
 }
 
 impl Getroot {
-    pub fn new(future: FluxFuture) -> Self {
+    pub const fn new(future: FluxFuture) -> Self {
         Self { future }
     }
 
@@ -432,7 +432,7 @@ pub struct Commit {
 }
 
 impl Commit {
-    pub fn new(future: FluxFuture) -> Self {
+    pub const fn new(future: FluxFuture) -> Self {
         Self { future }
     }
 

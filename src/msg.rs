@@ -46,11 +46,7 @@ impl Display for MessageType {
         if typestr_ptr.is_null() {
             return write!(f, "unknown");
         }
-        let typestr = unsafe {
-            CStr::from_ptr(typestr_ptr)
-                .to_str()
-                .map_err(|_| std::fmt::Error)
-        }?;
+        let typestr = unsafe { CStr::from_ptr(typestr_ptr).to_string_lossy() };
         write!(f, "{}", typestr)
     }
 }

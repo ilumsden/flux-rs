@@ -34,7 +34,7 @@ pub enum RpcNodeId {
 }
 
 impl RpcNodeId {
-    pub fn as_c_nodeid(&self) -> u32 {
+    pub const fn as_c_nodeid(&self) -> u32 {
         match self {
             RpcNodeId::Any => FLUX_NODEID_ANY,
             RpcNodeId::Upstream => FLUX_NODEID_UPSTREAM,

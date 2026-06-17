@@ -7,10 +7,10 @@ edition = "2021"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 bitflags = "2.8"
-# TODO add "hostlist" feature
 flux-sys = { git = "https://github.com/ilumsden/flux-sys-rs.git", branch = "rust_2021_modernization", features = [
     "core",
     "idset",
+    "hostlist",
 ] }
 libc = "0.2"
 errno = "0.3"

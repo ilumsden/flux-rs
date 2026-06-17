@@ -53,6 +53,7 @@ impl FluxFuture {
     }
 
     /// Prepare the C callback used in future chaining/continuation.
+    #[inline]
     fn prepare_callback<F>(
         &self,
         callback: F,
