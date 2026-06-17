@@ -1,5 +1,5 @@
 [package]
-name = "flux-core-rs"
+name = "flux-core"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,11 @@ edition = "2021"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 bitflags = "2.8"
-flux-sys = { git = "https://github.com/ilumsden/flux-sys-rs.git", branch = "rust_2021_modernization" }
+# TODO add "hostlist" feature
+flux-sys = { git = "https://github.com/ilumsden/flux-sys-rs.git", branch = "rust_2021_modernization", features = [
+    "core",
+    "idset",
+] }
 libc = "0.2"
 errno = "0.3"
 thiserror = "2.0"

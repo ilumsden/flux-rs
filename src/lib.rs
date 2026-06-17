@@ -2,6 +2,8 @@ pub mod async_driver;
 pub mod error;
 pub mod future;
 pub mod handle;
+pub mod idset;
+pub mod job;
 pub mod kvs;
 pub mod msg;
 pub mod reactor;

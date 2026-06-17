@@ -269,7 +269,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
 
 [[package]]
-name = "flux-core-rs"
+name = "flux-core"
 version = "0.1.0"
 dependencies = [
  "async-io",
@@ -287,7 +287,7 @@ dependencies = [
 [[package]]
 name = "flux-sys"
 version = "0.3.0"
-source = "git+https://github.com/ilumsden/flux-sys-rs.git?branch=rust_2021_modernization#be4fdc4b19b857ebeb221f83e8d0b209d31b9dc6"
+source = "git+https://github.com/ilumsden/flux-sys-rs.git?branch=rust_2021_modernization#17292862d18d4c89f45614fee5165c85d90593b5"
 dependencies = [
  "bindgen",
  "pkg-config",
