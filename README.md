@@ -7,6 +7,8 @@ The following APIs still need to be implemented. They are listed in order of hig
 
 _High Priority (needed for initial use)_
 - Jobspec and Job (`job.h`, `jobspec1.h`)
+  - `Jobspec::resource_walk` (similar to the Python method of the same name)
+  - The `from_submit`, `from_alloc`, `from_batch`, and `apply_options` for the `JobspecV1` struct (mapping to the same methods from the Python bindings)
 - Message Handler (`flux_msg_handler_t` and associated functions)
 - Modules (i.e., broker module support)
 - Jobtap Plugins (`flux_plugin` family of functions)

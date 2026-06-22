@@ -1,4 +1,5 @@
 pub mod async_driver;
+pub mod duration;
 pub mod error;
 pub mod future;
 pub mod handle;
@@ -11,6 +12,8 @@ pub mod reactor;
 pub mod request;
 pub mod response;
 pub mod rpc;
+pub mod uri;
+pub(crate) mod utils;
 pub mod watcher;
 
 pub trait AsRawFluxPtr<PtrType> {

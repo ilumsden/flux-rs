@@ -21,6 +21,18 @@ pub enum FluxError {
     #[error("Invalid UTF-8 from C API: {0}")]
     Utf8Error(#[from] std::str::Utf8Error),
 
+    /// Error when converting string duration timestamps to floats
+    #[error("Duration parsing error: {0}")]
+    DurationParseError(#[from] std::num::ParseFloatError),
+
+    /// Error when parsing a URL (e.g., a Flux URI)
+    #[error("Error when parsing a URL (e.g., for a Flux URI): {0}")]
+    UrlParseError(#[from] url::ParseError),
+
+    /// Error when dealing with the Nix library
+    #[error("Error occured in nix-specific operation: {0}")]
+    NixError(#[from] nix::Error),
+
     /// Error when serializing or deserializing JSON data.
     #[error("JSON serialization error: {0}")]
     Json(#[from] serde_json::Error),

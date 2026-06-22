@@ -1,7 +1,6 @@
-use std::{
-    ffi::{CStr, CString},
-    fmt::Display,
-};
+use std::ffi::{CStr, CString};
+use std::fmt::Display;
+use std::str::FromStr;
 
 use flux_sys::hostlist::{
     hostlist, hostlist_append, hostlist_append_list, hostlist_copy, hostlist_count,
@@ -9,6 +8,8 @@ use flux_sys::hostlist::{
     hostlist_find, hostlist_first, hostlist_next, hostlist_nth, hostlist_remove_current,
     hostlist_sort, hostlist_uniq,
 };
+use serde::de::{self, Deserialize, Deserializer, Visitor};
+use serde::ser::{self, Serialize, Serializer};
 
 use crate::error::{check_ptr, check_rc, FluxError, Result};
 
@@ -158,6 +159,42 @@ impl Drop for Hostlist {
                 hostlist_destroy(self.c_hostlist);
             }
         }
+    }
+}
+
+impl Serialize for Hostlist {
+    fn serialize<S>(&self, serializer: S) -> std::prelude::v1::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let encoded_data = self.encode().map_err(|e| ser::Error::custom(e))?;
+        serializer.serialize_str(&encoded_data)
+    }
+}
+
+impl<'de> Deserialize<'de> for Hostlist {
+    fn deserialize<D>(deserializer: D) -> std::prelude::v1::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct HostlistVisitor;
+
+        impl<'de> Visitor<'de> for HostlistVisitor {
+            type Value = Hostlist;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a Flux RFC 29 hostlist")
+            }
+
+            fn visit_str<E>(self, v: &str) -> std::prelude::v1::Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Hostlist::from_str(v).map_err(|e| de::Error::custom(e))
+            }
+        }
+
+        deserializer.deserialize_str(HostlistVisitor)
     }
 }
 

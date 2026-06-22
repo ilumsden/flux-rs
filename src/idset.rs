@@ -16,6 +16,7 @@ use serde::de::{self, Visitor};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{check_ptr, check_rc, FluxError, Result};
+use crate::utils::impl_serde_repr_str;
 
 pub(crate) const IDSET_INVALID_ID: u32 = u32::MAX - 1;
 
@@ -242,6 +243,8 @@ impl<'de> Deserialize<'de> for Idset {
         deserializer.deserialize_str(IdsetVisitor)
     }
 }
+
+impl_serde_repr_str!(no_display Idset);
 
 pub struct Iter<'a> {
     idset: &'a Idset,

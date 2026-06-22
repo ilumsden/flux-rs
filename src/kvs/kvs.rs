@@ -15,6 +15,7 @@ use crate::future::FluxFuture;
 use crate::handle::FluxHandle;
 use crate::kvs::flags::KvsFlags;
 use crate::kvs::txn::KvsTransaction;
+use crate::utils::impl_async_future_wrapper;
 
 pub struct Kvs<'a> {
     handle: &'a FluxHandle,
@@ -103,7 +104,7 @@ impl<'a> Kvs<'a> {
         key: &str,
         flags: KvsFlags,
         namespace: Option<&str>,
-    ) -> Result<FluxFuture> {
+    ) -> Result<Lookup> {
         if self.handle.h.is_null() {
             return Err(FluxError::Logic(String::from(
                 "Cannot lookup KVS entry with a NULL flux handle",
@@ -131,10 +132,10 @@ impl<'a> Kvs<'a> {
         if future_ptr.is_null() {
             return Err(FluxError::System(std::io::Error::last_os_error()));
         }
-        Ok(FluxFuture::from(future_ptr))
+        Ok(Lookup::new(FluxFuture::from(future_ptr)))
     }
 
-    pub fn getroot(&mut self, namespace: &str) -> Result<FluxFuture> {
+    pub fn getroot(&mut self, namespace: &str) -> Result<Getroot> {
         if self.handle.h.is_null() {
             return Err(FluxError::Logic(String::from(
                 "Cannot get namespace root with a NULL flux handle",
@@ -146,7 +147,7 @@ impl<'a> Kvs<'a> {
         if future_ptr.is_null() {
             return Err(FluxError::System(std::io::Error::last_os_error()));
         }
-        Ok(FluxFuture::from(future_ptr))
+        Ok(Getroot::new(FluxFuture::from(future_ptr)))
     }
 
     pub fn copy_entry(
@@ -236,7 +237,7 @@ impl<'a> Kvs<'a> {
         txn: &KvsTransaction,
         flags: KvsFlags,
         namespace: Option<&str>,
-    ) -> Result<FluxFuture> {
+    ) -> Result<Commit> {
         if self.handle.h.is_null() {
             return Err(FluxError::Logic(String::from(
                 "Cannot commit with a NULL flux handle",
@@ -263,7 +264,7 @@ impl<'a> Kvs<'a> {
         if future_ptr.is_null() {
             return Err(FluxError::System(std::io::Error::last_os_error()));
         }
-        Ok(FluxFuture::from(future_ptr))
+        Ok(Commit::new(FluxFuture::from(future_ptr)))
     }
 }
 
@@ -385,6 +386,14 @@ impl Lookup {
     }
 }
 
+impl_async_future_wrapper!(
+    #[from_sync(Lookup)]
+    pub struct AsyncLookup {
+        #[from_sync(future)]
+        future: AsyncFluxFuture,
+    }
+);
+
 pub struct Getroot {
     future: FluxFuture,
 }
@@ -427,6 +436,14 @@ impl Getroot {
     }
 }
 
+impl_async_future_wrapper!(
+    #[from_sync(Getroot)]
+    pub struct AsyncGetroot {
+        #[from_sync(future)]
+        future: AsyncFluxFuture,
+    }
+);
+
 pub struct Commit {
     future: FluxFuture,
 }
@@ -453,3 +470,11 @@ impl Commit {
         Ok(seq)
     }
 }
+
+impl_async_future_wrapper!(
+    #[from_sync(Commit)]
+    pub struct AsyncCommit {
+        #[from_sync(future)]
+        future: AsyncFluxFuture,
+    }
+);

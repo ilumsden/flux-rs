@@ -1,7 +1,4 @@
 use std::ffi::{c_void, CString};
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 
 use bitflags::bitflags;
 use flux_sys::core::{
@@ -12,9 +9,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::error::{check_ptr, check_rc, FluxError, Result};
-use crate::future::{AsyncFluxFuture, FluxFuture};
+use crate::future::FluxFuture;
 use crate::handle::FluxHandle;
 use crate::msg::Message;
+use crate::utils::impl_async_future_wrapper;
 
 bitflags! {
     #[repr(transparent)]
@@ -186,31 +184,12 @@ impl<'a> Rpc<'a> {
     }
 }
 
-pub struct AsyncRpc<'a> {
-    handle: &'a FluxHandle,
-    future: AsyncFluxFuture,
-}
-
-impl<'a> AsyncRpc<'a> {
-    pub fn new(rpc: Rpc<'a>) -> Result<AsyncRpc<'a>> {
-        Ok(Self {
-            handle: rpc.handle,
-            future: AsyncFluxFuture::new(rpc.future)?,
-        })
+impl_async_future_wrapper!(
+    #[from_sync(Rpc<'a>)]
+    pub struct AsyncRpc<'a> {
+        #[from_sync(future)]
+        future: AsyncFluxFuture,
+        #[from_sync(handle)]
+        handle: &'a FluxHandle,
     }
-}
-
-impl<'a> Future for AsyncRpc<'a> {
-    type Output = Rpc<'a>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let pinned_future = Pin::new(&mut self.future);
-        match pinned_future.poll(cx) {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(sync_future) => Poll::Ready(Rpc {
-                handle: self.handle,
-                future: sync_future,
-            }),
-        }
-    }
-}
+);
