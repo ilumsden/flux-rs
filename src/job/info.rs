@@ -129,28 +129,51 @@ impl Display for JobDependencyList {
 #[derive(Serialize, Deserialize)]
 pub struct JobInfo {
     pub id: JobId,
+    #[serde(default)]
     pub t_depend: f64,
+    #[serde(default)]
     pub t_run: f64,
+    #[serde(default)]
     pub t_cleanup: f64,
+    #[serde(default)]
     pub t_inactive: f64,
+    #[serde(default)]
     pub duration: f64,
+    #[serde(default)]
     pub expiration: f64,
+    #[serde(default)]
     pub t_submit: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub userid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub urgency: Option<JobUrgency>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub priority: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<JobState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cwd: Option<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub queue: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub bank: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ntasks: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ncores: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ranks: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub nodelist: Option<Hostlist>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub success: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<JobResultCode>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub waitstatus: Option<i32>,
     pub exception: JobExceptionInfo,
     pub annotations: JobAnnotationsInfo,

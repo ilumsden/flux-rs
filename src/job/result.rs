@@ -1,16 +1,17 @@
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_void};
 use std::fmt::Display;
 
 use bitflags::bitflags;
 use flux_sys::core::{
-    flux_job_result_t, flux_job_result_t_FLUX_JOB_RESULT_CANCELED,
-    flux_job_result_t_FLUX_JOB_RESULT_COMPLETED, flux_job_result_t_FLUX_JOB_RESULT_FAILED,
-    flux_job_result_t_FLUX_JOB_RESULT_TIMEOUT, flux_job_resulttostr, flux_job_strtoresult,
+    flux_job_result_get, flux_job_result_t, flux_job_result_t_FLUX_JOB_RESULT_CANCELED, flux_job_result_t_FLUX_JOB_RESULT_COMPLETED, flux_job_result_t_FLUX_JOB_RESULT_FAILED, flux_job_result_t_FLUX_JOB_RESULT_TIMEOUT, flux_job_resulttostr, flux_job_strtoresult,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 
-use crate::error::{check_ptr, check_rc, Result};
-use crate::job::JobStateFormat;
+use crate::error::{FluxError, Result, check_ptr, check_rc};
+use crate::future::FluxFuture;
+use crate::job::{JobId, JobInfo, JobStateFormat};
+use crate::utils::impl_async_future_wrapper;
 
 bitflags! {
     #[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -66,4 +67,38 @@ impl Display for JobResultCode {
     }
 }
 
-pub struct JobResult {}
+pub struct JobResult {
+    future: FluxFuture,
+}
+
+impl JobResult {
+    pub fn get_info(&self) -> Result<JobInfo> {
+        if self.future.c_future.is_null() {
+            return Err(FluxError::Logic("Cannot get info from a JobResult is the future is NULL".to_string()));
+        }
+        let mut json_str: *const c_char = std::ptr::null();
+        let rc = unsafe {
+            flux_job_result_get(self.future.c_future, &mut json_str as *mut *const c_char)
+        };
+        check_rc(rc)?;
+        let rust_json_str = unsafe { CStr::from_ptr(json_str).to_str()? };
+        let unpacked_info: JobInfo = serde_json::from_str(rust_json_str)?;
+        Ok(())
+    }
+}
+
+impl From<FluxFuture> for JobResult {
+    fn from(value: FluxFuture) -> Self {
+        Self {
+            future: value
+        }
+    }
+}
+
+impl_async_future_wrapper!(
+    #[from_sync(JobResult)]
+    pub struct AsyncJobResult {
+        #[from_sync(future)]
+        future: AsyncFluxFuture,
+    }
+);
