@@ -20,6 +20,7 @@ use crate::reactor::Reactor;
 use crate::request::Request;
 use crate::rpc::{Rpc, RpcFlags, RpcNodeId};
 use crate::AsRawFluxPtr;
+use crate::uri::BaseUri;
 
 bitflags! {
     #[repr(transparent)]
@@ -134,8 +135,12 @@ pub struct FluxHandle {
 impl FluxHandle {
     // TODO remaining methods: flux_opt_set, flux_opt_get, flux_get_conf, flux_set_conf_new, flux_flags*, flux_send, flux_recv, flux_requeue
 
-    pub fn new(uri: &str, flags: HandleFlags) -> Result<Self> {
-        let c_uri = CString::new(uri)?;
+    pub fn new(uri: &BaseUri, flags: HandleFlags) -> Result<Self> {
+        Self::new_from_str_uri(uri.uri.as_str(), flags)
+    }
+    
+    pub fn new_from_str_uri(uri: &str, flags: HandleFlags) -> Result<Self> {
+        let c_uri = CString::new(uri.to_owned())?;
         let flux_handle = unsafe { flux_open(c_uri.as_ptr(), flags.bits() as i32) };
         Ok(Self {
             h: flux_handle,

@@ -127,39 +127,5 @@ macro_rules! impl_async_future_wrapper {
     };
 }
 
-macro_rules! memoize_property_getter {
-    (
-        #[memoized_property($field_name:ident, $field_type:ty, Clone)]
-        $method_vis:vis fn $method_name:ident(&self $(,)? $( $arg_name:ident: $arg_type: ty ),*) {
-            $body:block
-        }
-    ) => {
-        $method_vis fn $method_name(&self, $( $arg_name: $arg_type ),*) -> Result<$field_type> {
-            let mut cache = self.$field_name.borrow_mut();
-            if cache.is_none() {
-                let resolved = {$body};
-                *cache = Some(resolved);
-            }
-            Ok(cache.as_ref().unwrap().clone())
-        }
-    };
-    (
-        #[memoized_property($field_name:ident, $field_type:ty)]
-        $method_vis:vis fn $method_name:ident(&self $(,)? $( $arg_name:ident: $arg_type: ty ),*) {
-            $body:block
-        }
-    ) => {
-        $method_vis fn $method_name(&self, $( $arg_name: $arg_type ),*) -> Result<$field_type> {
-            let mut cache = self.$field_name.borrow_mut();
-            if cache.is_none() {
-                let resolved = {$body};
-                *cache = Some(resolved);
-            }
-            Ok(cache.as_ref().unwrap())
-        }
-    };
-}
-
 pub(crate) use impl_async_future_wrapper;
 pub(crate) use impl_serde_repr_str;
-pub(crate) use memoize_property_getter;

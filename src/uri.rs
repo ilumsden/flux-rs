@@ -1,12 +1,9 @@
-use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, fmt::Display, ops::{Deref, DerefMut}};
 
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::{
-    error::{FluxError, Result},
-    utils::memoize_property_getter,
-};
+use crate::error::{FluxError, Result};
 
 fn normalize_slashes(path: &str) -> String {
     let mut result = String::new();
@@ -82,7 +79,9 @@ impl BaseUri {
 pub struct JobUri {
     pub base: BaseUri,
     pub remote_hostname: Option<String>,
+    #[serde(skip)]
     remote_uri: RefCell<Option<String>>,
+    #[serde(skip)]
     local_uri: RefCell<Option<String>>,
 }
 
@@ -104,53 +103,30 @@ impl JobUri {
         })
     }
 
-    memoize_property_getter!(
-        #[memoized_property(remote_uri, String, Clone)]
-        pub fn as_remote(&self) {
-            {
-                match self.base.scheme.as_str() {
-                    "ssh" => self.base.uri.clone(),
-                    "local" => {
-                        let hostname = self
-                            .remote_hostname
-                            .clone()
-                            .unwrap_or_else(get_system_hostname);
-                        format!("ssh://{}{}", hostname, self.base.path)
-                    }
-                    _ => {
-                        return Err(FluxError::Logic(format!(
-                            "Cannot convert JobURI with scheme {} to remote",
-                            self.base.scheme
-                        )))
-                    }
+    pub fn as_remote(&self) -> Result<String> {
+        let mut remote_uri_cache = self.remote_uri.borrow_mut();
+        if remote_uri_cache.is_none() {
+            let resolved = match self.base.scheme.as_str() {
+                "ssh" => self.base.uri.clone(),
+                "local" => {
+                    let hostname = self
+                        .remote_hostname
+                        .clone()
+                        .unwrap_or_else(get_system_hostname);
+                    format!("ssh://{}{}", hostname, self.base.path)
                 }
-            }
+                _ => {
+                    return Err(FluxError::Logic(format!(
+                        "Cannot convert JobURI with scheme {} to remote",
+                        self.base.scheme
+                    )))
+                }
+            };
+            *remote_uri_cache = Some(resolved);
         }
-    );
-    // pub fn as_remote(&self) -> Result<String> {
-    //     let mut remote_uri_cache = self.remote_uri.borrow_mut();
-    //     if remote_uri_cache.is_none() {
-    //         let resolved = match self.base.scheme.as_str() {
-    //             "ssh" => self.base.uri.clone(),
-    //             "local" => {
-    //                 let hostname = self
-    //                     .remote_hostname
-    //                     .clone()
-    //                     .unwrap_or_else(get_system_hostname);
-    //                 format!("ssh://{}{}", hostname, self.base.path)
-    //             }
-    //             _ => {
-    //                 return Err(FluxError::Logic(format!(
-    //                     "Cannot convert JobURI with scheme {} to remote",
-    //                     self.base.scheme
-    //                 )))
-    //             }
-    //         };
-    //         *remote_uri_cache = Some(resolved);
-    //     }
-    //     // Using 'unwrap()' here is safe since we just ensured there is a value in the option above
-    //     Ok(remote_uri_cache.as_ref().unwrap().clone())
-    // }
+        // Using 'unwrap()' here is safe since we just ensured there is a value in the option above
+        Ok(remote_uri_cache.as_ref().unwrap().clone())
+    }
 
     pub fn as_local(&self) -> Result<String> {
         let mut local_uri_cache = self.local_uri.borrow_mut();
@@ -171,3 +147,63 @@ impl JobUri {
         Ok(local_uri_cache.as_ref().unwrap().clone())
     }
 }
+
+impl Display for JobUri {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let force_local = std::env::var("FLUX_URI_RESOLVE_LOCAL").is_ok();
+        if force_local {
+            match self.as_local() {
+                Ok(local_str) => write!(f, "{}", local_str),
+                Err(_) => write!(f, "{}", self.base.uri),
+            }
+        } else {
+            write!(f, "{}", self.base.uri)
+        }
+    }
+}
+
+impl Deref for JobUri {
+    type Target = BaseUri;
+    
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for JobUri {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UriResolverUri {
+    pub base: BaseUri,
+}
+
+impl UriResolverUri {
+    pub fn new(uri: &str) -> Result<Self> {
+        let modified_uri = uri.replacen(':', ":FXX", 1);
+        let mut base = BaseUri::new(&modified_uri)?;
+        
+        base.path = base.path.replacen("FXX", "", 1);
+
+        Ok(Self { base })
+    }
+}
+
+impl Deref for UriResolverUri {
+    type Target = BaseUri;
+    
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl DerefMut for UriResolverUri {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.base
+    }
+}
+
+// TODO add URI resolvers
