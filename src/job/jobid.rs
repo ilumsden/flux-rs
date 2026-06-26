@@ -2,7 +2,7 @@ use std::ffi::{c_char, CStr, CString};
 use std::fmt::Display;
 use std::ops::{Deref, DerefMut};
 
-use flux_sys::core::{flux_job_id_encode, flux_job_id_parse, flux_job_submit_get_id, flux_jobid_t};
+use flux_sys::core::{FLUX_JOBID_ANY, flux_job_id_encode, flux_job_id_parse, flux_job_submit_get_id, flux_jobid_t};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -195,5 +195,11 @@ impl TryFrom<FluxFuture> for JobId {
             unsafe { flux_job_submit_get_id(value.c_future, &mut c_jobid as *mut flux_jobid_t) };
         check_rc(rc)?;
         Ok(Self::from(c_jobid))
+    }
+}
+
+impl Default for JobId {
+    fn default() -> Self {
+        Self(FLUX_JOBID_ANY as u64)
     }
 }

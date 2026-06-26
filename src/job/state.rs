@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{check_ptr, check_rc, Result};
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum JobStateFormat {
     LowerCaseShort,
     UpperCaseShort,
