@@ -13,6 +13,7 @@ use crate::AsRawFluxPtr;
 
 pub struct KvsTransaction {
     pub(crate) c_txn: *mut flux_kvs_txn_t,
+    pub(crate) base_path: Option<String>,
 }
 
 impl KvsTransaction {
@@ -21,7 +22,16 @@ impl KvsTransaction {
         if txn.is_null() {
             return Err(FluxError::System(std::io::Error::last_os_error()));
         }
-        Ok(Self { c_txn: txn })
+        Ok(Self {
+            c_txn: txn,
+            base_path: None,
+        })
+    }
+
+    pub fn from_path(path: &str) -> Result<Self> {
+        let mut txn = Self::new()?;
+        txn.base_path = Some(path.to_string());
+        Ok(txn)
     }
 
     pub fn put(&mut self, key: &str, data: &[u8], flags: KvsFlags) -> Result<()> {
@@ -30,7 +40,12 @@ impl KvsTransaction {
                 "Cannot put a string into a NULL KVS transaction",
             )));
         }
-        let c_key = CString::new(key)?;
+        let full_key = if let Some(base) = &self.base_path {
+            format!("{}.{}", base, key)
+        } else {
+            key.to_string()
+        };
+        let c_key = CString::new(full_key)?;
         let rc = unsafe {
             // TODO figure out why flux-sys has the length field be an int (i.e., i32) instead of size_t (i.e., usize)
             flux_kvs_txn_put_raw(
@@ -68,7 +83,12 @@ impl KvsTransaction {
                 "Cannot put bytes into a NULL KVS transaction",
             )));
         }
-        let c_key = CString::new(key)?;
+        let full_key = if let Some(base) = &self.base_path {
+            format!("{}.{}", base, key)
+        } else {
+            key.to_string()
+        };
+        let c_key = CString::new(full_key)?;
         let rc = unsafe { flux_kvs_txn_mkdir(self.c_txn, flags.bits() as i32, c_key.as_ptr()) };
         if rc == -1 {
             return Err(FluxError::System(std::io::Error::last_os_error()));
@@ -82,7 +102,12 @@ impl KvsTransaction {
                 "Cannot unlink a NULL KVS transaction",
             )));
         }
-        let c_key = CString::new(key)?;
+        let full_key = if let Some(base) = &self.base_path {
+            format!("{}.{}", base, key)
+        } else {
+            key.to_string()
+        };
+        let c_key = CString::new(full_key)?;
         let rc = unsafe { flux_kvs_txn_unlink(self.c_txn, flags.bits() as i32, c_key.as_ptr()) };
         if rc == -1 {
             return Err(FluxError::System(std::io::Error::last_os_error()));
@@ -102,8 +127,13 @@ impl KvsTransaction {
                 "Cannot symlink a NULL KVS transaction",
             )));
         }
+        let full_key = if let Some(base) = &self.base_path {
+            format!("{}.{}", base, key)
+        } else {
+            key.to_string()
+        };
         // Convert 'key' to a C String
-        let c_key = CString::new(key)?;
+        let c_key = CString::new(full_key)?;
         // Optionally convert 'namespace' to a C String.
         // If namespace is None, c_namespace will be None.
         // If namespace is Some(val), val will be converted to a C String.
@@ -149,7 +179,10 @@ impl Drop for KvsTransaction {
 
 impl From<*mut flux_kvs_txn_t> for KvsTransaction {
     fn from(value: *mut flux_kvs_txn_t) -> Self {
-        Self { c_txn: value }
+        Self {
+            c_txn: value,
+            base_path: None,
+        }
     }
 }
 

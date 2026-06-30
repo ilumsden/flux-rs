@@ -3,17 +3,19 @@ use std::ffi::{c_char, c_void, CStr, CString};
 use flux_sys::core::{
     flux_kvs_commit, flux_kvs_commit_get_sequence, flux_kvs_copy, flux_kvs_getroot,
     flux_kvs_getroot_get_owner, flux_kvs_getroot_get_sequence, flux_kvs_lookup,
-    flux_kvs_lookup_cancel, flux_kvs_lookup_get_key, flux_kvs_lookup_get_raw,
-    flux_kvs_lookup_get_symlink, flux_kvs_move, flux_kvs_namespace_create,
-    flux_kvs_namespace_create_with, flux_kvs_namespace_remove, FLUX_USERID_UNKNOWN,
+    flux_kvs_lookup_cancel, flux_kvs_lookup_get_dir, flux_kvs_lookup_get_key,
+    flux_kvs_lookup_get_raw, flux_kvs_lookup_get_symlink, flux_kvs_move, flux_kvs_namespace_create,
+    flux_kvs_namespace_create_with, flux_kvs_namespace_remove, flux_kvsdir_copy, flux_kvsdir_t,
+    FLUX_USERID_UNKNOWN,
 };
 use serde::Deserialize;
 use serde_json::{from_slice, Value};
 
-use crate::error::{FluxError, Result};
+use crate::error::{check_ptr, check_rc, FluxError, Result};
 use crate::future::FluxFuture;
 use crate::handle::FluxHandle;
 use crate::kvs::flags::KvsFlags;
+use crate::kvs::kvs_dir::KvsDir;
 use crate::kvs::txn::KvsTransaction;
 use crate::utils::impl_async_future_wrapper;
 
@@ -132,7 +134,7 @@ impl<'a> Kvs<'a> {
         if future_ptr.is_null() {
             return Err(FluxError::System(std::io::Error::last_os_error()));
         }
-        Ok(Lookup::new(FluxFuture::from(future_ptr)))
+        Ok(Lookup::new(FluxFuture::from(future_ptr), key))
     }
 
     pub fn getroot(&mut self, namespace: &str) -> Result<Getroot> {
@@ -270,13 +272,17 @@ impl<'a> Kvs<'a> {
 
 pub struct Lookup {
     future: FluxFuture,
+    key: String,
 }
 
 impl Lookup {
-    // TODO implement get_dir and get_treeobj
+    // TODO implement get_treeobj
 
-    pub const fn new(future: FluxFuture) -> Self {
-        Self { future }
+    pub fn new(future: FluxFuture, key: &str) -> Self {
+        Self {
+            future,
+            key: key.to_string(),
+        }
     }
 
     pub fn get<'a>(&'a mut self) -> Result<&'a [u8]> {
@@ -313,6 +319,25 @@ impl Lookup {
     pub fn get_deserializable<'a, D: Deserialize<'a>>(&'a mut self) -> Result<D> {
         let raw_value = self.get()?;
         Ok(from_slice(raw_value)?)
+    }
+
+    pub fn get_dir(&mut self) -> Result<KvsDir> {
+        if self.future.c_future.is_null() {
+            return Err(FluxError::Logic(
+                "Cannot get the directory of a lookup with a NULL future".to_string(),
+            ));
+        }
+        let mut kvsdir: *const flux_kvsdir_t = std::ptr::null();
+        let rc = unsafe {
+            flux_kvs_lookup_get_dir(
+                self.future.c_future,
+                &mut kvsdir as *mut *const flux_kvsdir_t,
+            )
+        };
+        check_rc(rc)?;
+        let kvsdir_copy: *mut flux_kvsdir_t = unsafe { flux_kvsdir_copy(kvsdir) };
+        check_ptr(kvsdir_copy)?;
+        KvsDir::from_ptr(kvsdir_copy, Some(self.key.as_str()))
     }
 
     pub fn get_symlink<'a>(&'a mut self) -> Result<(&'a str, Option<&'a str>)> {
@@ -391,6 +416,9 @@ impl_async_future_wrapper!(
     pub struct AsyncLookup {
         #[from_sync(future)]
         future: AsyncFluxFuture,
+        #[from_sync(key)]
+        #[to_sync_action(Clone)]
+        key: String,
     }
 );
 
