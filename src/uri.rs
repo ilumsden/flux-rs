@@ -1,4 +1,9 @@
-use std::{cell::RefCell, collections::HashMap, fmt::Display, ops::{Deref, DerefMut}};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    fmt::Display,
+    ops::{Deref, DerefMut},
+};
 
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -164,7 +169,7 @@ impl Display for JobUri {
 
 impl Deref for JobUri {
     type Target = BaseUri;
-    
+
     fn deref(&self) -> &Self::Target {
         &self.base
     }
@@ -185,7 +190,7 @@ impl UriResolverUri {
     pub fn new(uri: &str) -> Result<Self> {
         let modified_uri = uri.replacen(':', ":FXX", 1);
         let mut base = BaseUri::new(&modified_uri)?;
-        
+
         base.path = base.path.replacen("FXX", "", 1);
 
         Ok(Self { base })
@@ -194,7 +199,7 @@ impl UriResolverUri {
 
 impl Deref for UriResolverUri {
     type Target = BaseUri;
-    
+
     fn deref(&self) -> &Self::Target {
         &self.base
     }

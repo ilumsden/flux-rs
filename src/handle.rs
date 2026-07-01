@@ -19,8 +19,8 @@ use crate::msg::{Message, MessageMatch};
 use crate::reactor::Reactor;
 use crate::request::Request;
 use crate::rpc::{Rpc, RpcFlags, RpcNodeId};
-use crate::AsRawFluxPtr;
 use crate::uri::BaseUri;
+use crate::AsRawFluxPtr;
 
 bitflags! {
     #[repr(transparent)]
@@ -138,7 +138,7 @@ impl FluxHandle {
     pub fn new(uri: &BaseUri, flags: HandleFlags) -> Result<Self> {
         Self::new_from_str_uri(uri.uri.as_str(), flags)
     }
-    
+
     pub fn new_from_str_uri(uri: &str, flags: HandleFlags) -> Result<Self> {
         let c_uri = CString::new(uri.to_owned())?;
         let flux_handle = unsafe { flux_open(c_uri.as_ptr(), flags.bits() as i32) };
@@ -502,42 +502,42 @@ impl FluxHandle {
         check_rc(rc)
     }
 
-    pub fn send_rpc<'a>(
-        &'a self,
+    pub fn send_rpc(
+        &self,
         topic: &str,
         data: &[u8],
         nodeid: RpcNodeId,
         flags: RpcFlags,
-    ) -> Result<Rpc<'a>> {
+    ) -> Result<Rpc<'_>> {
         Rpc::create(self, topic, data, nodeid, flags)
     }
 
-    pub fn send_rpc_json<'a>(
-        &'a self,
+    pub fn send_rpc_json(
+        &self,
         topic: &str,
         data: &Value,
         nodeid: RpcNodeId,
         flags: RpcFlags,
-    ) -> Result<Rpc<'a>> {
+    ) -> Result<Rpc<'_>> {
         Rpc::create_json(self, topic, data, nodeid, flags)
     }
 
-    pub fn send_rpc_serializable<'a, T: Serialize>(
-        &'a self,
+    pub fn send_rpc_serializable<T: Serialize>(
+        &self,
         topic: &str,
         data: &T,
         nodeid: RpcNodeId,
         flags: RpcFlags,
-    ) -> Result<Rpc<'a>> {
+    ) -> Result<Rpc<'_>> {
         Rpc::create_serializable(self, topic, data, nodeid, flags)
     }
 
-    pub fn send_rpc_message<'a>(
-        &'a self,
+    pub fn send_rpc_message(
+        &self,
         msg: &Message,
         nodeid: RpcNodeId,
         flags: RpcFlags,
-    ) -> Result<Rpc<'a>> {
+    ) -> Result<Rpc<'_>> {
         Rpc::create_message(self, msg, nodeid, flags)
     }
 

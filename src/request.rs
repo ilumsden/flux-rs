@@ -53,7 +53,7 @@ impl Request {
         Self::encode(topic, &data_vec)
     }
 
-    pub fn decode<'a>(&'a self) -> Result<RawDecodedRequestResponse<'a>> {
+    pub fn decode(&self) -> Result<RawDecodedRequestResponse<'_>> {
         if self.msg.c_msg.is_null() {
             return Err(FluxError::Logic(String::from(
                 "Cannot decode request with a NULL message",
@@ -85,7 +85,7 @@ impl Request {
         })
     }
 
-    pub fn decode_json<'a>(&'a self) -> Result<JsonDecodedRequestResponse<'a>> {
+    pub fn decode_json(&self) -> Result<JsonDecodedRequestResponse<'_>> {
         let RawDecodedRequestResponse {
             topic: decoded_topic,
             payload: decoded_payload,

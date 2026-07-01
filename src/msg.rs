@@ -333,7 +333,7 @@ impl Message {
         self.set_payload(&raw_payload)
     }
 
-    pub fn get_payload<'a>(&'a self) -> Result<&'a [u8]> {
+    pub fn get_payload(&self) -> Result<&[u8]> {
         if self.c_msg.is_null() {
             return Err(FluxError::Logic(String::from(
                 "Cannot get a payload for a message when the message has a NULL internal pointer",
@@ -379,7 +379,7 @@ impl Message {
         check_rc(rc)
     }
 
-    pub fn get_string<'a>(&'a self) -> Result<&'a str> {
+    pub fn get_string(&self) -> Result<&str> {
         if self.c_msg.is_null() {
             return Err(FluxError::Logic(String::from(
                 "Cannot set a string payload for a message when the message has a NULL internal pointer",

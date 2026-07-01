@@ -1,4 +1,37 @@
+use std::ops::{Deref, DerefMut};
+
 use crate::error::{FluxError, Result};
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct SignalCode(i32);
+
+impl SignalCode {
+    pub fn new(sig: i32) -> Option<Self> {
+        if sig > 0 {
+            Some(Self(sig))
+        } else {
+            None
+        }
+    }
+
+    pub fn as_raw(&self) -> i32 {
+        self.0
+    }
+}
+
+impl Deref for SignalCode {
+    type Target = i32;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for SignalCode {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 
 pub(crate) fn parse_fsd(fsd_string: &str) -> Result<f64> {
     if matches!(fsd_string, "inf" | "infinity" | "INF" | "INFINITY") {
