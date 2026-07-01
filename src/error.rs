@@ -1,6 +1,9 @@
 use std::io;
 use thiserror::Error;
 
+use crate::flux_log_error;
+use crate::handle::FluxHandle;
+
 /// The main error type for the flux crate.
 #[derive(Error, Debug)]
 pub enum FluxError {
@@ -16,6 +19,10 @@ pub enum FluxError {
     /// Error when interpreting null bytes in a Rust string.
     #[error("String's use of null bytes cannot be handled: {0}")]
     NulInterpretError(#[from] std::ffi::FromBytesWithNulError),
+
+    /// Error when parsing a C string using CStr::from_bytes_until_nul
+    #[error("Cannot build a string from a C string by looking for a NUL byte: {0}")]
+    FromBytesUntilNulError(#[from] std::ffi::FromBytesUntilNulError),
 
     /// Error when a C string is not valid UTF-8.
     #[error("Invalid UTF-8 from C API: {0}")]
@@ -44,6 +51,22 @@ pub enum FluxError {
     /// A custom error for request/response messages
     #[error("Error occured in response/request.\nSystem Error: {0}\nError Message: {1}")]
     RequestResponseError(io::Error, String),
+}
+
+impl FluxError {
+    pub fn to_errno(&self) -> i32 {
+        match self {
+            Self::System(err) => err.raw_os_error().unwrap_or(libc::EINVAL),
+            Self::NixError(err) => *err as i32,
+            Self::RequestResponseError(err, _) => err.raw_os_error().unwrap_or(libc::EINVAL),
+            _ => libc::EINVAL,
+        }
+    }
+
+    pub fn to_errno_with_flux_log(&self, handle: &FluxHandle) -> i32 {
+        let _ = flux_log_error!(handle, "{}", self);
+        self.to_errno()
+    }
 }
 
 /// A convenient Result alias for the crate.

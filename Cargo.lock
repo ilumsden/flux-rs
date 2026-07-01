@@ -350,6 +350,7 @@ dependencies = [
  "libc",
  "nix",
  "paste",
+ "semver",
  "serde",
  "serde_json",
  "smol",
@@ -361,7 +362,7 @@ dependencies = [
 [[package]]
 name = "flux-sys"
 version = "0.3.0"
-source = "git+https://github.com/ilumsden/flux-sys-rs.git?branch=rust_2021_modernization#a3eba02943efc1e8359a1b74c3470595a41dbb34"
+source = "git+https://github.com/ilumsden/flux-sys-rs.git?branch=rust_2021_modernization#050898a3dab2454f8f9485187931e9db3921047e"
 dependencies = [
  "bindgen",
  "pkg-config",
@@ -883,6 +884,12 @@ name = "rustversion"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
+
+[[package]]
+name = "semver"
+version = "1.0.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
 name = "serde"

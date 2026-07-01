@@ -7,6 +7,7 @@ pub mod hostlist;
 pub mod idset;
 pub mod job;
 pub mod kvs;
+pub mod module;
 pub mod msg;
 pub mod msg_handler;
 pub mod reactor;
