@@ -8,6 +8,7 @@ pub mod idset;
 pub mod job;
 pub mod kvs;
 pub mod msg;
+pub mod msg_handler;
 pub mod reactor;
 pub mod request;
 pub mod response;
