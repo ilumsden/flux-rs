@@ -6,9 +6,6 @@ This repo provides a higher-level, more Rust-native API for Flux-Core.
 The following APIs still need to be implemented. They are listed in order of highest priority to lowest priority.
 
 _High Priority (needed for initial use)_
-- Jobspec and Job (`job.h`, `jobspec1.h`)
-  - `Jobspec::resource_walk` (similar to the Python method of the same name)
-  - The `from_submit`, `from_alloc`, `from_batch`, and `apply_options` for the `JobspecV1` struct (mapping to the same methods from the Python bindings)
 - Message Handler (`flux_msg_handler_t` and associated functions)
 - Modules (i.e., broker module support)
 - Jobtap Plugins (`flux_plugin` family of functions)
@@ -38,11 +35,13 @@ _Medium Priority (good to have for initial release)_
   - Drop Cache (`flux_kvs_dropcache`)
   - KVS Fencing (`flux_kvs_fence`)
   - Get rootref (`flux_kvs_commit_get_rootref`)
-  - KVS Dir (`flux_kvsdir_t` and associated functions)
   - Kvs Getroot Blobref and Treeobj (`flux_kvs_getroot_get_treeobj`, `flux_kvs_getroot_get_blobref`)
-  - KVS Lookup treeobj and dir (`flux_kvs_lookup_get_treeobj`, `flux_kvs_lookup_get_dir`)
+  - KVS Lookup treeobj (`flux_kvs_lookup_get_treeobj`)
   - KVS Transaction put_treeobj, clear, and is_empty(`flux_kvs_txn_put_treeobj`, `flux_kvs_txn_clear`, `flux_kvs_txn_is_empty`)
   - Everything related to `treeobj`
+- Jobspec and Job (`job.h`, `jobspec1.h`)
+  - `Jobspec::resource_walk` (similar to the Python method of the same name)
+  - The `from_submit`, `from_alloc`, `from_batch`, and `apply_options` for the `JobspecV1` struct (mapping to the same methods from the Python bindings)
   
   _Low Priority (not necessary for initial release)_
 - Watchers (`flux_watcher_t`)
@@ -62,7 +61,6 @@ _Medium Priority (good to have for initial release)_
 - Event (`flux_event` family of functions)
 - Treeobj
 - Command (`flux_cmd` family of functions)
-- Host Map, Id Map
 - Service registration (`flux_service` family of functions)
 - Subprocess (`flux_subprocess` family of functions)
 - `flux_sync_create`

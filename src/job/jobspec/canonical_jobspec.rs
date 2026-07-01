@@ -230,7 +230,7 @@ impl Jobspec {
     create_jobspec_getters_setters!(error, "system.shell.options.output.stderr.path", PathBuf, as_ref Path);
     create_jobspec_getters_setters!(stderr, "system.shell.options.output.stderr.path", PathBuf, as_ref Path);
 
-    pub fn is_unbuffered<'a>(&'a self) -> bool {
+    pub fn is_unbuffered(&self) -> bool {
         let mut val = true;
         if let Some(out_buf_type) =
             self.get_attr_shell_options_as::<String>("output.stdout.buffer.type")
@@ -291,7 +291,7 @@ impl Jobspec {
     }
 
     /// Create an iterator over the resources in the Jobspec
-    pub fn iter_resources<'a>(&'a self) -> ResourceIter<'a> {
+    pub fn iter_resources(&self) -> ResourceIter<'_> {
         ResourceIter {
             _jobspec: self,
             iter_stack: vec![self.resources.iter()],

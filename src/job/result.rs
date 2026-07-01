@@ -1,14 +1,17 @@
-use std::ffi::{CStr, CString, c_char, c_void};
+use std::ffi::{c_char, c_void, CStr, CString};
 use std::fmt::Display;
+use std::ops::{Deref, DerefMut};
 
 use bitflags::bitflags;
 use flux_sys::core::{
-    flux_job_result_get, flux_job_result_t, flux_job_result_t_FLUX_JOB_RESULT_CANCELED, flux_job_result_t_FLUX_JOB_RESULT_COMPLETED, flux_job_result_t_FLUX_JOB_RESULT_FAILED, flux_job_result_t_FLUX_JOB_RESULT_TIMEOUT, flux_job_resulttostr, flux_job_strtoresult,
+    flux_job_result_get, flux_job_result_t, flux_job_result_t_FLUX_JOB_RESULT_CANCELED,
+    flux_job_result_t_FLUX_JOB_RESULT_COMPLETED, flux_job_result_t_FLUX_JOB_RESULT_FAILED,
+    flux_job_result_t_FLUX_JOB_RESULT_TIMEOUT, flux_job_resulttostr, flux_job_strtoresult,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::error::{FluxError, Result, check_ptr, check_rc};
+use crate::error::{check_ptr, check_rc, FluxError, Result};
 use crate::future::FluxFuture;
 use crate::job::{JobId, JobInfo, JobStateFormat};
 use crate::utils::impl_async_future_wrapper;
@@ -57,6 +60,12 @@ impl JobResultCode {
     }
 }
 
+impl From<flux_job_result_t> for JobResultCode {
+    fn from(value: flux_job_result_t) -> Self {
+        JobResultCode::from_bits_truncate(value)
+    }
+}
+
 impl Display for JobResultCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let job_result_str = match self.encode(JobStateFormat::UpperCaseLong) {
@@ -72,9 +81,11 @@ pub struct JobResult {
 }
 
 impl JobResult {
-    pub fn get_info(&self) -> Result<JobInfo> {
+    pub fn get_info_map(&self) -> Result<Map<String, Value>> {
         if self.future.c_future.is_null() {
-            return Err(FluxError::Logic("Cannot get info from a JobResult is the future is NULL".to_string()));
+            return Err(FluxError::Logic(
+                "Cannot get info from a JobResult is the future is NULL".to_string(),
+            ));
         }
         let mut json_str: *const c_char = std::ptr::null();
         let rc = unsafe {
@@ -82,16 +93,122 @@ impl JobResult {
         };
         check_rc(rc)?;
         let rust_json_str = unsafe { CStr::from_ptr(json_str).to_str()? };
-        let unpacked_info: JobInfo = serde_json::from_str(rust_json_str)?;
-        Ok(())
+        let unpacked_info: Map<String, Value> = serde_json::from_str(rust_json_str)?;
+        Ok(unpacked_info)
+    }
+
+    pub fn get_info_json(&self) -> Result<Value> {
+        Ok(Value::Object(self.get_info_map()?))
+    }
+
+    pub fn get_info(&self) -> Result<JobInfo> {
+        let unpacked_info = self.get_info_map()?;
+        let mut jobinfo = JobInfo::default();
+        jobinfo.id = JobId::from(
+            unpacked_info
+                .get("id")
+                .ok_or(FluxError::Logic(
+                    "Job id not found in value of flux_job_result_get".to_string(),
+                ))?
+                .as_u64()
+                .ok_or(FluxError::Logic(
+                    "Cannot convert job ID from C into a flux_jobid_t".to_string(),
+                ))?,
+        );
+        jobinfo.result = Some(JobResultCode::from(
+            unpacked_info
+                .get("result")
+                .ok_or(FluxError::Logic(
+                    "Result code not found in value of flux_job_result_get".to_string(),
+                ))?
+                .as_u64()
+                .ok_or(FluxError::Logic(
+                    "Cannot convert job result code from C into a flux_job_result_t".to_string(),
+                ))? as flux_job_result_t,
+        ));
+        jobinfo.t_submit = unpacked_info
+            .get("t_submit")
+            .ok_or(FluxError::Logic(
+                "Submit time not found in value of flux_job_result_get".to_string(),
+            ))?
+            .as_f64()
+            .ok_or(FluxError::Logic(
+                "Cannot convert submit time to floating-point value".to_string(),
+            ))?;
+        jobinfo.t_cleanup = unpacked_info
+            .get("t_cleanup")
+            .ok_or(FluxError::Logic(
+                "Cleanup time not found in value of flux_job_result_get".to_string(),
+            ))?
+            .as_f64()
+            .ok_or(FluxError::Logic(
+                "Cannot convert cleanup time to floating-point value".to_string(),
+            ))?;
+        jobinfo.exception.occured = unpacked_info
+            .get("exception_occured")
+            .ok_or(FluxError::Logic(
+                "The 'exception_occured' key not found in value of flux_job_result_get".to_string(),
+            ))?
+            .as_bool()
+            .ok_or(FluxError::Logic(
+                "Cannot convert 'exception_occured' to a boolean".to_string(),
+            ))?;
+        if let Some(waitstatus) = unpacked_info.get("waitstatus") {
+            jobinfo.waitstatus = Some(waitstatus.as_i64().ok_or(FluxError::Logic(
+                "Cannot convert waitstatus to integer".to_string(),
+            ))? as i32);
+        }
+        if let Some(severity) = unpacked_info.get("exception_severity") {
+            if jobinfo.exception.occured {
+                jobinfo.exception.severity = Some(severity.as_i64().ok_or(FluxError::Logic(
+                    "Cannot convert exception severity to integer".to_string(),
+                ))? as i32);
+            }
+        }
+        if let Some(exception_type) = unpacked_info.get("exception_type") {
+            if jobinfo.exception.occured {
+                jobinfo.exception.execption_type = Some(
+                    exception_type
+                        .as_str()
+                        .ok_or(FluxError::Logic(
+                            "Cannot convert exception type to string".to_string(),
+                        ))?
+                        .to_owned(),
+                );
+            }
+        }
+        if let Some(note) = unpacked_info.get("exception_note") {
+            if jobinfo.exception.occured {
+                jobinfo.exception.note = Some(
+                    note.as_str()
+                        .ok_or(FluxError::Logic(
+                            "Cannot convert exception note to string".to_string(),
+                        ))?
+                        .to_owned(),
+                );
+            }
+        }
+        Ok(jobinfo)
     }
 }
 
 impl From<FluxFuture> for JobResult {
     fn from(value: FluxFuture) -> Self {
-        Self {
-            future: value
-        }
+        Self { future: value }
+    }
+}
+
+impl Deref for JobResult {
+    type Target = FluxFuture;
+
+    fn deref(&self) -> &Self::Target {
+        &self.future
+    }
+}
+
+impl DerefMut for JobResult {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.future
     }
 }
 

@@ -21,11 +21,14 @@ use crate::uri::JobUri;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct JobExceptionInfo {
-    occured: bool,
-    severity: Option<i32>,
-    #[serde(rename = "type")]
-    execption_type: Option<String>,
-    note: Option<String>,
+    #[serde(default)]
+    pub occured: bool,
+    #[serde(default)]
+    pub severity: Option<i32>,
+    #[serde(rename = "type", default)]
+    pub execption_type: Option<String>,
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 impl Default for JobExceptionInfo {
@@ -41,19 +44,19 @@ impl Default for JobExceptionInfo {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct JobAnnotationsInfo {
-    #[serde(flatten)]
+    #[serde(flatten, default)]
     pub annotations: HashMap<String, Value>,
 }
 
 impl JobAnnotationsInfo {
-    pub fn get_sched<'a>(&'a self) -> Option<&'a Map<String, Value>> {
+    pub fn get_sched(&self) -> Option<&Map<String, Value>> {
         self.annotations
             .get("sched")
             .map(|v| v.as_object())
             .flatten()
     }
 
-    pub fn get_user<'a>(&'a self) -> Option<&'a Map<String, Value>> {
+    pub fn get_user(&self) -> Option<&Map<String, Value>> {
         self.annotations
             .get("user")
             .map(|v| v.as_object())
@@ -70,7 +73,7 @@ impl Deref for JobAnnotationsInfo {
 }
 
 #[derive(Serialize, Deserialize, Default)]
-#[serde(transparent)]
+#[serde(transparent, default)]
 pub struct JobDependencyList {
     pub dependencies: Vec<String>,
 }
@@ -178,6 +181,7 @@ pub struct JobInfo {
     pub exception: JobExceptionInfo,
     pub annotations: JobAnnotationsInfo,
     pub dependencies: JobDependencyList,
+    #[serde(skip_serializing)]
     cached_uri: RefCell<Option<JobUri>>,
 }
 
@@ -190,7 +194,11 @@ impl JobInfo {
         if self.t_cleanup > 0.0 && self.t_run > 0.0 {
             self.t_cleanup - self.t_run
         } else if self.t_run > 0.0 {
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs_f64() - self.t_run
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs_f64()
+                - self.t_run
         } else {
             0.0
         }
@@ -201,7 +209,11 @@ impl JobInfo {
         if status.is_none() || status.unwrap() != "RUN" {
             return Ok(0.0);
         }
-        let tleft = self.expiration - SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs_f64();
+        let tleft = self.expiration
+            - SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs_f64();
         if tleft < 0.0 {
             Ok(0.0)
         } else {
@@ -231,27 +243,39 @@ impl JobInfo {
     }
 
     pub fn get_state(&self) -> Result<Option<String>> {
-        self.state.map(|s| s.encode(JobStateFormat::UpperCaseLong)).transpose()
+        self.state
+            .map(|s| s.encode(JobStateFormat::UpperCaseLong))
+            .transpose()
     }
 
     pub fn get_state_single(&self) -> Result<Option<String>> {
-        self.state.map(|s| s.encode(JobStateFormat::UpperCaseShort)).transpose()
+        self.state
+            .map(|s| s.encode(JobStateFormat::UpperCaseShort))
+            .transpose()
     }
 
     pub fn get_state_emoji(&self) -> Result<Option<String>> {
-        self.state.map(|s| s.encode(JobStateFormat::Emoji)).transpose()
+        self.state
+            .map(|s| s.encode(JobStateFormat::Emoji))
+            .transpose()
     }
 
     pub fn get_result(&self) -> Result<Option<String>> {
-        self.result.map(|s| s.encode(JobStateFormat::UpperCaseLong)).transpose()
+        self.result
+            .map(|s| s.encode(JobStateFormat::UpperCaseLong))
+            .transpose()
     }
 
     pub fn get_result_abbrev(&self) -> Result<Option<String>> {
-        self.result.map(|s| s.encode(JobStateFormat::UpperCaseShort)).transpose()
+        self.result
+            .map(|s| s.encode(JobStateFormat::UpperCaseShort))
+            .transpose()
     }
 
     pub fn get_result_emoji(&self) -> Result<Option<String>> {
-        self.result.map(|s| s.encode(JobStateFormat::Emoji)).transpose()
+        self.result
+            .map(|s| s.encode(JobStateFormat::Emoji))
+            .transpose()
     }
 
     pub fn get_username(&self) -> Option<String> {
@@ -275,7 +299,7 @@ impl JobInfo {
             if state.intersects(JobState::PENDING | JobState::RUNNING) {
                 encoded = Some(state.encode(fmt)?);
             }
-        } 
+        }
         if encoded.is_none() {
             if let Some(result) = self.result {
                 encoded = Some(result.encode(fmt)?);
@@ -330,13 +354,14 @@ impl JobInfo {
             } else if state.contains(JobState::DEPEND) {
                 format!("depends:{}", self.dependencies)
             } else if state.contains(JobState::SCHED) {
-                let mut ctx_info_str = if self.urgency.is_some() && self.urgency.unwrap() == JobUrgency::HOLD {
-                    "held".to_string()
-                } else if self.priority.is_some() && self.priority.unwrap() == 0 {
-                    "priority-hold".to_string()
-                } else {
-                    String::new()
-                };
+                let mut ctx_info_str =
+                    if self.urgency.is_some() && self.urgency.unwrap() == JobUrgency::HOLD {
+                        "held".to_string()
+                    } else if self.priority.is_some() && self.priority.unwrap() == 0 {
+                        "priority-hold".to_string()
+                    } else {
+                        String::new()
+                    };
                 if let Some(sched_map) = self.annotations.get_sched() {
                     if let Some(t_estimate) = sched_map.get("t_estimate") {
                         if let Some(t_estimate_float) = t_estimate.as_f64() {
@@ -356,18 +381,25 @@ impl JobInfo {
                 }
                 ctx_info_str
             } else {
-                self.nodelist.as_ref().map(|hl| hl.to_string()).unwrap_or(String::new())
+                self.nodelist
+                    .as_ref()
+                    .map(|hl| hl.to_string())
+                    .unwrap_or(String::new())
             }
         } else {
-            self.nodelist.as_ref().map(|hl| hl.to_string()).unwrap_or(String::new())
+            self.nodelist
+                .as_ref()
+                .map(|hl| hl.to_string())
+                .unwrap_or(String::new())
         }
     }
 
     pub fn get_contextual_time(&self) -> f64 {
-        if self.state.is_some() && self
-            .state
-            .unwrap()
-            .intersects(JobState::PRIORITY | JobState::DEPEND | JobState::SCHED)
+        if self.state.is_some()
+            && self
+                .state
+                .unwrap()
+                .intersects(JobState::PRIORITY | JobState::DEPEND | JobState::SCHED)
         {
             self.duration
         } else {
@@ -378,7 +410,7 @@ impl JobInfo {
     pub fn get_inactive_reason(&self) -> String {
         if self.state.is_none() || !self.state.unwrap().contains(JobState::INACTIVE) {
             return String::new();
-        } 
+        }
         if let Some(result) = self.result {
             if result.contains(JobResultCode::CANCELED) {
                 let mut canceled_str = "Canceled".to_string();
@@ -461,6 +493,35 @@ impl JobInfo {
 
 impl Default for JobInfo {
     fn default() -> Self {
-        Self { id: JobId::default(), t_depend: 0.0, t_run: 0.0, t_cleanup: 0.0, t_inactive: 0.0, duration: 0.0, expiration: 0.0, t_submit: 0.0, userid: None, urgency: None, priority: None, state: None, name: None, cwd: None, queue: None, project: None, bank: None, ntasks: None, ncores: None, ranks: None, nodelist: None, success: None, result: None, waitstatus: None, exception: JobExceptionInfo::default(), annotations: JobAnnotationsInfo::default(), dependencies: JobDependencyList::default(), cached_uri: RefCell::new(None) }
+        Self {
+            id: JobId::default(),
+            t_depend: 0.0,
+            t_run: 0.0,
+            t_cleanup: 0.0,
+            t_inactive: 0.0,
+            duration: 0.0,
+            expiration: 0.0,
+            t_submit: 0.0,
+            userid: None,
+            urgency: None,
+            priority: None,
+            state: None,
+            name: None,
+            cwd: None,
+            queue: None,
+            project: None,
+            bank: None,
+            ntasks: None,
+            ncores: None,
+            ranks: None,
+            nodelist: None,
+            success: None,
+            result: None,
+            waitstatus: None,
+            exception: JobExceptionInfo::default(),
+            annotations: JobAnnotationsInfo::default(),
+            dependencies: JobDependencyList::default(),
+            cached_uri: RefCell::new(None),
+        }
     }
 }

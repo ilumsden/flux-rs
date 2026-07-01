@@ -1,4 +1,5 @@
 use std::ffi::{c_char, CStr};
+use std::ops::{Deref, DerefMut};
 
 use flux_sys::core::{flux_job_wait_get_id, flux_job_wait_get_status, flux_jobid_t};
 
@@ -67,6 +68,20 @@ impl JobStatus {
             .ok_or(FluxError::Logic(
                 "Success state is None after fetching it from Flux".to_string(),
             ))
+    }
+}
+
+impl Deref for JobStatus {
+    type Target = FluxFuture;
+
+    fn deref(&self) -> &Self::Target {
+        &self.future
+    }
+}
+
+impl DerefMut for JobStatus {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.future
     }
 }
 
