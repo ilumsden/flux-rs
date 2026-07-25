@@ -9,11 +9,45 @@ use std::ffi::CStr;
 #[cfg(flux_core_has_module_loader_helpers)]
 use std::mem::MaybeUninit;
 
+use std::alloc::{GlobalAlloc, Layout, System};
+
 use flux_sys::core::{flux_module_debug_test, flux_module_set_running};
 
 #[allow(unused_imports)]
 use crate::error::{check_rc, FluxError, Result};
 use crate::handle::FluxHandle;
+
+pub struct PanickingAllocator;
+
+unsafe impl GlobalAlloc for PanickingAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let ptr = unsafe { System.alloc(layout) };
+        if ptr.is_null() {
+            panic!("Failed to allocate {} bytes of memory", layout.size());
+        }
+        ptr
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        unsafe { System.dealloc(ptr, layout) }
+    }
+
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        let ptr = unsafe { System.alloc_zeroed(layout) };
+        if ptr.is_null() {
+            panic!("Failed to allocate {} bytes of memory", layout.size());
+        }
+        ptr
+    }
+
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+        let ptr = unsafe { System.realloc(ptr, layout, new_size) };
+        if ptr.is_null() {
+            panic!("Failed to reallocate to {} bytes of memory", new_size);
+        }
+        ptr
+    }
+}
 
 pub fn test_module_debug_bit(handle: &FluxHandle, flag: i32, clear: bool) -> bool {
     unsafe { flux_module_debug_test(handle.h.as_mut_ptr(), flag, clear) }
@@ -103,6 +137,28 @@ pub fn finalize_module(handle: &FluxHandle, error: Option<std::io::Error>) -> Re
 }
 
 #[macro_export]
+macro_rules! __set_global_allocator_to_panicking {
+    () => {
+        #[cfg(panic = "abort")]
+        ::std::compile_error!(
+            r#"Calling `set_global_panicking_allocator` requires `panic = "unwind"` in your Cargo.toml.
+Add the following to your profile sections:
+
+[profile.dev]
+panic = "unwind"
+
+[profile.release]
+panic = "unwind"
+"#
+        );
+
+        #[global_allocator]
+        static __FLUX_PANICKING_ALLOCATOR: $crate::module::PanickingAllocator =
+            $crate::module::PanickingAllocator;
+    };
+}
+
+#[macro_export]
 macro_rules! __create_module_entrypoint_macro {
     ($user_main:path) => {
         #[no_mangle]
@@ -124,10 +180,16 @@ macro_rules! __create_module_entrypoint_macro {
             unsafe {
                 ::flux_sys::core::flux_incref(h);
             }
-            let rust_handle = $crate::handle::FluxHandle::from_ptr(h);
+            let rust_handle = match unsafe { $crate::handle::FluxHandle::from_ptr(h) } {
+                Ok(rh) => rh,
+                Err(e) => {
+                    return $crate::error::to_flux_rc(Err(e), None);
+                }
+            };
             $crate::error::to_flux_rc($user_main(rust_handle.clone(), args), Some(&rust_handle))
         }
     };
 }
 
 pub use crate::__create_module_entrypoint_macro as create_module_entrypoint;
+pub use crate::__set_global_allocator_to_panicking as set_global_panicking_allocator;
