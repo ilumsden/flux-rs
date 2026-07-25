@@ -11,6 +11,7 @@ use std::mem::MaybeUninit;
 
 use flux_sys::core::{flux_module_debug_test, flux_module_set_running};
 
+#[allow(unused_imports)]
 use crate::error::{check_rc, FluxError, Result};
 use crate::handle::FluxHandle;
 

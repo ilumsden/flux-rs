@@ -14,69 +14,78 @@ use crate::flux_ptr_management::{
 use crate::handle::FluxHandle;
 use crate::msg::{Message, MessageMatch, MessageRolemask, MessageType};
 
+pub type MsgHandlerCallback = Box<dyn FnMut(FluxHandle, MsgHandler, Message)>;
+
 pub struct MsgHandler {
     c_handler: FluxPtr<flux_msg_handler_t>,
-    _cb_box: Option<Box<dyn FnMut(FluxHandle, MsgHandler, Message)>>,
+    _cb_box: Option<MsgHandlerCallback>,
 }
 
 impl MsgHandler {
+    pub(crate) extern "C" fn msg_handler_trampoline(
+        h: *mut flux_t,
+        mh: *mut flux_msg_handler_t,
+        msg: *const flux_msg_t,
+        arg: *mut c_void,
+    ) {
+        let closure = unsafe { &mut *(arg as *mut MsgHandlerCallback) };
+        // Increment the reference counter on the flux_t pointer so that FluxHandle::drop
+        // does not free the C-owned handle.
+        unsafe {
+            flux_incref(h);
+        }
+        let handle = if let Ok(fh) = unsafe { FluxHandle::from_ptr(h) } {
+            fh
+        } else {
+            return;
+        };
+        // Increment the reference counter on the flux_msg_t pointer so that Message::drop
+        // does not free the C-owned handle.
+        unsafe {
+            flux_msg_incref(msg);
+        }
+        let msg = match unsafe { Message::from_ptr(msg as *mut flux_msg_t) } {
+            Ok(msg_obj) => msg_obj,
+            Err(err) => {
+                flux_log_error!(
+                    handle,
+                    "Error occured while wrapping the flux_msg_t in MessageHandler callback: {}",
+                    err
+                );
+                return;
+            }
+        };
+        // Create the Rust MsgHandler with 'should_drop' set to false so that
+        // MsgHandler::drop does not free data owned by C
+        let msg_handler = MsgHandler {
+            c_handler: match FluxPtr::create_borrowed(mh, flux_msg_handler_destroy) {
+                Ok(handler_ptr) => handler_ptr,
+                Err(err) => {
+                    flux_log_error!(handle, "Error occured in wrapping the flux_msg_handler_t in MessageHandler callback: {}", err);
+                    return;
+                }
+            },
+            _cb_box: None,
+        };
+        closure(handle, msg_handler, msg)
+    }
+
     pub fn new(
         handle: &FluxHandle,
         matcher: MessageMatch,
-        mut callback: Box<dyn FnMut(FluxHandle, MsgHandler, Message)>,
+        mut callback: MsgHandlerCallback,
     ) -> Result<Self> {
-        let arg_ptr =
-            &mut callback as *mut Box<dyn FnMut(FluxHandle, MsgHandler, Message)> as *mut c_void;
-
-        extern "C" fn trampoline(
-            h: *mut flux_t,
-            mh: *mut flux_msg_handler_t,
-            msg: *const flux_msg_t,
-            arg: *mut c_void,
-        ) {
-            let closure =
-                unsafe { &mut *(arg as *mut Box<dyn FnMut(FluxHandle, MsgHandler, Message)>) };
-            // Increment the reference counter on the flux_t pointer so that FluxHandle::drop
-            // does not free the C-owned handle.
-            unsafe {
-                flux_incref(h);
-            }
-            let handle = if let Ok(fh) = unsafe { FluxHandle::from_ptr(h) } {
-                fh
-            } else {
-                return;
-            };
-            // Increment the reference counter on the flux_msg_t pointer so that Message::drop
-            // does not free the C-owned handle.
-            unsafe {
-                flux_msg_incref(msg);
-            }
-            let msg = match unsafe { Message::from_ptr(msg as *mut flux_msg_t) } {
-                Ok(msg_obj) => msg_obj,
-                Err(err) => {
-                    flux_log_error!(handle, "Error occured while wrapping the flux_msg_t in MessageHandler callback: {}", err);
-                    return;
-                }
-            };
-            // Create the Rust MsgHandler with 'should_drop' set to false so that
-            // MsgHandler::drop does not free data owned by C
-            let msg_handler = MsgHandler {
-                c_handler: match FluxPtr::create_borrowed(mh, flux_msg_handler_destroy) {
-                    Ok(handler_ptr) => handler_ptr,
-                    Err(err) => {
-                        flux_log_error!(handle, "Error occured in wrapping the flux_msg_handler_t in MessageHandler callback: {}", err);
-                        return;
-                    }
-                },
-                _cb_box: None,
-            };
-            closure(handle, msg_handler, msg)
-        }
+        let arg_ptr = &mut callback as *mut MsgHandlerCallback as *mut c_void;
 
         let c_match: flux_match = (&matcher).into();
 
         let handler_ptr = unsafe {
-            flux_msg_handler_create(handle.h.as_mut_ptr(), c_match, Some(trampoline), arg_ptr)
+            flux_msg_handler_create(
+                handle.h.as_mut_ptr(),
+                c_match,
+                Some(Self::msg_handler_trampoline),
+                arg_ptr,
+            )
         };
         check_ptr(handler_ptr)?;
 
@@ -141,7 +150,7 @@ default_impl_as_flux_ptr!(MsgHandler, flux_msg_handler_t, c_handler);
 pub struct MsgHandlerSpec {
     pub typemask: MessageType,
     pub topic_glob: String,
-    pub cb: Box<dyn FnMut(FluxHandle, MsgHandler, Message)>,
+    pub cb: MsgHandlerCallback,
     pub rolemask: MessageRolemask,
 }
 

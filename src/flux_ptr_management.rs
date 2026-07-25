@@ -153,6 +153,9 @@ impl<T> FluxPtr<T> {
         self.inner.as_ptr()
     }
 
+    // TODO remove this lint once part of the crate actually has logic that
+    // differs based on ownership of a Flux C pointer
+    #[allow(dead_code)]
     pub fn is_owned(&self) -> bool {
         self.owned.is_some()
     }

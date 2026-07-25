@@ -6,7 +6,7 @@ This repo provides a higher-level, more Rust-native API for Flux-Core.
 The following APIs still need to be implemented. They are listed in order of highest priority to lowest priority.
 
 _High Priority (needed for initial use)_
-- Jobtap Plugins (`flux_plugin` family of functions)
+**All implemented. Still needs testing.**
 
 _Medium Priority (good to have for initial release)_
 - Handle (`flux_t`)

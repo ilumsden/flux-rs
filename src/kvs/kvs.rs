@@ -36,7 +36,7 @@ impl<'a> Kvs<'a> {
         namespace: &str,
         flags: KvsFlags,
         owner: Option<u32>,
-    ) -> Result<FluxFuture> {
+    ) -> Result<FluxFuture<'static>> {
         let c_namespace = CString::new(namespace)?;
         let c_owner = owner.unwrap_or(FLUX_USERID_UNKNOWN);
         let future_ptr = unsafe {
@@ -57,7 +57,7 @@ impl<'a> Kvs<'a> {
         rootref: &str,
         flags: KvsFlags,
         owner: Option<u32>,
-    ) -> Result<FluxFuture> {
+    ) -> Result<FluxFuture<'static>> {
         let c_namespace = CString::new(namespace)?;
         let c_rootref = CString::new(rootref)?;
         let c_owner = owner.unwrap_or(FLUX_USERID_UNKNOWN);
@@ -74,7 +74,7 @@ impl<'a> Kvs<'a> {
         unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
-    pub fn remove_namespace(&mut self, namespace: &str) -> Result<FluxFuture> {
+    pub fn remove_namespace(&mut self, namespace: &str) -> Result<FluxFuture<'static>> {
         let c_namespace = CString::new(namespace)?;
         let future_ptr =
             unsafe { flux_kvs_namespace_remove(self.handle.h.as_mut_ptr(), c_namespace.as_ptr()) };
@@ -133,7 +133,7 @@ impl<'a> Kvs<'a> {
         commit_flags: KvsFlags,
         src_namespace: Option<&str>,
         dst_namespace: Option<&str>,
-    ) -> Result<FluxFuture> {
+    ) -> Result<FluxFuture<'static>> {
         let c_srckey = CString::new(srckey)?;
         let c_dstkey = CString::new(dstkey)?;
         let c_src_namespace: Option<CString> = src_namespace
@@ -167,7 +167,7 @@ impl<'a> Kvs<'a> {
         commit_flags: KvsFlags,
         src_namespace: Option<&str>,
         dst_namespace: Option<&str>,
-    ) -> Result<FluxFuture> {
+    ) -> Result<FluxFuture<'static>> {
         let c_srckey = CString::new(srckey)?;
         let c_dstkey = CString::new(dstkey)?;
         let c_src_namespace: Option<CString> = src_namespace

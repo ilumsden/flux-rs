@@ -64,9 +64,9 @@ bitflags! {
 
 #[macro_export]
 macro_rules! flux_log {
-    ($handle:expr, $level:expr, $($arg:tt)*) => {
-        $handle.log($level, &format!($($arg)*))
-    };
+    ($handle:expr, $level:expr, $($arg:tt)*) => {{
+        let _ = $handle.log($level, &format!($($arg)*));
+    }};
 }
 
 #[macro_export]

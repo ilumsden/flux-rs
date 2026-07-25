@@ -94,7 +94,7 @@ impl<'a> Job<'a> {
         severity: Option<JobEventSeverity>,
         message: Option<&str>,
         exception_type: Option<&str>,
-    ) -> Result<FluxFuture> {
+    ) -> Result<FluxFuture<'static>> {
         let sev = severity.unwrap_or(JobEventSeverity::FATAL);
         let c_msg = message.map(|m| CString::new(m)).transpose()?;
         let c_exc_type = CString::new(exception_type.unwrap_or("cancel"))?;
@@ -111,7 +111,7 @@ impl<'a> Job<'a> {
         unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
-    pub fn cancel(&self, reason: Option<&str>) -> Result<FluxFuture> {
+    pub fn cancel(&self, reason: Option<&str>) -> Result<FluxFuture<'static>> {
         let c_reason = reason.map(|r| CString::new(r)).transpose()?;
         let future_ptr = unsafe {
             flux_job_cancel(
@@ -126,14 +126,14 @@ impl<'a> Job<'a> {
         unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
-    pub fn kill(&self, signal: SignalCode) -> Result<FluxFuture> {
+    pub fn kill(&self, signal: SignalCode) -> Result<FluxFuture<'static>> {
         let future_ptr =
             unsafe { flux_job_kill(self.handle.h.as_mut_ptr(), *self.id, signal.as_raw()) };
         check_ptr(future_ptr)?;
         unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
-    pub fn set_urgency(&mut self, urgency: JobUrgency) -> Result<FluxFuture> {
+    pub fn set_urgency(&mut self, urgency: JobUrgency) -> Result<FluxFuture<'static>> {
         let future_ptr = unsafe {
             flux_job_set_urgency(self.handle.h.as_mut_ptr(), *self.id, urgency.as_u8() as i32)
         };
