@@ -6,6 +6,8 @@ use flux_sys::core::{
 };
 
 use crate::error::{check_ptr, FluxError, Result};
+use crate::flux_log_error;
+use crate::flux_ptr_management::{BorrowFluxPtrNoArgs, FromFluxPtrNoArgs};
 use crate::handle::FluxHandle;
 use crate::reactor::Reactor;
 use crate::watcher::base::create_watcher_specialization;
@@ -34,7 +36,10 @@ impl<'a> HandleWatcher<'a> {
         unsafe {
             flux_reactor_active_incref(reactor_ptr);
         }
-        let reactor = Reactor::from(reactor_ptr);
+        let reactor = match unsafe { Reactor::from_ptr(reactor_ptr) } {
+            Ok(reac) => reac,
+            Err(_) => return,
+        };
         let handle_ptr = unsafe { flux_handle_watcher_get_flux(watcher_ptr) };
         let handle = if handle_ptr.is_null() {
             None
@@ -42,10 +47,21 @@ impl<'a> HandleWatcher<'a> {
             unsafe {
                 flux_incref(handle_ptr);
             }
-            Some(FluxHandle::from(handle_ptr))
+            Some(match unsafe { FluxHandle::from_ptr(handle_ptr) } {
+                Ok(fh) => fh,
+                Err(_) => return,
+            })
         };
-        let raw_watcher = RawWatcher::from(watcher_ptr);
-        let mut watcher = HandleWatcher {
+        let raw_watcher = match unsafe { RawWatcher::borrow_ptr(watcher_ptr) } {
+            Ok(rw) => rw,
+            Err(e) => {
+                if let Some(fh) = handle {
+                    flux_log_error!(fh, "Cannot create RawWatcher object from the flux_watcher_t pointer passed to callback: {}", e);
+                }
+                return;
+            }
+        };
+        let watcher = HandleWatcher {
             watcher: raw_watcher,
             _flux_handle: handle.as_ref(),
             _reactor: &reactor,
@@ -57,10 +73,6 @@ impl<'a> HandleWatcher<'a> {
             &handle,
             WatcherEvents::from_bits_retain(revents as u32),
         );
-        // Set the c_watcher field to NULL to avoid destroying a borrowed C pointer
-        if !watcher.watcher.c_watcher.is_null() {
-            watcher.watcher.c_watcher = std::ptr::null_mut();
-        }
     }
 
     pub fn create<F>(
@@ -72,16 +84,6 @@ impl<'a> HandleWatcher<'a> {
     where
         F: FnMut(&Reactor, &HandleWatcher, &Option<FluxHandle>, WatcherEvents) + Send + 'static,
     {
-        if reactor.c_reactor.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot create a handle watcher with a NULL reactor",
-            )));
-        }
-        if handle.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot create a handle watcher with a NULL handle",
-            )));
-        }
         let mut watch_cb: Option<
             Box<dyn FnMut(&Reactor, &HandleWatcher, &Option<FluxHandle>, WatcherEvents)>,
         > = Some(Box::new(callback));
@@ -93,8 +95,8 @@ impl<'a> HandleWatcher<'a> {
             as *mut c_void;
         let watcher_ptr = unsafe {
             flux_handle_watcher_create(
-                reactor.c_reactor,
-                handle.h,
+                reactor.c_reactor.as_mut_ptr(),
+                handle.h.as_mut_ptr(),
                 events.bits() as i32,
                 Some(Self::trampoline),
                 arg_ptr,
@@ -102,7 +104,7 @@ impl<'a> HandleWatcher<'a> {
         };
         check_ptr(watcher_ptr)?;
         Ok(Self {
-            watcher: RawWatcher::from(watcher_ptr),
+            watcher: unsafe { RawWatcher::from_ptr(watcher_ptr)? },
             _flux_handle: Some(handle),
             _reactor: reactor,
             _watch_cb: watch_cb,

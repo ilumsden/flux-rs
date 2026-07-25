@@ -15,12 +15,14 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::error::{check_ptr, check_rc, FluxError, Result};
+use crate::flux_ptr_management::{
+    default_impl_as_flux_ptr, BorrowFluxPtr, FluxPtr, FromFluxPtr, FromFluxPtrNoArgs,
+};
 use crate::msg::{Message, MessageMatch};
 use crate::reactor::Reactor;
 use crate::request::Request;
 use crate::rpc::{Rpc, RpcFlags, RpcNodeId};
 use crate::uri::BaseUri;
-use crate::AsRawFluxPtr;
 
 bitflags! {
     #[repr(transparent)]
@@ -123,12 +125,12 @@ macro_rules! flux_log_debug {
     };
 }
 
-struct AuxThinPtrWrapper {
-    inner: Box<dyn Any + Send + Sync>,
+pub(crate) struct AuxThinPtrWrapper {
+    pub(crate) inner: Box<dyn Any + Send + Sync>,
 }
 
 pub struct FluxHandle {
-    pub(crate) h: *mut flux_t,
+    pub(crate) h: FluxPtr<flux_t>,
     comm_error_handler_cb: Option<Box<dyn FnMut(FluxHandle) -> i32>>,
 }
 
@@ -142,8 +144,9 @@ impl FluxHandle {
     pub fn new_from_str_uri(uri: &str, flags: HandleFlags) -> Result<Self> {
         let c_uri = CString::new(uri.to_owned())?;
         let flux_handle = unsafe { flux_open(c_uri.as_ptr(), flags.bits() as i32) };
+        let flux_handle_rs = FluxPtr::create_owned(flux_handle, flux_close)?;
         Ok(Self {
-            h: flux_handle,
+            h: flux_handle_rs,
             comm_error_handler_cb: None,
         })
     }
@@ -152,67 +155,30 @@ impl FluxHandle {
         Self::try_from(self)
     }
 
-    pub fn close(&mut self) {
-        if !self.h.is_null() {
-            unsafe {
-                flux_close(self.h);
-            }
-            self.h = std::ptr::null_mut() as *mut flux_t;
-        }
-    }
-
     pub fn reconnect(&mut self) -> Result<()> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot reconnect with a NULL handle",
-            )));
-        }
-        let rc = unsafe { flux_reconnect(self.h) };
-        if rc == -1 {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        }
-        Ok(())
+        let rc = unsafe { flux_reconnect(self.h.as_mut_ptr()) };
+        check_rc(rc)
     }
 
     pub fn get_rank(&self) -> Result<u32> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot get rank with a NULL handle",
-            )));
-        }
         let mut rank: u32 = 0;
-        let rc = unsafe { flux_get_rank(self.h, &mut rank as *mut u32) };
-        if rc == -1 {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        }
+        let rc = unsafe { flux_get_rank(self.h.as_mut_ptr(), &mut rank as *mut u32) };
+        check_rc(rc)?;
         Ok(rank)
     }
 
     pub fn get_size(&self) -> Result<usize> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot get size with a NULL handle",
-            )));
-        }
         let mut size: u32 = 0;
-        let rc = unsafe { flux_get_size(self.h, &mut size as *mut u32) };
-        if rc == -1 {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        }
+        let rc = unsafe { flux_get_size(self.h.as_mut_ptr(), &mut size as *mut u32) };
+        check_rc(rc)?;
         Ok(size as usize)
     }
 
     pub fn get_attr(&self, name: &str) -> Result<String> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot get attribute with a NULL handle",
-            )));
-        }
         let c_name = CString::new(name)?;
-        let attr_ptr: *const c_char = unsafe { flux_attr_get(self.h, c_name.as_ptr()) };
-        if attr_ptr.is_null() {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        }
+        let attr_ptr: *const c_char =
+            unsafe { flux_attr_get(self.h.as_mut_ptr(), c_name.as_ptr()) };
+        check_ptr(attr_ptr as *mut c_char)?;
         let c_attr_str = unsafe { CStr::from_ptr(attr_ptr) };
         let rust_attr_str = c_attr_str.to_str().map(|s| s.to_owned());
         unsafe {
@@ -223,42 +189,20 @@ impl FluxHandle {
     }
 
     pub fn set_attr(&mut self, name: &str, val: &str) -> Result<()> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot set attribute with a NULL handle",
-            )));
-        }
         let c_name = CString::new(name)?;
         let c_val = CString::new(val)?;
-        let rc = unsafe { flux_attr_set(self.h, c_name.as_ptr(), c_val.as_ptr()) };
-        if rc == -1 {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        }
-        Ok(())
+        let rc = unsafe { flux_attr_set(self.h.as_mut_ptr(), c_name.as_ptr(), c_val.as_ptr()) };
+        check_rc(rc)
     }
 
     pub fn unset_attr(&mut self, name: &str) -> Result<()> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot unset attribute with a NULL handle",
-            )));
-        }
         let c_name = CString::new(name)?;
-        let rc = unsafe { flux_attr_set(self.h, c_name.as_ptr(), std::ptr::null()) };
-        if rc == -1 {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        }
-        Ok(())
+        let rc = unsafe { flux_attr_set(self.h.as_mut_ptr(), c_name.as_ptr(), std::ptr::null()) };
+        check_rc(rc)
     }
 
     pub fn set_aux<T: Send + Sync + 'static>(&mut self, name: &str, data: T) -> Result<()> {
-        // Check if the handle is NULL
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot set aux with a NULL handle",
-            )));
-        }
-        // Conver the name to a C String
+        // Convert the name to a C String
         let c_name = CString::new(name)?;
         // Put the data on the heap, and wrap in an AuxThinPtrWrapper object to ensure
         // we have a thin pointer to pass to C.
@@ -279,7 +223,7 @@ impl FluxHandle {
         // Set the aux
         let rc = unsafe {
             flux_aux_set(
-                self.h,
+                self.h.as_mut_ptr(),
                 c_name.as_ptr(),
                 raw_data_ptr,
                 Some(destroy_aux_trampoline),
@@ -294,16 +238,7 @@ impl FluxHandle {
     }
 
     pub fn get_aux<T: 'static>(&self, name: &str) -> Result<&T> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot get aux with a NULL handle",
-            )));
-        }
-        let c_name = CString::new(name)?;
-        let raw_ptr = unsafe { flux_aux_get(self.h, c_name.as_ptr()) };
-        if raw_ptr.is_null() {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        }
+        let raw_ptr = self.get_aux_raw(name)?;
         let wrapper = unsafe { &*(raw_ptr as *const AuxThinPtrWrapper) };
         match wrapper.inner.downcast_ref::<T>() {
             Some(typed_ref) => Ok(typed_ref),
@@ -314,16 +249,16 @@ impl FluxHandle {
         }
     }
 
+    pub fn get_aux_raw(&self, name: &str) -> Result<*mut c_void> {
+        let c_name = CString::new(name)?;
+        let raw_ptr = unsafe { flux_aux_get(self.h.as_mut_ptr(), c_name.as_ptr()) };
+        check_ptr(raw_ptr)
+    }
+
     pub fn set_comms_error_handler<F>(&mut self, handler: F) -> Result<()>
     where
         F: FnMut(FluxHandle) -> i32 + Send + 'static,
     {
-        // Ensure the flux_t is not NULL
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot set communication error handler with a NULL handle",
-            )));
-        }
         // Store the handler on the heap in FluxHandle to ensure it doesn't get deallocated
         self.comm_error_handler_cb = Some(Box::new(handler));
         // Get a mutable reference to the Box itself. By getting a reference to the Box instead of the closure,
@@ -347,158 +282,112 @@ impl FluxHandle {
             unsafe {
                 flux_incref(h);
             }
-            let handle = FluxHandle::from(h);
+            let handle = match unsafe { FluxHandle::from_ptr(h) } {
+                Ok(handle) => handle,
+                Err(err) => {
+                    err.set_errno(None);
+                    return -1;
+                }
+            };
             // Inovke the user closure
             closure(handle)
         }
 
         // Set the error handler
         unsafe {
-            flux_comms_error_set(self.h, Some(trampoline), arg_ptr);
+            flux_comms_error_set(self.h.as_mut_ptr(), Some(trampoline), arg_ptr);
         }
 
         Ok(())
     }
 
     pub fn get_reactor(&self) -> Result<Reactor> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot get reactor from a NULL handle",
-            )));
-        }
-        let reactor_ptr = unsafe { flux_get_reactor(self.h) };
-        if reactor_ptr.is_null() {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        }
-        Ok(Reactor::from(reactor_ptr))
+        let reactor_ptr = unsafe { flux_get_reactor(self.h.as_mut_ptr()) };
+        check_ptr(reactor_ptr)?;
+        unsafe { Reactor::from_ptr(reactor_ptr) }
     }
 
     pub fn set_reactor(&mut self, reactor: &Reactor) -> Result<()> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot set reactor with a NULL handle",
-            )));
-        }
-        if reactor.c_reactor.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot set reactor with a NULL reactor",
-            )));
-        }
-        let rc = unsafe { flux_set_reactor(self.h, reactor.c_reactor) };
-        if rc == -1 {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        }
-        Ok(())
+        let rc = unsafe { flux_set_reactor(self.h.as_mut_ptr(), reactor.c_reactor.as_mut_ptr()) };
+        check_rc(rc)
     }
 
-    pub fn send(&self, mut msg: Message, flags: HandleFlags) -> Result<()> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot send message with a NULL handle",
-            )));
-        }
-        if msg.c_msg.is_null() {
-            return Err(FluxError::Logic(String::from("Cannot send NULL message")));
-        }
+    pub fn send(&self, msg: Message, flags: HandleFlags) -> Result<()> {
+        let mut raw_msg = msg.c_msg.as_mut_ptr();
         let rc = unsafe {
             flux_send_new(
-                self.h,
-                &mut msg.c_msg as *mut *mut flux_msg_t,
+                self.h.as_mut_ptr(),
+                &mut raw_msg as *mut *mut flux_msg_t,
                 flags.bits() as i32,
             )
         };
-        // To be safe, explicitly set the Message pointer to NULL to prevent a double free
-        #[allow(unused_assignments)]
-        if !msg.c_msg.is_null() {
-            msg.c_msg = std::ptr::null_mut();
+        // flux_send_new only frees the message if it succeeds.
+        // To work around this, only assume ownership of the raw pointer
+        // (which prevents freeing in Drop) if flux_send_new succeeds.
+        // Otherwise, preserve ownership so that Drop frees the flux_msg_t pointer
+        if rc == 0 {
+            let _ = msg.c_msg.into_raw();
         }
         check_rc(rc)
     }
 
     pub fn recv(&self, msg_match: MessageMatch, flags: HandleFlags) -> Result<Message> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot receive message with a NULL handle",
-            )));
-        }
         let c_match: flux_match = (&msg_match).into();
-        let msg_ptr = unsafe { flux_recv(self.h, c_match, flags.bits() as i32) };
+        let msg_ptr = unsafe { flux_recv(self.h.as_mut_ptr(), c_match, flags.bits() as i32) };
         check_ptr(msg_ptr)?;
-        Ok(Message::from(msg_ptr))
+        unsafe { Message::from_ptr(msg_ptr) }
     }
 
     pub fn requeue(&self, msg: Message, flags: HandleFlags) -> Result<()> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot requeue message with a NULL handle",
-            )));
-        }
-        if msg.c_msg.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot requeue a NULL message",
-            )));
-        }
-        let rc = unsafe { flux_requeue(self.h, msg.c_msg, flags.bits() as i32) };
+        let rc = unsafe {
+            flux_requeue(
+                self.h.as_mut_ptr(),
+                msg.c_msg.as_mut_ptr(),
+                flags.bits() as i32,
+            )
+        };
         check_rc(rc)
     }
 
     pub fn get_pollfd(&self) -> Result<i32> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot get polling fd with a NULL handle",
-            )));
-        }
-        let fd = unsafe { flux_pollfd(self.h) };
+        let fd = unsafe { flux_pollfd(self.h.as_mut_ptr()) };
         check_rc(fd)?;
         Ok(fd)
     }
 
     pub fn get_pollevents(&self) -> Result<PollEvents> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot get polling events bitmask with a NULL handle",
-            )));
-        }
-        let bitmask = unsafe { flux_pollevents(self.h) };
+        let bitmask = unsafe { flux_pollevents(self.h.as_mut_ptr()) };
         check_rc(bitmask)?;
         Ok(PollEvents::from_bits_retain(bitmask as u32))
     }
 
     pub fn set_log_appname(&mut self, appname: &str) -> Result<()> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot set logging appname with a NULL handle",
-            )));
-        }
         let c_appname = CString::new(appname)?;
         unsafe {
-            flux_log_set_appname(self.h, c_appname.as_ptr());
+            flux_log_set_appname(self.h.as_mut_ptr(), c_appname.as_ptr());
         }
         Ok(())
     }
 
     pub fn set_log_procid(&mut self, procid: &str) -> Result<()> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot set logging procid with a NULL handle",
-            )));
-        }
         let c_procid = CString::new(procid)?;
         unsafe {
-            flux_log_set_procid(self.h, c_procid.as_ptr());
+            flux_log_set_procid(self.h.as_mut_ptr(), c_procid.as_ptr());
         }
         Ok(())
     }
 
     pub fn log(&self, level: LogLevel, msg: &str) -> Result<()> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot log with a NULL handle",
-            )));
-        }
         let c_fmt_str = CStr::from_bytes_with_nul(b"%s\0")?;
         let c_msg = CString::new(msg)?;
-        let rc = unsafe { flux_log(self.h, level as i32, c_fmt_str.as_ptr(), c_msg.as_ptr()) };
+        let rc = unsafe {
+            flux_log(
+                self.h.as_mut_ptr(),
+                level as i32,
+                c_fmt_str.as_ptr(),
+                c_msg.as_ptr(),
+            )
+        };
         check_rc(rc)
     }
 
@@ -542,24 +431,14 @@ impl FluxHandle {
     }
 
     pub fn respond(&self, request: &Request, data: Option<&[u8]>) -> Result<()> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot respond to a request with a NULL handle",
-            )));
-        }
-        if request.msg.c_msg.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot respond to a request with an underlying NULL message",
-            )));
-        }
         let (data_ptr, data_len) = match data {
             Some(data_slice) => (data_slice.as_ptr(), data_slice.len()),
             None => (std::ptr::null(), 0),
         };
         let rc = unsafe {
             flux_respond_raw(
-                self.h,
-                request.msg.c_msg,
+                self.h.as_mut_ptr(),
+                request.msg.c_msg.as_mut_ptr(),
                 data_ptr as *const c_void,
                 data_len as i32,
             )
@@ -588,22 +467,12 @@ impl FluxHandle {
     }
 
     pub fn respond_string(&self, request: &Request, data: Option<&str>) -> Result<()> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot respond to a request with a NULL handle",
-            )));
-        }
-        if request.msg.c_msg.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot respond to a request with an underlying NULL message",
-            )));
-        }
         let c_data = data.map(|s| CString::new(s)).transpose()?;
         let c_data_ptr = c_data.as_ref().map(|cs| cs.as_ptr());
         let rc = unsafe {
             flux_respond(
-                self.h,
-                request.msg.c_msg,
+                self.h.as_mut_ptr(),
+                request.msg.c_msg.as_mut_ptr(),
                 c_data_ptr.unwrap_or(std::ptr::null()),
             )
         };
@@ -628,46 +497,17 @@ impl FluxHandle {
         errnum: i32,
         errmsg: Option<&str>,
     ) -> Result<()> {
-        if self.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot respond to a request with a NULL handle",
-            )));
-        }
-        if request.msg.c_msg.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot respond to a request with an underlying NULL message",
-            )));
-        }
         let c_errmsg = errmsg.map(|s| CString::new(s)).transpose()?;
         let c_errmsg_ptr = c_errmsg.as_ref().map(|cs| cs.as_ptr());
         let rc = unsafe {
             flux_respond_error(
-                self.h,
-                request.msg.c_msg,
+                self.h.as_mut_ptr(),
+                request.msg.c_msg.as_mut_ptr(),
                 errnum,
                 c_errmsg_ptr.unwrap_or(std::ptr::null()),
             )
         };
         check_rc(rc)
-    }
-}
-
-impl Drop for FluxHandle {
-    fn drop(&mut self) {
-        if !self.h.is_null() {
-            unsafe {
-                flux_close(self.h);
-            }
-        }
-    }
-}
-
-impl From<*mut flux_t> for FluxHandle {
-    fn from(value: *mut flux_t) -> Self {
-        FluxHandle {
-            h: value,
-            comm_error_handler_cb: None,
-        }
     }
 }
 
@@ -678,13 +518,12 @@ impl Clone for FluxHandle {
     /// with the same underlying `*mut flux_t` pointer. It also calls `flux_incref`
     /// to increment Flux's internal reference counter.
     fn clone(&self) -> Self {
-        if !self.h.is_null() {
-            unsafe {
-                flux_incref(self.h);
-            }
+        unsafe {
+            flux_incref(self.h.as_mut_ptr());
         }
         Self {
-            h: self.h,
+            h: FluxPtr::create_owned(self.h.as_mut_ptr(), flux_close)
+                .expect("flux_incref should never result in the flux_t pointer becoming NULL"),
             comm_error_handler_cb: None,
         }
     }
@@ -698,26 +537,36 @@ impl TryFrom<&FluxHandle> for FluxHandle {
     /// Unlike `FluxHandle.clone`, this method calls `flux_clone` to get a new
     /// underlying `*mut flux_t` pointer.
     fn try_from(value: &FluxHandle) -> Result<FluxHandle> {
-        if value.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot clone a FluxHandle when the underlying pointer is NULL",
-            )));
-        }
-        let cloned_flux_handle = unsafe { flux_clone(value.h) };
-        if cloned_flux_handle.is_null() {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        }
+        let cloned_flux_handle = unsafe { flux_clone(value.h.as_mut_ptr()) };
+        check_ptr(cloned_flux_handle)?;
         Ok(FluxHandle {
-            h: cloned_flux_handle,
+            h: FluxPtr::create_owned(cloned_flux_handle, flux_close)?,
             comm_error_handler_cb: None,
         })
     }
 }
 
-impl AsRawFluxPtr<flux_t> for FluxHandle {
-    fn as_flux_ptr(&self) -> *mut flux_t {
-        self.h
+unsafe impl BorrowFluxPtr for FluxHandle {
+    type CType = flux_t;
+    type FromRawArgs = ();
+
+    unsafe fn borrow_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
+        Ok(Self {
+            h: FluxPtr::create_borrowed(ptr, flux_close)?,
+            comm_error_handler_cb: None,
+        })
     }
 }
+
+unsafe impl FromFluxPtr for FluxHandle {
+    unsafe fn from_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
+        Ok(Self {
+            h: FluxPtr::create_owned(ptr, flux_close)?,
+            comm_error_handler_cb: None,
+        })
+    }
+}
+
+default_impl_as_flux_ptr!(FluxHandle, flux_t, h);
 
 unsafe impl Send for FluxHandle {}

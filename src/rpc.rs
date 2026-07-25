@@ -8,7 +8,8 @@ use flux_sys::core::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::error::{check_ptr, check_rc, FluxError, Result};
+use crate::error::{check_ptr, check_rc, Result};
+use crate::flux_ptr_management::FromFluxPtrNoArgs;
 use crate::future::FluxFuture;
 use crate::handle::FluxHandle;
 use crate::msg::Message;
@@ -43,7 +44,7 @@ impl RpcNodeId {
 
 pub struct Rpc<'a> {
     handle: &'a FluxHandle,
-    future: FluxFuture,
+    future: FluxFuture<'static>,
 }
 
 impl<'a> Rpc<'a> {
@@ -54,15 +55,10 @@ impl<'a> Rpc<'a> {
         nodeid: RpcNodeId,
         flags: RpcFlags,
     ) -> Result<Self> {
-        if handle.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot send RPC with a NULL handle",
-            )));
-        }
         let c_topic = CString::new(topic)?;
         let future_ptr = unsafe {
             flux_rpc_raw(
-                handle.h,
+                handle.h.as_mut_ptr(),
                 c_topic.as_ptr(),
                 data.as_ptr() as *const c_void,
                 data.len() as i32,
@@ -73,7 +69,7 @@ impl<'a> Rpc<'a> {
         check_ptr(future_ptr)?;
         Ok(Self {
             handle,
-            future: FluxFuture::from(future_ptr),
+            future: unsafe { FluxFuture::from_ptr(future_ptr)? },
         })
     }
 
@@ -105,20 +101,10 @@ impl<'a> Rpc<'a> {
         nodeid: RpcNodeId,
         flags: RpcFlags,
     ) -> Result<Self> {
-        if handle.h.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot send RPC with a NULL handle",
-            )));
-        }
-        if msg.c_msg.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot send RPC with a NULL message",
-            )));
-        }
         let future_ptr = unsafe {
             flux_rpc_message(
-                handle.h,
-                msg.c_msg,
+                handle.h.as_mut_ptr(),
+                msg.c_msg.as_mut_ptr(),
                 nodeid.as_c_nodeid(),
                 flags.bits() as i32,
             )
@@ -126,21 +112,16 @@ impl<'a> Rpc<'a> {
         check_ptr(future_ptr)?;
         Ok(Self {
             handle: handle,
-            future: FluxFuture::from(future_ptr),
+            future: unsafe { FluxFuture::from_ptr(future_ptr)? },
         })
     }
 
     pub fn get(&self) -> Result<&'a [u8]> {
-        if self.future.c_future.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot get value from an RPC with no internal future",
-            )));
-        }
         let mut buf: *const c_void = std::ptr::null();
         let mut size: i32 = 0;
         let rc = unsafe {
             flux_rpc_get_raw(
-                self.future.c_future,
+                self.future.c_future.as_mut_ptr(),
                 &mut buf as *mut *const c_void,
                 &mut size as *mut i32,
             )
@@ -165,22 +146,12 @@ impl<'a> Rpc<'a> {
         Ok(serde_json::from_slice(raw_payload)?)
     }
 
-    pub fn get_matchtag(&self) -> Result<u32> {
-        if self.future.c_future.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot get matchtag from an RPC with no internal future",
-            )));
-        }
-        Ok(unsafe { flux_rpc_get_matchtag(self.future.c_future) })
+    pub fn get_matchtag(&self) -> u32 {
+        unsafe { flux_rpc_get_matchtag(self.future.c_future.as_mut_ptr()) }
     }
 
-    pub fn get_nodeid(&self) -> Result<u32> {
-        if self.future.c_future.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot get nodeid from an RPC with no internal future",
-            )));
-        }
-        Ok(unsafe { flux_rpc_get_nodeid(self.future.c_future) })
+    pub fn get_nodeid(&self) -> u32 {
+        unsafe { flux_rpc_get_nodeid(self.future.c_future.as_mut_ptr()) }
     }
 }
 

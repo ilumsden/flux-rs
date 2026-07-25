@@ -67,10 +67,30 @@ impl FluxError {
         let _ = flux_log_error!(handle, "{}", self);
         self.to_errno()
     }
+
+    pub fn set_errno(&self, log_handle: Option<&FluxHandle>) {
+        let errno_val = if let Some(h) = log_handle {
+            self.to_errno_with_flux_log(h)
+        } else {
+            self.to_errno()
+        };
+        unsafe { *::libc::__errno_location() = errno_val };
+    }
 }
 
 /// A convenient Result alias for the crate.
 pub type Result<T> = std::result::Result<T, FluxError>;
+
+#[inline]
+pub fn to_flux_rc(result: Result<()>, log_handle: Option<&FluxHandle>) -> i32 {
+    match result {
+        Ok(()) => 0,
+        Err(e) => {
+            e.set_errno(log_handle);
+            -1
+        }
+    }
+}
 
 /// A helper function to evaluate Flux C API integer return codes.
 /// Flux typically returns 0 on success and -1 on failure, setting errno.

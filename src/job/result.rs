@@ -77,19 +77,17 @@ impl Display for JobResultCode {
 }
 
 pub struct JobResult {
-    future: FluxFuture,
+    future: FluxFuture<'static>,
 }
 
 impl JobResult {
     pub fn get_info_map(&self) -> Result<Map<String, Value>> {
-        if self.future.c_future.is_null() {
-            return Err(FluxError::Logic(
-                "Cannot get info from a JobResult is the future is NULL".to_string(),
-            ));
-        }
         let mut json_str: *const c_char = std::ptr::null();
         let rc = unsafe {
-            flux_job_result_get(self.future.c_future, &mut json_str as *mut *const c_char)
+            flux_job_result_get(
+                self.future.c_future.as_mut_ptr(),
+                &mut json_str as *mut *const c_char,
+            )
         };
         check_rc(rc)?;
         let rust_json_str = unsafe { CStr::from_ptr(json_str).to_str()? };
@@ -192,14 +190,14 @@ impl JobResult {
     }
 }
 
-impl From<FluxFuture> for JobResult {
-    fn from(value: FluxFuture) -> Self {
+impl From<FluxFuture<'static>> for JobResult {
+    fn from(value: FluxFuture<'static>) -> Self {
         Self { future: value }
     }
 }
 
 impl Deref for JobResult {
-    type Target = FluxFuture;
+    type Target = FluxFuture<'static>;
 
     fn deref(&self) -> &Self::Target {
         &self.future

@@ -6,14 +6,17 @@ use flux_sys::core::{
     flux_msg_handler_stop, flux_msg_handler_t, flux_msg_incref, flux_msg_t, flux_t,
 };
 
-use crate::error::{FluxError, Result};
+use crate::error::{check_ptr, Result};
+use crate::flux_log_error;
+use crate::flux_ptr_management::{
+    default_impl_as_flux_ptr, BorrowFluxPtr, FluxPtr, FromFluxPtr, FromFluxPtrNoArgs,
+};
 use crate::handle::FluxHandle;
 use crate::msg::{Message, MessageMatch, MessageRolemask, MessageType};
 
 pub struct MsgHandler {
-    c_handler: *mut flux_msg_handler_t,
+    c_handler: FluxPtr<flux_msg_handler_t>,
     _cb_box: Option<Box<dyn FnMut(FluxHandle, MsgHandler, Message)>>,
-    should_drop: bool,
 }
 
 impl MsgHandler {
@@ -22,12 +25,6 @@ impl MsgHandler {
         matcher: MessageMatch,
         mut callback: Box<dyn FnMut(FluxHandle, MsgHandler, Message)>,
     ) -> Result<Self> {
-        if handle.h.is_null() {
-            return Err(FluxError::Logic(
-                "Cannot create a message handler with a NULL Flux handle".to_string(),
-            ));
-        }
-
         let arg_ptr =
             &mut callback as *mut Box<dyn FnMut(FluxHandle, MsgHandler, Message)> as *mut c_void;
 
@@ -44,93 +41,102 @@ impl MsgHandler {
             unsafe {
                 flux_incref(h);
             }
-            let handle = FluxHandle::from(h);
+            let handle = if let Ok(fh) = unsafe { FluxHandle::from_ptr(h) } {
+                fh
+            } else {
+                return;
+            };
             // Increment the reference counter on the flux_msg_t pointer so that Message::drop
             // does not free the C-owned handle.
             unsafe {
                 flux_msg_incref(msg);
             }
-            let msg = Message::from(msg as *mut flux_msg_t);
+            let msg = match unsafe { Message::from_ptr(msg as *mut flux_msg_t) } {
+                Ok(msg_obj) => msg_obj,
+                Err(err) => {
+                    flux_log_error!(handle, "Error occured while wrapping the flux_msg_t in MessageHandler callback: {}", err);
+                    return;
+                }
+            };
             // Create the Rust MsgHandler with 'should_drop' set to false so that
             // MsgHandler::drop does not free data owned by C
             let msg_handler = MsgHandler {
-                c_handler: mh,
+                c_handler: match FluxPtr::create_borrowed(mh, flux_msg_handler_destroy) {
+                    Ok(handler_ptr) => handler_ptr,
+                    Err(err) => {
+                        flux_log_error!(handle, "Error occured in wrapping the flux_msg_handler_t in MessageHandler callback: {}", err);
+                        return;
+                    }
+                },
                 _cb_box: None,
-                should_drop: false,
             };
             closure(handle, msg_handler, msg)
         }
 
         let c_match: flux_match = (&matcher).into();
 
-        let handler_ptr =
-            unsafe { flux_msg_handler_create(handle.h, c_match, Some(trampoline), arg_ptr) };
+        let handler_ptr = unsafe {
+            flux_msg_handler_create(handle.h.as_mut_ptr(), c_match, Some(trampoline), arg_ptr)
+        };
+        check_ptr(handler_ptr)?;
 
         Ok(Self {
-            c_handler: handler_ptr,
+            c_handler: FluxPtr::create_owned(handler_ptr, flux_msg_handler_destroy)?,
             _cb_box: Some(callback),
-            should_drop: true,
         })
     }
 
     pub fn start(&self) -> Result<()> {
-        if self.c_handler.is_null() {
-            return Err(FluxError::Logic(
-                "Cannot start a message handler with a NULL internal pointer".to_string(),
-            ));
-        }
         unsafe {
-            flux_msg_handler_start(self.c_handler);
+            flux_msg_handler_start(self.c_handler.as_mut_ptr());
         }
         Ok(())
     }
 
     pub fn stop(&self) -> Result<()> {
-        if self.c_handler.is_null() {
-            return Err(FluxError::Logic(
-                "Cannot stop a message handler with a NULL internal pointer".to_string(),
-            ));
-        }
         unsafe {
-            flux_msg_handler_stop(self.c_handler);
+            flux_msg_handler_stop(self.c_handler.as_mut_ptr());
         }
         Ok(())
     }
 
     pub fn allow_rolemask(&mut self, rolemask: MessageRolemask) -> Result<()> {
-        if self.c_handler.is_null() {
-            return Err(FluxError::Logic(
-                "Cannot add to rolemask whitelist with a NULL internal pointer".to_string(),
-            ));
-        }
         unsafe {
-            flux_msg_handler_allow_rolemask(self.c_handler, rolemask.bits());
+            flux_msg_handler_allow_rolemask(self.c_handler.as_mut_ptr(), rolemask.bits());
         }
         Ok(())
     }
 
     pub fn deny_rolemask(&mut self, rolemask: MessageRolemask) -> Result<()> {
-        if self.c_handler.is_null() {
-            return Err(FluxError::Logic(
-                "Cannot add to rolemask blacklist with a NULL internal pointer".to_string(),
-            ));
-        }
         unsafe {
-            flux_msg_handler_deny_rolemask(self.c_handler, rolemask.bits());
+            flux_msg_handler_deny_rolemask(self.c_handler.as_mut_ptr(), rolemask.bits());
         }
         Ok(())
     }
 }
 
-impl Drop for MsgHandler {
-    fn drop(&mut self) {
-        if !self.c_handler.is_null() && self.should_drop {
-            unsafe {
-                flux_msg_handler_destroy(self.c_handler);
-            }
-        }
+unsafe impl BorrowFluxPtr for MsgHandler {
+    type CType = flux_msg_handler_t;
+    type FromRawArgs = ();
+
+    unsafe fn borrow_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
+        Ok(Self {
+            c_handler: FluxPtr::create_borrowed(ptr, flux_msg_handler_destroy)?,
+            _cb_box: None,
+        })
     }
 }
+
+unsafe impl FromFluxPtr for MsgHandler {
+    unsafe fn from_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
+        Ok(Self {
+            c_handler: FluxPtr::create_owned(ptr, flux_msg_handler_destroy)?,
+            _cb_box: None,
+        })
+    }
+}
+
+default_impl_as_flux_ptr!(MsgHandler, flux_msg_handler_t, c_handler);
 
 pub struct MsgHandlerSpec {
     pub typemask: MessageType,

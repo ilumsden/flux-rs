@@ -7,7 +7,8 @@ use flux_sys::core::{
 
 use bitflags::bitflags;
 
-use crate::error::{check_ptr, FluxError, Result};
+use crate::error::{check_ptr, Result};
+use crate::flux_ptr_management::FromFluxPtrNoArgs;
 use crate::future::FluxFuture;
 use crate::handle::FluxHandle;
 use crate::job::job::Job;
@@ -29,20 +30,21 @@ pub fn submit_async(
     jobspec: &Jobspec,
     urgency: Option<JobUrgency>,
     flags: Option<JobSubmitFlags>,
-) -> Result<FluxFuture> {
-    if handle.h.is_null() {
-        return Err(FluxError::Logic(
-            "Cannot submit a job when the Flux handle is NULL".to_string(),
-        ));
-    }
+) -> Result<FluxFuture<'static>> {
     let serialized_jobspec = serde_json::to_string(jobspec)?;
     let c_serialized_jobspec = CString::new(serialized_jobspec)?;
     let c_urgency: i32 = urgency.unwrap_or(JobUrgency::DEFAULT).into();
     let c_flags: i32 = flags.map(|f| f.bits() as i32).unwrap_or(0);
-    let future_ptr =
-        unsafe { flux_job_submit(handle.h, c_serialized_jobspec.as_ptr(), c_urgency, c_flags) };
+    let future_ptr = unsafe {
+        flux_job_submit(
+            handle.h.as_mut_ptr(),
+            c_serialized_jobspec.as_ptr(),
+            c_urgency,
+            c_flags,
+        )
+    };
     check_ptr(future_ptr)?;
-    Ok(FluxFuture::from(future_ptr))
+    unsafe { FluxFuture::from_ptr(future_ptr) }
 }
 
 pub fn submit<'h, 'j>(

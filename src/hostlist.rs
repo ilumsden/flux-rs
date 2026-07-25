@@ -12,19 +12,22 @@ use serde::de::{self, Deserialize, Deserializer, Visitor};
 use serde::ser::{self, Serialize, Serializer};
 
 use crate::error::{check_ptr, check_rc, FluxError, Result};
+use crate::flux_ptr_management::{default_impl_as_flux_ptr, BorrowFluxPtr, FluxPtr, FromFluxPtr};
 
 /// A struct representing a Flux Idset.
 ///
 /// The API for this struct is inspired by Rust's `Vec` and `LinkedList` collections.
 pub struct Hostlist {
-    c_hostlist: *mut hostlist,
+    c_hostlist: FluxPtr<hostlist>,
 }
 
 impl Hostlist {
     pub fn new() -> Result<Self> {
         let ptr = unsafe { hostlist_create() };
         check_ptr(ptr)?;
-        Ok(Self { c_hostlist: ptr })
+        Ok(Self {
+            c_hostlist: FluxPtr::create_owned(ptr, hostlist_destroy)?,
+        })
     }
 
     pub fn try_clone(&self) -> Result<Self> {
@@ -32,42 +35,44 @@ impl Hostlist {
     }
 
     pub fn encode(&self) -> Result<String> {
-        let ptr = unsafe { hostlist_encode(self.c_hostlist) };
+        let ptr = unsafe { hostlist_encode(self.c_hostlist.as_mut_ptr()) };
         check_ptr(ptr)?;
         Ok(unsafe { CStr::from_ptr(ptr).to_str()?.to_owned() })
     }
 
     pub fn push(&mut self, new_host: &str) -> Result<()> {
         let c_new_host = CString::new(new_host)?;
-        let rc = unsafe { hostlist_append(self.c_hostlist, c_new_host.as_ptr()) };
+        let rc = unsafe { hostlist_append(self.c_hostlist.as_mut_ptr(), c_new_host.as_ptr()) };
         check_rc(rc)
     }
 
     pub fn append(&mut self, other: &Hostlist) -> Result<usize> {
-        let rc = unsafe { hostlist_append_list(self.c_hostlist, other.c_hostlist) };
+        let rc = unsafe {
+            hostlist_append_list(self.c_hostlist.as_mut_ptr(), other.c_hostlist.as_mut_ptr())
+        };
         check_rc(rc)?;
         Ok(rc as usize)
     }
 
     pub fn len(&self) -> usize {
-        unsafe { hostlist_count(self.c_hostlist) as usize }
+        unsafe { hostlist_count(self.c_hostlist.as_mut_ptr()) as usize }
     }
 
     pub fn dedup(&mut self) {
         unsafe {
-            hostlist_uniq(self.c_hostlist);
+            hostlist_uniq(self.c_hostlist.as_mut_ptr());
         }
     }
 
     pub fn sort(&mut self) {
         unsafe {
-            hostlist_sort(self.c_hostlist);
+            hostlist_sort(self.c_hostlist.as_mut_ptr());
         }
     }
 
     pub fn find(&mut self, hostname: &str) -> Result<Option<usize>> {
         let c_hostname = CString::new(hostname)?;
-        let pos = unsafe { hostlist_find(self.c_hostlist, c_hostname.as_ptr()) };
+        let pos = unsafe { hostlist_find(self.c_hostlist.as_mut_ptr(), c_hostname.as_ptr()) };
         if pos == -1 {
             Ok(None)
         } else {
@@ -76,7 +81,7 @@ impl Hostlist {
     }
 
     pub fn nth(&mut self, n: usize) -> Option<String> {
-        let ptr = unsafe { hostlist_nth(self.c_hostlist, n as i32) };
+        let ptr = unsafe { hostlist_nth(self.c_hostlist.as_mut_ptr(), n as i32) };
         if ptr.is_null() {
             return None;
         }
@@ -87,7 +92,7 @@ impl Hostlist {
         if self.nth(n).is_none() {
             return false;
         }
-        let rc = unsafe { hostlist_remove_current(self.c_hostlist) };
+        let rc = unsafe { hostlist_remove_current(self.c_hostlist.as_mut_ptr()) };
         rc == 1
     }
 
@@ -95,7 +100,7 @@ impl Hostlist {
         if self.find(hostname)?.is_none() {
             return Ok(false);
         }
-        let rc = unsafe { hostlist_remove_current(self.c_hostlist) };
+        let rc = unsafe { hostlist_remove_current(self.c_hostlist.as_mut_ptr()) };
         Ok(rc == 1)
     }
 
@@ -126,7 +131,9 @@ impl std::str::FromStr for Hostlist {
         let c_str = CString::new(s)?;
         let ptr = unsafe { hostlist_decode(c_str.as_ptr()) };
         check_ptr(ptr)?;
-        Ok(Self { c_hostlist: ptr })
+        Ok(Self {
+            c_hostlist: FluxPtr::create_owned(ptr, hostlist_destroy)?,
+        })
     }
 }
 
@@ -144,23 +151,34 @@ impl TryFrom<&Hostlist> for Hostlist {
     type Error = FluxError;
 
     fn try_from(value: &Hostlist) -> Result<Self> {
-        let new_ptr = unsafe { hostlist_copy(value.c_hostlist) };
+        let new_ptr = unsafe { hostlist_copy(value.c_hostlist.as_mut_ptr()) };
         check_ptr(new_ptr)?;
         Ok(Self {
-            c_hostlist: new_ptr,
+            c_hostlist: FluxPtr::create_owned(new_ptr, hostlist_destroy)?,
         })
     }
 }
 
-impl Drop for Hostlist {
-    fn drop(&mut self) {
-        if !self.c_hostlist.is_null() {
-            unsafe {
-                hostlist_destroy(self.c_hostlist);
-            }
-        }
+unsafe impl BorrowFluxPtr for Hostlist {
+    type CType = hostlist;
+    type FromRawArgs = ();
+
+    unsafe fn borrow_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
+        Ok(Self {
+            c_hostlist: FluxPtr::create_borrowed(ptr, hostlist_destroy)?,
+        })
     }
 }
+
+unsafe impl FromFluxPtr for Hostlist {
+    unsafe fn from_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
+        Ok(Self {
+            c_hostlist: FluxPtr::create_owned(ptr, hostlist_destroy)?,
+        })
+    }
+}
+
+default_impl_as_flux_ptr!(Hostlist, hostlist, c_hostlist);
 
 impl Serialize for Hostlist {
     fn serialize<S>(&self, serializer: S) -> std::prelude::v1::Result<S::Ok, S::Error>
@@ -207,9 +225,9 @@ impl<'a> HostlistCursor<'a> {
     pub fn next(&mut self) -> Option<String> {
         let ptr = if self.is_first {
             self.is_first = false;
-            unsafe { hostlist_first(self.hostlist.c_hostlist) }
+            unsafe { hostlist_first(self.hostlist.c_hostlist.as_mut_ptr()) }
         } else {
-            unsafe { hostlist_next(self.hostlist.c_hostlist) }
+            unsafe { hostlist_next(self.hostlist.c_hostlist.as_mut_ptr()) }
         };
         if ptr.is_null() {
             None
@@ -219,12 +237,12 @@ impl<'a> HostlistCursor<'a> {
     }
 
     pub fn remove_current(&mut self) -> bool {
-        let rc = unsafe { hostlist_remove_current(self.hostlist.c_hostlist) };
+        let rc = unsafe { hostlist_remove_current(self.hostlist.c_hostlist.as_mut_ptr()) };
         rc == 1
     }
 
     pub fn current(&self) -> Option<String> {
-        let ptr = unsafe { hostlist_current(self.hostlist.c_hostlist) };
+        let ptr = unsafe { hostlist_current(self.hostlist.c_hostlist.as_mut_ptr()) };
         if ptr.is_null() {
             None
         } else {
@@ -244,9 +262,9 @@ impl Iterator for IntoIter {
     fn next(&mut self) -> Option<Self::Item> {
         let ptr = if self.is_first {
             self.is_first = false;
-            unsafe { hostlist_first(self.hostlist.c_hostlist) }
+            unsafe { hostlist_first(self.hostlist.c_hostlist.as_mut_ptr()) }
         } else {
-            unsafe { hostlist_next(self.hostlist.c_hostlist) }
+            unsafe { hostlist_next(self.hostlist.c_hostlist.as_mut_ptr()) }
         };
         if ptr.is_null() {
             None

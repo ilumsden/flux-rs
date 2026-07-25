@@ -9,7 +9,7 @@ use crate::job::jobid::JobId;
 use crate::utils::impl_async_future_wrapper;
 
 pub struct JobStatus {
-    future: FluxFuture,
+    future: FluxFuture<'static>,
     id: Option<JobId>,
     success: Option<bool>,
     errstr: Option<String>,
@@ -17,11 +17,6 @@ pub struct JobStatus {
 
 impl JobStatus {
     fn update_with_status(&mut self) -> Result<()> {
-        if self.future.c_future.is_null() {
-            return Err(FluxError::Logic(
-                "Cannot get job status when the future is NULL".to_string(),
-            ));
-        }
         if self.id.is_some() {
             return Ok(());
         }
@@ -30,14 +25,17 @@ impl JobStatus {
         let mut raw_jobid: flux_jobid_t = 0;
         let mut rc = unsafe {
             flux_job_wait_get_status(
-                self.future.c_future,
+                self.future.c_future.as_mut_ptr(),
                 &mut success as *mut bool,
                 &mut errstr_ptr as *mut *const c_char,
             )
         };
         check_rc(rc)?;
         rc = unsafe {
-            flux_job_wait_get_id(self.future.c_future, &mut raw_jobid as *mut flux_jobid_t)
+            flux_job_wait_get_id(
+                self.future.c_future.as_mut_ptr(),
+                &mut raw_jobid as *mut flux_jobid_t,
+            )
         };
         check_rc(rc)?;
         self.id = Some(JobId::from(raw_jobid));
@@ -72,7 +70,7 @@ impl JobStatus {
 }
 
 impl Deref for JobStatus {
-    type Target = FluxFuture;
+    type Target = FluxFuture<'static>;
 
     fn deref(&self) -> &Self::Target {
         &self.future
@@ -85,8 +83,8 @@ impl DerefMut for JobStatus {
     }
 }
 
-impl From<FluxFuture> for JobStatus {
-    fn from(value: FluxFuture) -> Self {
+impl From<FluxFuture<'static>> for JobStatus {
+    fn from(value: FluxFuture<'static>) -> Self {
         Self {
             future: value,
             id: None,

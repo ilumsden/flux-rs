@@ -5,8 +5,9 @@ use flux_sys::core::{flux_request_decode_raw, flux_request_encode_raw};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::error::{check_ptr, check_rc, FluxError, Result};
+use crate::error::{check_ptr, check_rc, Result};
 use crate::msg::Message;
+use crate::FromFluxPtrNoArgs;
 
 pub struct RawDecodedRequestResponse<'a> {
     pub topic: &'a str,
@@ -39,7 +40,7 @@ impl Request {
         };
         check_ptr(msg_ptr)?;
         Ok(Request {
-            msg: Message::from(msg_ptr),
+            msg: unsafe { Message::from_ptr(msg_ptr)? },
         })
     }
 
@@ -54,17 +55,12 @@ impl Request {
     }
 
     pub fn decode(&self) -> Result<RawDecodedRequestResponse<'_>> {
-        if self.msg.c_msg.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot decode request with a NULL message",
-            )));
-        }
         let mut topic_ptr: *const c_char = std::ptr::null_mut();
         let mut data_ptr: *const c_void = std::ptr::null_mut();
         let mut size: i32 = 0;
         let rc = unsafe {
             flux_request_decode_raw(
-                self.msg.c_msg,
+                self.msg.c_msg.as_mut_ptr(),
                 &mut topic_ptr as *mut *const c_char,
                 &mut data_ptr as *mut *const c_void,
                 &mut size as *mut i32,

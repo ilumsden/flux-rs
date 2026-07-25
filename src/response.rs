@@ -14,6 +14,7 @@ use crate::request::{
     DeserializedDecodedRequestResponse, JsonDecodedRequestResponse, RawDecodedRequestResponse,
     Request,
 };
+use crate::FromFluxPtrNoArgs;
 
 pub struct Response {
     msg: Message,
@@ -21,17 +22,12 @@ pub struct Response {
 
 impl Response {
     pub fn decode(&self) -> Result<RawDecodedRequestResponse<'_>> {
-        if self.msg.c_msg.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot decode a response message with a NULL internal pointer",
-            )));
-        }
         let mut topic: *const c_char = std::ptr::null_mut();
         let mut data: *const c_void = std::ptr::null_mut();
         let mut len: i32 = 0;
         let mut rc = unsafe {
             flux_response_decode_raw(
-                self.msg.c_msg,
+                self.msg.c_msg.as_mut_ptr(),
                 &mut topic as *mut *const c_char,
                 &mut data as *mut *const c_void,
                 &mut len as *mut i32,
@@ -41,7 +37,10 @@ impl Response {
             let last_os_error = std::io::Error::last_os_error();
             let mut errmsg_ptr: *const c_char = std::ptr::null_mut();
             rc = unsafe {
-                flux_response_decode_error(self.msg.c_msg, &mut errmsg_ptr as *mut *const c_char)
+                flux_response_decode_error(
+                    self.msg.c_msg.as_mut_ptr(),
+                    &mut errmsg_ptr as *mut *const c_char,
+                )
             };
             if rc == -1 || errmsg_ptr.is_null() {
                 return Err(FluxError::System(last_os_error));
@@ -116,7 +115,7 @@ impl Response {
         };
         check_ptr(msg_ptr)?;
         Ok(Response {
-            msg: Message::from(msg_ptr),
+            msg: unsafe { Message::from_ptr(msg_ptr)? },
         })
     }
 
@@ -143,7 +142,7 @@ impl Response {
             unsafe { flux_response_encode_error(c_topic.as_ptr(), errnum, c_errmsg.as_ptr()) };
         check_ptr(msg_ptr)?;
         Ok(Response {
-            msg: Message::from(msg_ptr),
+            msg: unsafe { Message::from_ptr(msg_ptr)? },
         })
     }
 
@@ -155,15 +154,11 @@ impl Response {
     }
 
     pub fn derive_raw_error(request: &Request, errnum: Option<i32>) -> Result<Response> {
-        if request.msg.c_msg.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot derive a Response from a Request when the underlying message is NULL",
-            )));
-        }
-        let msg_ptr = unsafe { flux_response_derive(request.msg.c_msg, errnum.unwrap_or(0)) };
+        let msg_ptr =
+            unsafe { flux_response_derive(request.msg.c_msg.as_mut_ptr(), errnum.unwrap_or(0)) };
         check_ptr(msg_ptr)?;
         Ok(Response {
-            msg: Message::from(msg_ptr),
+            msg: unsafe { Message::from_ptr(msg_ptr)? },
         })
     }
 }

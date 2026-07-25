@@ -6,6 +6,7 @@ use flux_sys::core::{
 };
 
 use crate::error::{check_ptr, FluxError, Result};
+use crate::flux_ptr_management::{BorrowFluxPtrNoArgs, FromFluxPtrNoArgs};
 use crate::reactor::Reactor;
 use crate::watcher::base::create_watcher_specialization;
 use crate::watcher::{RawWatcher, WatcherEvents};
@@ -30,9 +31,16 @@ impl<'a> FdWatcher<'a> {
         unsafe {
             flux_reactor_active_incref(reactor_ptr);
         }
-        let reactor = Reactor::from(reactor_ptr);
+        let reactor = match unsafe { Reactor::from_ptr(reactor_ptr) } {
+            Ok(reac) => reac,
+            Err(_) => return,
+        };
+        let watcher = match unsafe { RawWatcher::borrow_ptr(watcher_ptr) } {
+            Ok(w) => w,
+            Err(_) => return,
+        };
         let watcher = FdWatcher {
-            watcher: RawWatcher::from(watcher_ptr),
+            watcher,
             _borrowed_fd: None,
             _reactor: &reactor,
             _watch_cb: None,
@@ -54,11 +62,6 @@ impl<'a> FdWatcher<'a> {
         T: AsFd,
         F: FnMut(&Reactor, &FdWatcher, WatcherEvents) + Send + 'static,
     {
-        if reactor.c_reactor.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot create a file descriptor watcher with a NULL reactor",
-            )));
-        }
         let mut watch_cb: Option<Box<dyn FnMut(&Reactor, &FdWatcher, WatcherEvents)>> =
             Some(Box::new(callback));
         let cb_ref = watch_cb.as_mut().ok_or(FluxError::Logic(String::from(
@@ -69,7 +72,7 @@ impl<'a> FdWatcher<'a> {
         let borrowed_fd = fd_source.as_fd();
         let watcher_ptr = unsafe {
             flux_fd_watcher_create(
-                reactor.c_reactor,
+                reactor.c_reactor.as_mut_ptr(),
                 borrowed_fd.as_raw_fd(),
                 events.bits() as i32,
                 Some(Self::trampoline),
@@ -78,7 +81,7 @@ impl<'a> FdWatcher<'a> {
         };
         check_ptr(watcher_ptr)?;
         Ok(Self {
-            watcher: RawWatcher::from(watcher_ptr),
+            watcher: unsafe { RawWatcher::from_ptr(watcher_ptr)? },
             _borrowed_fd: Some(borrowed_fd),
             _reactor: reactor,
             _watch_cb: watch_cb,

@@ -7,6 +7,7 @@ use std::task::{Context, Poll, Waker};
 use flux_sys::core::{flux_future_incref, flux_future_t, flux_future_then};
 
 use crate::error::{FluxError, Result};
+use crate::flux_ptr_management::FromFluxPtrNoArgs;
 use crate::future::sync_future::FluxFuture;
 
 /// A struct providing the shared state between the Flux runtime and Rust async runtime
@@ -14,18 +15,22 @@ struct SharedState {
     /// The waker for the Rust async runtime
     waker: Option<Waker>,
     /// The result of the Flux future. This will either store the real result or an error message.
-    result: Option<FluxFuture>,
+    result: Option<FluxFuture<'static>>,
 }
 
 /// A Rust Future wrapper around `flux_future_t`.
+///
+/// This struct is always constructed with a `FluxFuture<'static>`, meaning the
+/// Rust object must have ownership over the underlying `flux_future_t`. If you have a more
+/// generic `FluxFuture<'a>`, you should first call `FluxFuture::to_owned` to get a `FluxFuture<'static>`.
 pub struct AsyncFluxFuture {
-    _inner: FluxFuture,
+    _inner: FluxFuture<'static>,
     state: Arc<Mutex<SharedState>>,
 }
 
 impl AsyncFluxFuture {
     /// Creates a new AsyncFluxFuture from a Flux future.
-    pub fn new(future: FluxFuture) -> Result<Self> {
+    pub fn new(future: FluxFuture<'static>) -> Result<Self> {
         // Create the shared state between Flux runtime and Rust async runtime
         let state = Arc::new(Mutex::new(SharedState {
             waker: None,
@@ -37,14 +42,11 @@ impl AsyncFluxFuture {
         // Convert the Arc into a C "void *" to satisfy the Flux API
         let arg = Arc::into_raw(state_for_c) as *mut c_void;
 
-        let future_ptr = future.c_future;
-
-        if future_ptr.is_null() {
-            return Err(FluxError::Logic(String::from("Cannot create an async Flux future handle when the provided FluxFuture has a NULL internal handle")));
-        }
+        let future_ptr = &future.c_future;
 
         // Register the continuation callback with no timeout (-1.0)
-        let rc = unsafe { flux_future_then(future_ptr, -1.0, Some(Self::c_callback), arg) };
+        let rc =
+            unsafe { flux_future_then(future_ptr.as_mut_ptr(), -1.0, Some(Self::c_callback), arg) };
 
         if rc == -1 {
             // If `then` fails, we must reclaim the Arc to avoid a memory leak
@@ -69,7 +71,10 @@ impl AsyncFluxFuture {
 
         // Update the shared state with the result
         let mut lock = state.lock().unwrap();
-        lock.result = Some(FluxFuture::from(f));
+        lock.result = Some(
+            unsafe { FluxFuture::from_ptr(f) }
+                .expect("Got a NULL future pointer in a Flux future callback"),
+        );
 
         // Wake the Rust async runtime to make progress
         if let Some(waker) = lock.waker.take() {
@@ -79,7 +84,7 @@ impl AsyncFluxFuture {
 }
 
 impl Future for AsyncFluxFuture {
-    type Output = FluxFuture;
+    type Output = FluxFuture<'static>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // Lock the shared state for the async runtime

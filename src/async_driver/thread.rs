@@ -32,7 +32,7 @@ impl TryFrom<Arc<Mutex<FluxHandle>>> for ThreadDriver {
 impl AsyncDriver for ThreadDriver {
     fn spawn(&mut self) -> Result<()> {
         if let Some(driver) = self.driver.as_mut() {
-            driver.spawn();
+            driver.spawn()?;
         }
         Ok(())
     }

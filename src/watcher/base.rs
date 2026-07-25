@@ -5,7 +5,9 @@ use flux_sys::core::{
 };
 
 use crate::error::{FluxError, Result};
-use crate::AsRawFluxPtr;
+use crate::flux_ptr_management::{
+    default_impl_as_flux_ptr, AsFluxPtr, BorrowFluxPtr, FluxPtr, FromFluxPtr,
+};
 
 bitflags! {
     #[repr(transparent)]
@@ -18,9 +20,9 @@ bitflags! {
     }
 }
 
-pub trait Watcher: AsRawFluxPtr<flux_watcher_t> {
+pub trait Watcher: AsFluxPtr<CType = flux_watcher_t> {
     fn start(&self) -> Result<()> {
-        let watcher_ptr = self.as_flux_ptr();
+        let watcher_ptr = self.as_mut_ptr();
         if watcher_ptr.is_null() {
             return Err(FluxError::Logic(String::from(
                 "Cannot start a watcher with a NULL pointer",
@@ -33,7 +35,7 @@ pub trait Watcher: AsRawFluxPtr<flux_watcher_t> {
     }
 
     fn stop(&self) -> Result<()> {
-        let watcher_ptr = self.as_flux_ptr();
+        let watcher_ptr = self.as_mut_ptr();
         if watcher_ptr.is_null() {
             return Err(FluxError::Logic(String::from(
                 "Cannot stop a watcher with a NULL pointer",
@@ -46,7 +48,7 @@ pub trait Watcher: AsRawFluxPtr<flux_watcher_t> {
     }
 
     fn next_wakeup(&self) -> Result<f64> {
-        let watcher_ptr = self.as_flux_ptr();
+        let watcher_ptr = self.as_mut_ptr();
         if watcher_ptr.is_null() {
             return Err(FluxError::Logic(String::from(
                 "Cannot get next wakup from a watcher with a NULL pointer",
@@ -58,30 +60,29 @@ pub trait Watcher: AsRawFluxPtr<flux_watcher_t> {
 
 // TODO consider making RawWatcher support custom creation with flux_watcher_create
 pub struct RawWatcher {
-    pub(crate) c_watcher: *mut flux_watcher_t,
+    pub(crate) c_watcher: FluxPtr<flux_watcher_t>,
 }
 
-impl AsRawFluxPtr<flux_watcher_t> for RawWatcher {
-    fn as_flux_ptr(&self) -> *mut flux_watcher_t {
-        self.c_watcher
+unsafe impl BorrowFluxPtr for RawWatcher {
+    type CType = flux_watcher_t;
+    type FromRawArgs = ();
+
+    unsafe fn borrow_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
+        Ok(Self {
+            c_watcher: FluxPtr::create_borrowed(ptr, flux_watcher_destroy)?,
+        })
     }
 }
 
-impl From<*mut flux_watcher_t> for RawWatcher {
-    fn from(value: *mut flux_watcher_t) -> Self {
-        Self { c_watcher: value }
+unsafe impl FromFluxPtr for RawWatcher {
+    unsafe fn from_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
+        Ok(Self {
+            c_watcher: FluxPtr::create_owned(ptr, flux_watcher_destroy)?,
+        })
     }
 }
 
-impl Drop for RawWatcher {
-    fn drop(&mut self) {
-        if !self.c_watcher.is_null() {
-            unsafe {
-                flux_watcher_destroy(self.c_watcher);
-            }
-        }
-    }
-}
+default_impl_as_flux_ptr!(RawWatcher, flux_watcher_t, c_watcher);
 
 impl Watcher for RawWatcher {}
 
@@ -96,9 +97,11 @@ macro_rules! create_watcher_specialization {
             $( $field_vis $field_name : $field_type, )*
         }
 
-        impl $(<$life>)? $crate::AsRawFluxPtr<flux_sys::core::flux_watcher_t> for $struct_name $(<$life>)? {
-            fn as_flux_ptr(&self) -> *mut flux_sys::core::flux_watcher_t {
-                self.watcher.as_flux_ptr()
+        unsafe impl $(<$life>)? $crate::AsFluxPtr for $struct_name $(<$life>)? {
+            type CType = flux_sys::core::flux_watcher_t;
+
+            fn as_mut_ptr(&self) -> *mut flux_sys::core::flux_watcher_t {
+                self.watcher.as_mut_ptr()
             }
         }
 

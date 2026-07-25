@@ -7,6 +7,7 @@ use flux_sys::core::{
 };
 
 use crate::error::{check_ptr, FluxError, Result};
+use crate::flux_ptr_management::FromFluxPtrNoArgs;
 use crate::future::FluxFuture;
 use crate::handle::FluxHandle;
 use crate::job::jobid::JobId;
@@ -56,9 +57,6 @@ pub struct Job<'a> {
 
 impl<'a> Job<'a> {
     pub fn new(handle: &'a FluxHandle, id: JobId) -> Result<Self> {
-        if handle.h.is_null() {
-            return Err(FluxError::Logic("Cannot create a Job object from a NULL Flux handle. Either provide a valid handle, or invoke functions from 'flux-sys' directly".to_string()));
-        }
         Ok(Self { handle, id })
     }
 
@@ -74,25 +72,19 @@ impl<'a> Job<'a> {
     }
 
     pub fn wait(&self) -> Result<JobStatus> {
-        if self.handle.h.is_null() {
-            return Err(FluxError::Logic(
-                "Cannot wait on a job with a NULL Flux handle".to_string(),
-            ));
-        }
-        let future_ptr = unsafe { flux_job_wait(self.handle.h, *self.id) };
+        let future_ptr = unsafe { flux_job_wait(self.handle.h.as_mut_ptr(), *self.id) };
         check_ptr(future_ptr)?;
-        Ok(JobStatus::from(FluxFuture::from(future_ptr)))
+        Ok(JobStatus::from(unsafe {
+            FluxFuture::from_ptr(future_ptr)?
+        }))
     }
 
     pub fn result(&self) -> Result<JobResult> {
-        if self.handle.h.is_null() {
-            return Err(FluxError::Logic(
-                "Cannot get result of a job with a NULL Flux handle".to_string(),
-            ));
-        }
-        let future_ptr = unsafe { flux_job_result(self.handle.h, *self.id, 0) };
+        let future_ptr = unsafe { flux_job_result(self.handle.h.as_mut_ptr(), *self.id, 0) };
         check_ptr(future_ptr)?;
-        Ok(JobResult::from(FluxFuture::from(future_ptr)))
+        Ok(JobResult::from(unsafe {
+            FluxFuture::from_ptr(future_ptr)?
+        }))
     }
 
     // TODO implement something related to watch_eventlog, list_id
@@ -103,17 +95,12 @@ impl<'a> Job<'a> {
         message: Option<&str>,
         exception_type: Option<&str>,
     ) -> Result<FluxFuture> {
-        if self.handle.h.is_null() {
-            return Err(FluxError::Logic(
-                "Cannot raise an exception on a job using a NULL Flux handle".to_string(),
-            ));
-        }
         let sev = severity.unwrap_or(JobEventSeverity::FATAL);
         let c_msg = message.map(|m| CString::new(m)).transpose()?;
         let c_exc_type = CString::new(exception_type.unwrap_or("cancel"))?;
         let future_ptr = unsafe {
             flux_job_raise(
-                self.handle.h,
+                self.handle.h.as_mut_ptr(),
                 *self.id,
                 c_exc_type.as_ptr(),
                 sev.as_raw() as i32,
@@ -121,19 +108,14 @@ impl<'a> Job<'a> {
             )
         };
         check_ptr(future_ptr)?;
-        Ok(FluxFuture::from(future_ptr))
+        unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
     pub fn cancel(&self, reason: Option<&str>) -> Result<FluxFuture> {
-        if self.handle.h.is_null() {
-            return Err(FluxError::Logic(
-                "Cannot cancel a job using a NULL Flux handle".to_string(),
-            ));
-        }
         let c_reason = reason.map(|r| CString::new(r)).transpose()?;
         let future_ptr = unsafe {
             flux_job_cancel(
-                self.handle.h,
+                self.handle.h.as_mut_ptr(),
                 *self.id,
                 c_reason
                     .map(|cstr| cstr.as_ptr())
@@ -141,30 +123,22 @@ impl<'a> Job<'a> {
             )
         };
         check_ptr(future_ptr)?;
-        Ok(FluxFuture::from(future_ptr))
+        unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
     pub fn kill(&self, signal: SignalCode) -> Result<FluxFuture> {
-        if self.handle.h.is_null() {
-            return Err(FluxError::Logic(
-                "Cannot kill a job using a NULL Flux handle".to_string(),
-            ));
-        }
-        let future_ptr = unsafe { flux_job_kill(self.handle.h, *self.id, signal.as_raw()) };
+        let future_ptr =
+            unsafe { flux_job_kill(self.handle.h.as_mut_ptr(), *self.id, signal.as_raw()) };
         check_ptr(future_ptr)?;
-        Ok(FluxFuture::from(future_ptr))
+        unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
     pub fn set_urgency(&mut self, urgency: JobUrgency) -> Result<FluxFuture> {
-        if self.handle.h.is_null() {
-            return Err(FluxError::Logic(
-                "Cannot set urgency for a job using a NULL Flux handle".to_string(),
-            ));
-        }
-        let future_ptr =
-            unsafe { flux_job_set_urgency(self.handle.h, *self.id, urgency.as_u8() as i32) };
+        let future_ptr = unsafe {
+            flux_job_set_urgency(self.handle.h.as_mut_ptr(), *self.id, urgency.as_u8() as i32)
+        };
         check_ptr(future_ptr)?;
-        Ok(FluxFuture::from(future_ptr))
+        unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
     pub fn get_kvs_dir(&self) -> Result<KvsDir> {
@@ -294,7 +268,7 @@ impl<'a> Job<'a> {
     }
 }
 
-impl<'a> TryFrom<(&'a FluxHandle, FluxFuture)> for Job<'a> {
+impl<'a> TryFrom<(&'a FluxHandle, FluxFuture<'_>)> for Job<'a> {
     type Error = FluxError;
 
     fn try_from(value: (&'a FluxHandle, FluxFuture)) -> Result<Self> {

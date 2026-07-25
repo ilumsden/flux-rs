@@ -7,23 +7,21 @@ use flux_sys::core::{
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::error::{FluxError, Result};
+use crate::error::{check_ptr, check_rc, FluxError, Result};
+use crate::flux_ptr_management::{default_impl_as_flux_ptr, BorrowFluxPtr, FluxPtr, FromFluxPtr};
 use crate::kvs::flags::KvsFlags;
-use crate::AsRawFluxPtr;
 
 pub struct KvsTransaction {
-    pub(crate) c_txn: *mut flux_kvs_txn_t,
+    pub(crate) c_txn: FluxPtr<flux_kvs_txn_t>,
     pub(crate) base_path: Option<String>,
 }
 
 impl KvsTransaction {
     pub fn new() -> Result<Self> {
         let txn = unsafe { flux_kvs_txn_create() };
-        if txn.is_null() {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        }
+        check_ptr(txn)?;
         Ok(Self {
-            c_txn: txn,
+            c_txn: FluxPtr::create_owned(txn, flux_kvs_txn_destroy)?,
             base_path: None,
         })
     }
@@ -35,11 +33,6 @@ impl KvsTransaction {
     }
 
     pub fn put(&mut self, key: &str, data: &[u8], flags: KvsFlags) -> Result<()> {
-        if self.c_txn.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot put a string into a NULL KVS transaction",
-            )));
-        }
         let full_key = if let Some(base) = &self.base_path {
             format!("{}.{}", base, key)
         } else {
@@ -49,17 +42,14 @@ impl KvsTransaction {
         let rc = unsafe {
             // TODO figure out why flux-sys has the length field be an int (i.e., i32) instead of size_t (i.e., usize)
             flux_kvs_txn_put_raw(
-                self.c_txn,
+                self.c_txn.as_mut_ptr(),
                 flags.bits() as i32,
                 c_key.as_ptr(),
                 data.as_ptr() as *const c_void,
                 data.len() as i32,
             )
         };
-        if rc == -1 {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        }
-        Ok(())
+        check_rc(rc)
     }
 
     pub fn put_json(&mut self, key: &str, value: &Value, flags: KvsFlags) -> Result<()> {
@@ -78,41 +68,29 @@ impl KvsTransaction {
     }
 
     pub fn mkdir(&mut self, key: &str, flags: KvsFlags) -> Result<()> {
-        if self.c_txn.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot put bytes into a NULL KVS transaction",
-            )));
-        }
         let full_key = if let Some(base) = &self.base_path {
             format!("{}.{}", base, key)
         } else {
             key.to_string()
         };
         let c_key = CString::new(full_key)?;
-        let rc = unsafe { flux_kvs_txn_mkdir(self.c_txn, flags.bits() as i32, c_key.as_ptr()) };
-        if rc == -1 {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        }
-        Ok(())
+        let rc = unsafe {
+            flux_kvs_txn_mkdir(self.c_txn.as_mut_ptr(), flags.bits() as i32, c_key.as_ptr())
+        };
+        check_rc(rc)
     }
 
     pub fn unlink(&mut self, key: &str, flags: KvsFlags) -> Result<()> {
-        if self.c_txn.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot unlink a NULL KVS transaction",
-            )));
-        }
         let full_key = if let Some(base) = &self.base_path {
             format!("{}.{}", base, key)
         } else {
             key.to_string()
         };
         let c_key = CString::new(full_key)?;
-        let rc = unsafe { flux_kvs_txn_unlink(self.c_txn, flags.bits() as i32, c_key.as_ptr()) };
-        if rc == -1 {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        }
-        Ok(())
+        let rc = unsafe {
+            flux_kvs_txn_unlink(self.c_txn.as_mut_ptr(), flags.bits() as i32, c_key.as_ptr())
+        };
+        check_rc(rc)
     }
 
     pub fn symlink(
@@ -122,11 +100,6 @@ impl KvsTransaction {
         namespace: Option<&str>,
         flags: KvsFlags,
     ) -> Result<()> {
-        if self.c_txn.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot symlink a NULL KVS transaction",
-            )));
-        }
         let full_key = if let Some(base) = &self.base_path {
             format!("{}.{}", base, key)
         } else {
@@ -149,7 +122,7 @@ impl KvsTransaction {
         // on whether the Option is "Some" or "None".
         let rc = unsafe {
             flux_kvs_txn_symlink(
-                self.c_txn,
+                self.c_txn.as_mut_ptr(),
                 flags.bits() as i32,
                 c_key.as_ptr(),
                 c_namespace
@@ -158,36 +131,31 @@ impl KvsTransaction {
                 c_target.as_ptr(),
             )
         };
-        if rc == -1 {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        }
-        Ok(())
+        check_rc(rc)
     }
 
     // TODO add wrapper for put_treeobj, if possible
 }
 
-impl Drop for KvsTransaction {
-    fn drop(&mut self) {
-        unsafe {
-            if !self.c_txn.is_null() {
-                flux_kvs_txn_destroy(self.c_txn);
-            }
-        }
-    }
-}
+unsafe impl BorrowFluxPtr for KvsTransaction {
+    type CType = flux_kvs_txn_t;
+    type FromRawArgs = ();
 
-impl From<*mut flux_kvs_txn_t> for KvsTransaction {
-    fn from(value: *mut flux_kvs_txn_t) -> Self {
-        Self {
-            c_txn: value,
+    unsafe fn borrow_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
+        Ok(Self {
+            c_txn: FluxPtr::create_borrowed(ptr, flux_kvs_txn_destroy)?,
             base_path: None,
-        }
+        })
     }
 }
 
-impl AsRawFluxPtr<flux_kvs_txn_t> for KvsTransaction {
-    fn as_flux_ptr(&self) -> *mut flux_kvs_txn_t {
-        self.c_txn
+unsafe impl FromFluxPtr for KvsTransaction {
+    unsafe fn from_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
+        Ok(Self {
+            c_txn: FluxPtr::create_owned(ptr, flux_kvs_txn_destroy)?,
+            base_path: None,
+        })
     }
 }
+
+default_impl_as_flux_ptr!(KvsTransaction, flux_kvs_txn_t, c_txn);

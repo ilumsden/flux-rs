@@ -8,8 +8,8 @@ use flux_sys::core::{
     flux_reactor_t, flux_reactor_time, FLUX_REACTOR_NOWAIT, FLUX_REACTOR_ONCE,
 };
 
-use crate::error::{FluxError, Result};
-use crate::AsRawFluxPtr;
+use crate::error::{check_ptr, check_rc, Result};
+use crate::flux_ptr_management::{default_impl_as_flux_ptr, BorrowFluxPtr, FluxPtr, FromFluxPtr};
 
 bitflags! {
     #[repr(transparent)]
@@ -22,7 +22,7 @@ bitflags! {
 }
 
 pub struct Reactor {
-    pub(crate) c_reactor: *mut flux_reactor_t,
+    pub(crate) c_reactor: FluxPtr<flux_reactor_t>,
 }
 
 unsafe impl Send for Reactor {}
@@ -30,44 +30,29 @@ unsafe impl Send for Reactor {}
 impl Reactor {
     pub fn new(flags: ReactorFlags) -> Result<Self> {
         let reactor_ptr = unsafe { flux_reactor_create(flags.bits() as i32) };
-        if reactor_ptr.is_null() {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        }
+        check_ptr(reactor_ptr)?;
         Ok(Self {
-            c_reactor: reactor_ptr,
+            c_reactor: FluxPtr::create_owned(reactor_ptr, flux_reactor_destroy)?,
         })
     }
 
     pub fn run(&mut self, flags: ReactorFlags) -> Result<()> {
-        if self.c_reactor.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot run a reactor where the internal pointer is NULL",
-            )));
-        }
-        let rc = unsafe { flux_reactor_run(self.c_reactor, flags.bits() as i32) };
-        if rc == -1 {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        }
-        Ok(())
+        let rc = unsafe { flux_reactor_run(self.c_reactor.as_mut_ptr(), flags.bits() as i32) };
+        check_rc(rc)
     }
 
     pub fn stop(&mut self, error_code: Option<std::io::Error>) -> Result<()> {
-        if self.c_reactor.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot stop a reactor where the internal pointer is NULL",
-            )));
-        }
         if let Some(ec) = error_code {
             if let Some(raw_errno_val) = ec.raw_os_error() {
                 set_errno(Errno(raw_errno_val));
                 unsafe {
-                    flux_reactor_stop_error(self.c_reactor);
+                    flux_reactor_stop_error(self.c_reactor.as_mut_ptr());
                 }
                 return Ok(());
             }
         }
         unsafe {
-            flux_reactor_stop(self.c_reactor);
+            flux_reactor_stop(self.c_reactor.as_mut_ptr());
         }
         Ok(())
     }
@@ -77,12 +62,7 @@ impl Reactor {
     /// *Note*: Flux's reactors are based on libev. For more information, see
     /// the documentation for `ev_now`.
     pub fn now(&self) -> Result<f64> {
-        if self.c_reactor.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot query a reactor's time when the internal pointer is NULL",
-            )));
-        }
-        Ok(unsafe { flux_reactor_now(self.c_reactor) })
+        Ok(unsafe { flux_reactor_now(self.c_reactor.as_mut_ptr()) })
     }
 
     /// Update the current reactor time.
@@ -90,12 +70,7 @@ impl Reactor {
     /// *Note*: Flux's reactors are based on libev. For more information, see
     /// the documentation for `ev_now_update`.
     pub fn now_update(&mut self) -> Result<()> {
-        if self.c_reactor.is_null() {
-            return Err(FluxError::Logic(String::from(
-                "Cannot update a reactor's time when the internal pointer is NULL",
-            )));
-        }
-        unsafe { flux_reactor_now_update(self.c_reactor) }
+        unsafe { flux_reactor_now_update(self.c_reactor.as_mut_ptr()) }
         Ok(())
     }
 
@@ -108,40 +83,40 @@ impl Reactor {
     }
 }
 
-impl Drop for Reactor {
-    fn drop(&mut self) {
-        unsafe {
-            if !self.c_reactor.is_null() {
-                flux_reactor_destroy(self.c_reactor);
-            }
-        }
-    }
-}
-
-impl From<*mut flux_reactor_t> for Reactor {
-    fn from(value: *mut flux_reactor_t) -> Self {
-        Self { c_reactor: value }
-    }
-}
-
 impl Clone for Reactor {
     fn clone(&self) -> Self {
-        if !self.c_reactor.is_null() {
-            unsafe {
-                flux_reactor_active_incref(self.c_reactor);
-            }
+        unsafe {
+            flux_reactor_active_incref(self.c_reactor.as_mut_ptr());
         }
         Self {
-            c_reactor: self.c_reactor,
+            c_reactor: FluxPtr::create_owned(self.c_reactor.as_mut_ptr(), flux_reactor_destroy)
+                .expect(
+                "The reactor being cloned has a NULL internal pointer, which shouldn't be possible",
+            ),
         }
     }
 }
 
-impl AsRawFluxPtr<flux_reactor_t> for Reactor {
-    fn as_flux_ptr(&self) -> *mut flux_reactor_t {
-        self.c_reactor
+unsafe impl BorrowFluxPtr for Reactor {
+    type CType = flux_reactor_t;
+    type FromRawArgs = ();
+
+    unsafe fn borrow_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
+        Ok(Self {
+            c_reactor: FluxPtr::create_borrowed(ptr, flux_reactor_destroy)?,
+        })
     }
 }
+
+unsafe impl FromFluxPtr for Reactor {
+    unsafe fn from_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
+        Ok(Self {
+            c_reactor: FluxPtr::create_owned(ptr, flux_reactor_destroy)?,
+        })
+    }
+}
+
+default_impl_as_flux_ptr!(Reactor, flux_reactor_t, c_reactor);
 
 /// A struct for launching a progress thread for the Flux reactor.
 ///
@@ -167,15 +142,19 @@ impl FluxReactorThread {
     }
 
     /// Spawns a background thread to drive the Flux reactor.
-    pub fn spawn(&mut self) {
+    pub fn spawn(&mut self) -> Result<()> {
         let mut reactor_copy = Reactor {
-            c_reactor: self.reactor.c_reactor,
+            c_reactor: FluxPtr::create_borrowed(
+                self.reactor.c_reactor.as_mut_ptr(),
+                flux_reactor_destroy,
+            )?,
         };
         // This thread simply calls `flux_reactor_run` to run indefinitely.
         // If using an async runtime, this thread will ensure the callbacks registered
         // on flux_future_t objects by AsyncFluxFuture will fire.
         let handle = thread::spawn(move || reactor_copy.run(ReactorFlags::NONE));
         self.handle = Some(handle);
+        Ok(())
     }
 
     /// Stops the reactor and joins the background thread.

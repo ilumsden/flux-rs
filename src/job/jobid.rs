@@ -2,7 +2,9 @@ use std::ffi::{c_char, CStr, CString};
 use std::fmt::Display;
 use std::ops::{Deref, DerefMut};
 
-use flux_sys::core::{FLUX_JOBID_ANY, flux_job_id_encode, flux_job_id_parse, flux_job_submit_get_id, flux_jobid_t};
+use flux_sys::core::{
+    flux_job_id_encode, flux_job_id_parse, flux_job_submit_get_id, flux_jobid_t, FLUX_JOBID_ANY,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -181,18 +183,17 @@ impl From<flux_jobid_t> for JobId {
     }
 }
 
-impl TryFrom<FluxFuture> for JobId {
+impl TryFrom<FluxFuture<'_>> for JobId {
     type Error = FluxError;
 
     fn try_from(value: FluxFuture) -> Result<Self> {
-        if value.c_future.is_null() {
-            return Err(FluxError::Logic(
-                "Cannot get JobId from a NULL future".to_string(),
-            ));
-        }
         let mut c_jobid: flux_jobid_t = 0;
-        let rc =
-            unsafe { flux_job_submit_get_id(value.c_future, &mut c_jobid as *mut flux_jobid_t) };
+        let rc = unsafe {
+            flux_job_submit_get_id(
+                value.c_future.as_mut_ptr(),
+                &mut c_jobid as *mut flux_jobid_t,
+            )
+        };
         check_rc(rc)?;
         Ok(Self::from(c_jobid))
     }
