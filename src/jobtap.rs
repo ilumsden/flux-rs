@@ -4,17 +4,18 @@ use std::ops::{Deref, DerefMut};
 use flux_sys::core::{
     flux_incref, flux_job_result_t, flux_jobtap_dependency_add, flux_jobtap_dependency_remove,
     flux_jobtap_epilog_finish, flux_jobtap_epilog_start, flux_jobtap_error, flux_jobtap_get_flux,
-    flux_jobtap_get_job_result, flux_jobtap_job_event_posted, flux_jobtap_job_lookup,
-    flux_jobtap_job_set_flag, flux_jobtap_job_subscribe, flux_jobtap_job_unsubscribe,
-    flux_jobtap_priority_unavail, flux_jobtap_prolog_finish, flux_jobtap_prolog_start,
-    flux_jobtap_raise_exception, flux_jobtap_reject_job, flux_jobtap_reprioritize_all,
-    flux_jobtap_reprioritize_job, flux_jobtap_service_register, flux_jobtap_service_register_ex,
+    flux_jobtap_get_job_result, flux_jobtap_job_aux_get, flux_jobtap_job_aux_set,
+    flux_jobtap_job_event_posted, flux_jobtap_job_lookup, flux_jobtap_job_set_flag,
+    flux_jobtap_job_subscribe, flux_jobtap_job_unsubscribe, flux_jobtap_priority_unavail,
+    flux_jobtap_prolog_finish, flux_jobtap_prolog_start, flux_jobtap_raise_exception,
+    flux_jobtap_reject_job, flux_jobtap_reprioritize_all, flux_jobtap_reprioritize_job,
+    flux_jobtap_service_register, flux_jobtap_service_register_ex,
 };
 use indexmap::IndexMap;
 
 use crate::error::{check_ptr, check_rc, FluxError, Result};
 use crate::flux_ptr_management::{AsFluxPtr, FromFluxPtrNoArgs};
-use crate::handle::FluxHandle;
+use crate::handle::{AuxThinPtrWrapper, FluxHandle};
 use crate::job::{JobEventSeverity, JobId, JobResultCode};
 use crate::msg::MessageRolemask;
 use crate::msg_handler::{MsgHandler, MsgHandlerCallback};
@@ -180,7 +181,77 @@ impl JobtapPlugin {
         check_rc(rc)
     }
 
-    // TODO add wrappers around aux_get and aux_set
+    pub fn set_job_aux<T: Send + Sync + 'static>(
+        &self,
+        id: JobId,
+        name: &str,
+        val: T,
+    ) -> Result<()> {
+        let c_name = CString::new(name)?;
+        let wrapper = Box::new(AuxThinPtrWrapper {
+            inner: Box::new(val),
+        });
+        let raw_data_ptr = Box::into_raw(wrapper) as *mut c_void;
+
+        extern "C" fn destroy_aux_trampoline(ptr: *mut c_void) {
+            if !ptr.is_null() {
+                unsafe {
+                    let _ = Box::from_raw(ptr as *mut AuxThinPtrWrapper);
+                }
+            }
+        }
+
+        let rc = unsafe {
+            flux_jobtap_job_aux_set(
+                self.plugin.as_mut_ptr(),
+                id.0,
+                c_name.as_ptr(),
+                raw_data_ptr,
+                Some(destroy_aux_trampoline),
+            )
+        };
+        if rc == -1 {
+            let _ = unsafe { Box::from_raw(raw_data_ptr as *mut AuxThinPtrWrapper) };
+            Err(FluxError::System(std::io::Error::last_os_error()))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn get_job_aux<T: 'static>(&self, id: JobId, key: &str) -> Result<&T> {
+        let raw_ptr = self.get_job_aux_raw(id, key)?;
+        let wrapper = unsafe { &*(raw_ptr as *const AuxThinPtrWrapper) };
+        match wrapper.inner.downcast_ref::<T>() {
+            Some(typed_ref) => Ok(typed_ref),
+            None => Err(FluxError::Logic(format!(
+                "Type mismatch for aux key '{}' and job '{}'",
+                key,
+                id.f58().ok().unwrap_or_else(|| id.0.to_string())
+            ))),
+        }
+    }
+
+    pub fn get_job_aux_raw(&self, id: JobId, key: &str) -> Result<*mut c_void> {
+        let c_key = CString::new(key)?;
+        let raw_ptr =
+            unsafe { flux_jobtap_job_aux_get(self.plugin.as_mut_ptr(), id.0, c_key.as_ptr()) };
+        check_ptr(raw_ptr)?;
+        Ok(raw_ptr)
+    }
+
+    pub fn delete_job_aux(&self, id: JobId, name: &str) -> Result<()> {
+        let c_name = CString::new(name)?;
+        let rc = unsafe {
+            flux_jobtap_job_aux_set(
+                self.plugin.as_mut_ptr(),
+                id.0,
+                c_name.as_ptr(),
+                std::ptr::null_mut(),
+                None,
+            )
+        };
+        check_rc(rc)
+    }
 
     pub fn set_job_flag(&self, id: JobId, flag: &str) -> Result<()> {
         let c_flag = CString::new(flag)?;
