@@ -136,6 +136,9 @@ pub fn finalize_module(handle: &FluxHandle, error: Option<std::io::Error>) -> Re
     }
 }
 
+/// A type alias for the signature of the expected broker module entrypoint.
+pub type BrokerModuleEntrypoint = fn(FluxHandle, Vec<String>) -> Result<()>;
+
 #[macro_export]
 macro_rules! __set_global_allocator_to_panicking {
     () => {
@@ -161,6 +164,8 @@ panic = "unwind"
 #[macro_export]
 macro_rules! __create_module_entrypoint_macro {
     ($user_main:path) => {
+        const _: $crate::module::BrokerModuleEntrypoint = $user_main;
+
         #[no_mangle]
         pub extern "C" fn mod_main(
             h: *mut ::flux_sys::core::flux_t,
