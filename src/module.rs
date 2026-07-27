@@ -185,7 +185,9 @@ macro_rules! __create_module_entrypoint_macro {
             unsafe {
                 ::flux_sys::core::flux_incref(h);
             }
-            let rust_handle = match unsafe { $crate::handle::FluxHandle::from_ptr(h) } {
+            let rust_handle = match unsafe {
+                <$crate::handle::FluxHandle as $crate::FromFluxPtrNoArgs>::from_ptr(h)
+            } {
                 Ok(rh) => rh,
                 Err(e) => {
                     return $crate::error::to_flux_rc(Err(e), None);

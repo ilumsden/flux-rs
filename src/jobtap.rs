@@ -9,12 +9,12 @@ use flux_sys::core::{
     flux_jobtap_job_subscribe, flux_jobtap_job_unsubscribe, flux_jobtap_priority_unavail,
     flux_jobtap_prolog_finish, flux_jobtap_prolog_start, flux_jobtap_raise_exception,
     flux_jobtap_reject_job, flux_jobtap_reprioritize_all, flux_jobtap_reprioritize_job,
-    flux_jobtap_service_register, flux_jobtap_service_register_ex,
+    flux_jobtap_service_register, flux_jobtap_service_register_ex, flux_plugin_t,
 };
 use indexmap::IndexMap;
 
 use crate::error::{check_ptr, check_rc, FluxError, Result};
-use crate::flux_ptr_management::{AsFluxPtr, FromFluxPtrNoArgs};
+use crate::flux_ptr_management::{AsFluxPtr, BorrowFluxPtr, FromFluxPtr, FromFluxPtrNoArgs};
 use crate::handle::{AuxThinPtrWrapper, FluxHandle};
 use crate::job::{JobEventSeverity, JobId, JobResultCode};
 use crate::msg::MessageRolemask;
@@ -421,3 +421,49 @@ impl DerefMut for JobtapPlugin {
         &mut self.plugin
     }
 }
+
+unsafe impl BorrowFluxPtr for JobtapPlugin {
+    type CType = flux_plugin_t;
+    type FromRawArgs = ();
+
+    unsafe fn borrow_raw(ptr: *mut Self::CType, args: Self::FromRawArgs) -> Result<Self> {
+        Ok(Self {
+            plugin: Plugin::borrow_raw(ptr, args)?,
+            _cb_boxes: IndexMap::new(),
+        })
+    }
+}
+
+unsafe impl FromFluxPtr for JobtapPlugin {
+    unsafe fn from_raw(ptr: *mut Self::CType, args: Self::FromRawArgs) -> Result<Self> {
+        Ok(Self {
+            plugin: Plugin::from_raw(ptr, args)?,
+            _cb_boxes: IndexMap::new(),
+        })
+    }
+}
+
+pub type JobtapPluginEntrypoint = fn(JobtapPlugin) -> Result<()>;
+
+#[macro_export]
+macro_rules! __create_jobtap_entrypoint_macro {
+    ($user_jobtap_init:path) => {
+        const _: $crate::jobtap::JobtapPluginEntrypoint = $user_jobtap_init;
+
+        #[no_mangle]
+        pub extern "C" fn flux_plugin_init(
+            p: *mut ::flux_sys::core::flux_plugin_t,
+        ) -> ::std::ffi::c_int {
+            let flux_plugin = match unsafe {
+                <$crate::jobtap::JobtapPlugin as $crate::BorrowFluxPtrNoArgs>::borrow_ptr(p)
+            } {
+                Ok(jp) => jp,
+                Err(e) => return $crate::error::to_flux_rc(Err(e), None),
+            };
+            let flux_handle = flux_plugin.get_flux().ok();
+            $crate::error::to_flux_rc($user_jobtap_init(flux_plugin), flux_handle.as_ref())
+        }
+    };
+}
+
+pub use crate::__create_jobtap_entrypoint_macro as create_jobtap_entrypoint;
