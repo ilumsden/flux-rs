@@ -54,6 +54,7 @@ pub enum FluxError {
 }
 
 impl FluxError {
+    /// Get an `errno` value for the FluxError object.
     pub fn to_errno(&self) -> i32 {
         match self {
             Self::System(err) => err.raw_os_error().unwrap_or(libc::EINVAL),
@@ -63,11 +64,13 @@ impl FluxError {
         }
     }
 
+    /// Get an `errno` value for the FluxError object and log the error with the FluxHandle.
     pub fn to_errno_with_flux_log(&self, handle: &FluxHandle) -> i32 {
         let _ = flux_log_error!(handle, "{}", self);
         self.to_errno()
     }
 
+    /// Set `errno` based on the FluxError object.
     pub fn set_errno(&self, log_handle: Option<&FluxHandle>) {
         let errno_val = if let Some(h) = log_handle {
             self.to_errno_with_flux_log(h)
@@ -81,6 +84,7 @@ impl FluxError {
 /// A convenient Result alias for the crate.
 pub type Result<T> = std::result::Result<T, FluxError>;
 
+/// Create a Flux C-style return code/`errno` pair from a `Result` object.
 #[inline]
 pub fn to_flux_rc(result: Result<()>, log_handle: Option<&FluxHandle>) -> i32 {
     match result {

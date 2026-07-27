@@ -15,6 +15,11 @@
           "/usr/local/lib/flux/python3.8",
           "/usr/local/lib/python3.8/site-packages",
           "/workspaces/flux-core/src/bindings/python"
+        ],
+        "rust-analyzer.cargo.features": [
+          "tokio",
+          "smol",
+          "jobtap"
         ]
       },
       "extensions": [

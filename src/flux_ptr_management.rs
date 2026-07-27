@@ -68,6 +68,8 @@ pub unsafe trait IntoFluxPtr: AsFluxPtr {
     fn into_raw(self) -> *mut Self::CType;
 }
 
+/// A utility macro for creating a simple implementation of AsFluxPtr and IntoFluxPtr
+/// for types using the `FluxPtr` struct under the hood.
 macro_rules! default_impl_as_flux_ptr {
     ($implementor_type:ident<'static>, $c_type:ty, $flux_ptr_field:ident) => {
         unsafe impl $crate::AsFluxPtr for $implementor_type<'static> {
@@ -118,15 +120,21 @@ macro_rules! default_impl_as_flux_ptr {
 
 pub(crate) use default_impl_as_flux_ptr;
 
+/// The type of the destructor for a Flux C pointer of type `T`.
 pub(crate) type FluxPtrDestructor<T> = unsafe extern "C" fn(*mut T);
 
+/// A struct for managing Flux C pointers that are either owned or borrowed by Rust.
 pub(crate) struct FluxPtr<T> {
+    /// The actual Flux C pointer.
     pub(crate) inner: NonNull<T>,
+    /// A pointer-style field for tracking whether or not the pointer is owned.
     pub(crate) owned: Option<NonNull<T>>,
+    /// The destructor for the pointer.
     pub(crate) destructor: FluxPtrDestructor<T>,
 }
 
 impl<T> FluxPtr<T> {
+    /// Create a FluxPtr object that owns the underlying Flux C pointer.
     pub fn create_owned(ptr: *mut T, destructor: FluxPtrDestructor<T>) -> Result<Self> {
         let non_null_ptr = NonNull::new(ptr).ok_or_else(|| {
             FluxError::Logic("Cannot create a FluxPtr object from a NULL C pointer".to_string())
@@ -138,6 +146,7 @@ impl<T> FluxPtr<T> {
         })
     }
 
+    /// Create a FluxPtr object that borrows the underlying Flux C pointer.
     pub fn create_borrowed(ptr: *mut T, destructor: FluxPtrDestructor<T>) -> Result<Self> {
         let non_null_ptr = NonNull::new(ptr).ok_or_else(|| {
             FluxError::Logic("Cannot create a FluxPtr object from a NULL C pointer".to_string())
@@ -149,17 +158,23 @@ impl<T> FluxPtr<T> {
         })
     }
 
+    /// Get the underlying Flux C pointer.
     pub fn as_mut_ptr(&self) -> *mut T {
         self.inner.as_ptr()
     }
 
     // TODO remove this lint once part of the crate actually has logic that
     // differs based on ownership of a Flux C pointer
+    /// Check if the underlying pointer is owned or borrowed.
     #[allow(dead_code)]
     pub fn is_owned(&self) -> bool {
         self.owned.is_some()
     }
 
+    /// Get the underlying Flux C pointer and assume ownership.
+    ///
+    /// After calling this method, it is up to the user (or a Flux C API function)
+    /// to deallocate the underlying C pointer.
     pub fn into_raw(mut self) -> *mut T {
         // Take the NonNull out of the Option to prevent pointer destruction
         self.owned.take();
@@ -168,6 +183,7 @@ impl<T> FluxPtr<T> {
 }
 
 impl<T> Drop for FluxPtr<T> {
+    /// Free the underlying C pointer using the destructor only if the pointer is owned.
     fn drop(&mut self) {
         if let Some(ptr) = self.owned.take() {
             unsafe {

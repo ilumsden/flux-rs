@@ -15,30 +15,35 @@ pub enum FluxDuration<'a> {
 }
 
 impl From<f64> for FluxDuration<'_> {
+    /// Create a FluxDuration from a floating point number of seconds.
     fn from(v: f64) -> Self {
         Self::Secs(v)
     }
 }
 
 impl From<u64> for FluxDuration<'_> {
+    /// Create a FluxDuration from an integral number of seconds.
     fn from(v: u64) -> Self {
         Self::Secs(v as f64)
     }
 }
 
 impl From<i32> for FluxDuration<'_> {
+    /// Create a FluxDuration from an integral number of seconds.
     fn from(v: i32) -> Self {
         Self::Secs(v as f64)
     }
 }
 
 impl<'a> From<&'a str> for FluxDuration<'a> {
+    /// Create a FluxDuration from a Flux Standard Duration string.
     fn from(v: &'a str) -> Self {
         Self::Fsd(v)
     }
 }
 
 impl From<Duration> for FluxDuration<'_> {
+    /// Create a FluxDuration from a Rust `Duration` object.
     fn from(v: Duration) -> Self {
         Self::Standard(v)
     }
@@ -47,6 +52,7 @@ impl From<Duration> for FluxDuration<'_> {
 impl<'a> TryFrom<FluxDuration<'a>> for f64 {
     type Error = FluxError;
 
+    /// Try to get a floating point number of seconds for a FluxDuration object.
     fn try_from(value: FluxDuration<'a>) -> Result<Self> {
         let seconds = match value {
             FluxDuration::Secs(s) => s,
