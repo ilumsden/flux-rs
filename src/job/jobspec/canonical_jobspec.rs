@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use paste::paste;
+use pastey::paste;
 
 use super::resource_vertex::ResourceVertex;
 use super::task::Task;
