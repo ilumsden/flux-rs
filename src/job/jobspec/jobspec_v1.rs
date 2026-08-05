@@ -63,7 +63,7 @@ impl JobspecV1 {
             self.set_input(stdin)?;
         }
         if let Some(stdout) = builder.output {
-            if stdout != *"none" && stdout != *"kvs" {
+            if stdout != Path::new("none") && stdout != Path::new("kvs") {
                 self.set_output(stdout)?;
                 if label_io_val {
                     self.set_attr_shell_options("output.stdout.label", &true)?;
@@ -71,7 +71,7 @@ impl JobspecV1 {
             }
         }
         if let Some(stderr) = builder.error {
-            if stderr != *"none" && stderr != *"kvs" {
+            if stderr != Path::new("none") && stderr != Path::new("kvs") {
                 self.set_error(stderr)?;
                 if label_io_val {
                     self.set_attr_shell_options("output.stderr.label", &true)?;
