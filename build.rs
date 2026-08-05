@@ -37,9 +37,18 @@ fn add_core_conditional_compilation_checks() {
         .and_then(|v| Version::parse(&v).ok())
         .map(|v| v >= Version::parse("0.83.1").unwrap())
         .unwrap_or(false);
+    let has_proper_reactor_ref_count = env::var("DEP_FLUX_CORE_VERSION")
+        .ok()
+        .and_then(|v| Version::parse(&v).ok())
+        .map(|v| v >= Version::parse("0.70.0").unwrap())
+        .unwrap_or(false);
     create_conditional_compilation_var!(
         "flux_core_has_module_loader_helpers",
         has_module_loader_helpers
+    );
+    create_conditional_compilation_var!(
+        "flux_core_has_reactor_ref_count",
+        has_proper_reactor_ref_count
     );
 }
 

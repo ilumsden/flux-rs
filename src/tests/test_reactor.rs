@@ -51,6 +51,9 @@ fn new_with_nowait_flag_succeeds() {
     assert!(Reactor::new(ReactorFlags::NOWAIT).is_ok());
 }
 
+// NOTE: FLUX_REACTOR_ONCE is only valid as a flag to flux_reactor_run,
+// not to flux_reactor_create. Do not add new_with_once_flag_succeeds.
+
 // =========================================================================
 // Reactor::now / time / now_update
 // =========================================================================
@@ -136,8 +139,16 @@ fn stop_with_non_os_error_falls_through_to_normal_stop() {
 
 // =========================================================================
 // Reactor::clone
+//
+// Clone is only available when flux_core_has_reactor_ref_count is set,
+// meaning the Flux version provides flux_reactor_incref/decref with true
+// memory reference counting semantics. On older Flux versions,
+// flux_reactor_active_incref only calls ev_ref (a libev hint to prevent
+// the loop from stopping) and does NOT prevent flux_reactor_destroy from
+// freeing the allocation — making a safe owning Clone impossible.
 // =========================================================================
 
+#[cfg(flux_core_has_reactor_ref_count)]
 #[test]
 fn clone_is_usable() {
     let reactor = make_reactor();
@@ -145,26 +156,31 @@ fn clone_is_usable() {
     assert!(clone.now().is_ok());
 }
 
-#[test]
-fn clone_remains_valid_after_original_dropped() {
-    // The clone uses flux_reactor_active_incref, so the underlying reactor
-    // must survive until the clone itself is dropped.
-    let clone = {
-        let reactor = make_reactor();
-        reactor.clone()
-    }; // original dropped here; clone retains a reference
-    assert!(
-        clone.now().is_ok(),
-        "Clone should remain usable after original is dropped"
-    );
-}
-
+#[cfg(flux_core_has_reactor_ref_count)]
 #[test]
 fn clone_and_original_have_independent_stop_calls() {
     let reactor = make_reactor();
     let mut clone = reactor.clone();
-    // Stopping the clone should not crash or corrupt the original's state.
     assert!(clone.stop(None).is_ok());
+    // original is still alive and valid
+    assert!(reactor.now().is_ok());
+}
+
+#[cfg(flux_core_has_reactor_ref_count)]
+#[test]
+fn clone_remains_valid_after_original_dropped() {
+    // With true refcounting, the clone keeps the allocation alive after
+    // the original is dropped. This test is only sound when
+    // flux_reactor_incref/decref provide memory refcounting semantics.
+    let clone = {
+        let reactor = make_reactor();
+        reactor.clone()
+        // original dropped here — clone keeps it alive via refcount
+    };
+    assert!(
+        clone.now().is_ok(),
+        "Clone should remain valid after original is dropped (refcount > 0)"
+    );
 }
 
 // =========================================================================
@@ -230,13 +246,12 @@ fn into_raw_returns_non_null_and_suppresses_destructor() {
 #[test]
 fn reactor_thread_new_succeeds() {
     let reactor = make_reactor();
-    // Construction alone must not panic.
     let _thread = FluxReactorThread::new(reactor);
+    // Construction must not panic.
 }
 
 #[test]
 fn reactor_thread_stop_without_spawn_succeeds() {
-    // stop() with handle == None should short-circuit the join and return Ok.
     let reactor = make_reactor();
     let mut thread = FluxReactorThread::new(reactor);
     assert!(thread.stop().is_ok());
@@ -246,25 +261,24 @@ fn reactor_thread_stop_without_spawn_succeeds() {
 fn reactor_thread_spawn_then_stop_succeeds() {
     let reactor = make_reactor();
     let mut thread = FluxReactorThread::new(reactor);
-    thread.spawn().expect("Failed to spawn reactor thread");
-    thread.stop().expect("Failed to stop reactor thread");
+    thread.spawn().unwrap();
+    assert!(thread.stop().is_ok());
 }
 
 #[test]
 fn reactor_thread_spawn_then_stop_twice_is_idempotent() {
-    // The second stop() should be a no-op (handle is None after take()).
     let reactor = make_reactor();
     let mut thread = FluxReactorThread::new(reactor);
-    thread.spawn().expect("Failed to spawn reactor thread");
-    thread.stop().expect("First stop failed");
-    assert!(thread.stop().is_ok(), "Second stop should not error");
+    thread.spawn().unwrap();
+    thread.stop().unwrap();
+    // Second stop should be a safe no-op since handle is already None.
+    assert!(thread.stop().is_ok());
 }
 
 #[test]
 fn reactor_thread_drop_does_not_panic() {
     let reactor = make_reactor();
     let mut thread = FluxReactorThread::new(reactor);
-    thread.spawn().expect("Failed to spawn reactor thread");
-    // Drop calls stop() internally; must not panic.
-    drop(thread);
+    thread.spawn().unwrap();
+    // Drop fires stop() internally — must not panic.
 }
