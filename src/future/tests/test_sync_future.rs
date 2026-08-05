@@ -4,7 +4,7 @@ use std::sync::Arc;
 use flux_sys::core::{flux_future_destroy, flux_future_incref};
 
 use crate::error::FluxError;
-use crate::flux_ptr_management::{AsFluxPtr, BorrowFluxPtrNoArgs, FromFluxPtrNoArgs, IntoFluxPtr};
+use crate::flux_ptr_management::{BorrowFluxPtrNoArgs, FromFluxPtrNoArgs, IntoFluxPtr};
 use crate::future::sync_future::{create_wait_all_future, create_wait_any_future, FluxFuture};
 use crate::reactor::{Reactor, ReactorFlags};
 use crate::tests::common::with_handle;

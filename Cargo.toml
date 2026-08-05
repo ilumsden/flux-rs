@@ -40,3 +40,6 @@ tokio = ["dep:tokio"]
 smol = ["dep:smol", "dep:async-io"]
 # Enable the 'jobtap' feature on flux-sys when this crate's 'jobtap' feature is enabled
 jobtap = ["flux-sys/jobtap"]
+
+[package.metadata.llvm-cov]
+ignore-filename-regex = ["src/**/tests/", "build\\.rs"]
