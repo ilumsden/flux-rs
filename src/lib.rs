@@ -18,7 +18,6 @@ pub mod response;
 pub mod rpc;
 pub mod uri;
 pub(crate) mod utils;
-pub mod watcher;
 
 #[cfg(feature = "jobtap")]
 pub mod jobtap;
