@@ -7,6 +7,9 @@ mod tokio;
 #[cfg(feature = "smol")]
 mod smol;
 
+#[cfg(test)]
+mod tests;
+
 pub use self::base::AsyncDriver;
 pub use self::thread::ThreadDriver;
 

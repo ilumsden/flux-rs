@@ -6,7 +6,7 @@ use crate::handle::FluxHandle;
 use crate::reactor::FluxReactorThread;
 
 pub struct ThreadDriver {
-    driver: Option<FluxReactorThread>,
+    pub(crate) driver: Option<FluxReactorThread>,
 }
 
 impl TryFrom<FluxReactorThread> for ThreadDriver {

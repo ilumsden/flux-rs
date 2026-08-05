@@ -11,12 +11,12 @@ use crate::handle::FluxHandle;
 use crate::reactor::FluxReactorThread;
 
 pub struct TokioDriver {
-    handle: Option<Arc<Mutex<FluxHandle>>>,
-    task_handle: Option<JoinHandle<Result<()>>>,
+    pub(crate) handle: Option<Arc<Mutex<FluxHandle>>>,
+    pub(crate) task_handle: Option<JoinHandle<Result<()>>>,
 }
 
 impl TokioDriver {
-    async fn drive_with_reactor_fd(handle: Arc<Mutex<FluxHandle>>) -> Result<()> {
+    pub(crate) async fn drive_with_reactor_fd(handle: Arc<Mutex<FluxHandle>>) -> Result<()> {
         // Get the polling file descriptor
         let fd = get_poll_fd_for_async(handle.clone())?;
         // Wrap the file descriptor into a Tokio AsyncFd

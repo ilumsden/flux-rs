@@ -11,12 +11,12 @@ use crate::handle::FluxHandle;
 use crate::reactor::FluxReactorThread;
 
 pub struct SmolDriver {
-    handle: Option<Arc<Mutex<FluxHandle>>>,
-    task_handle: Option<Task<Result<()>>>,
+    pub(crate) handle: Option<Arc<Mutex<FluxHandle>>>,
+    pub(crate) task_handle: Option<Task<Result<()>>>,
 }
 
 impl SmolDriver {
-    async fn driver_with_reactor_fd(handle: Arc<Mutex<FluxHandle>>) -> Result<()> {
+    pub(crate) async fn driver_with_reactor_fd(handle: Arc<Mutex<FluxHandle>>) -> Result<()> {
         let fd = get_poll_fd_for_async(handle.clone())?;
         let async_fd = Async::new(fd)?;
         loop {
