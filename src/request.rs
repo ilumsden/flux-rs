@@ -9,11 +9,13 @@ use crate::error::{check_ptr, check_rc, Result};
 use crate::msg::Message;
 use crate::FromFluxPtrNoArgs;
 
+#[derive(Debug)]
 pub struct RawDecodedRequestResponse<'a> {
     pub topic: &'a str,
     pub payload: Option<&'a [u8]>,
 }
 
+#[derive(Debug)]
 pub struct JsonDecodedRequestResponse<'a> {
     pub topic: &'a str,
     pub payload: Option<Value>,
@@ -68,7 +70,6 @@ impl Request {
         };
         check_rc(rc)?;
         check_ptr(topic_ptr as *mut c_char)?;
-        check_ptr(data_ptr as *mut c_void)?;
         let topic_str = unsafe { CStr::from_ptr(topic_ptr).to_str()? };
         let decoded_payload = if data_ptr.is_null() {
             None

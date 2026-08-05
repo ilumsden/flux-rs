@@ -1,4 +1,4 @@
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 
 use crate::error::{FluxError, Result};
 
@@ -24,12 +24,6 @@ impl Deref for SignalCode {
 
     fn deref(&self) -> &Self::Target {
         &self.0
-    }
-}
-
-impl DerefMut for SignalCode {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
     }
 }
 

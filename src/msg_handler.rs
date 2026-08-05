@@ -17,8 +17,8 @@ use crate::msg::{Message, MessageMatch, MessageRolemask, MessageType};
 pub type MsgHandlerCallback = Box<dyn FnMut(FluxHandle, MsgHandler, Message)>;
 
 pub struct MsgHandler {
-    c_handler: FluxPtr<flux_msg_handler_t>,
-    _cb_box: Option<MsgHandlerCallback>,
+    pub(crate) c_handler: FluxPtr<flux_msg_handler_t>,
+    pub(crate) _cb_box: Option<MsgHandlerCallback>,
 }
 
 impl MsgHandler {

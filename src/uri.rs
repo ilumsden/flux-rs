@@ -1,9 +1,7 @@
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    fmt::Display,
-    ops::{Deref, DerefMut},
-};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::fmt::Display;
+use std::ops::{Deref, DerefMut};
 
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -85,9 +83,9 @@ pub struct JobUri {
     pub base: BaseUri,
     pub remote_hostname: Option<String>,
     #[serde(skip)]
-    remote_uri: RefCell<Option<String>>,
+    pub(crate) remote_uri: RefCell<Option<String>>,
     #[serde(skip)]
-    local_uri: RefCell<Option<String>>,
+    pub(crate) local_uri: RefCell<Option<String>>,
 }
 
 impl JobUri {

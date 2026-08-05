@@ -1,4 +1,4 @@
-use std::ffi::{CStr, CString};
+use std::ffi::{c_void, CStr, CString};
 use std::fmt::Display;
 use std::str::FromStr;
 
@@ -37,7 +37,9 @@ impl Hostlist {
     pub fn encode(&self) -> Result<String> {
         let ptr = unsafe { hostlist_encode(self.c_hostlist.as_mut_ptr()) };
         check_ptr(ptr)?;
-        Ok(unsafe { CStr::from_ptr(ptr).to_str()?.to_owned() })
+        let encoded_hostlist = unsafe { CStr::from_ptr(ptr).to_str().map(|s| s.to_owned()) };
+        unsafe { ::libc::free(ptr as *mut c_void) };
+        Ok(encoded_hostlist?)
     }
 
     pub fn push(&mut self, new_host: &str) -> Result<()> {

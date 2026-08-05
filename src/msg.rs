@@ -1,7 +1,5 @@
-use std::{
-    ffi::{c_char, c_void, CStr, CString},
-    fmt::Display,
-};
+use std::ffi::{c_char, c_void, CStr, CString};
+use std::fmt::Display;
 
 use bitflags::bitflags;
 use flux_sys::core::{
@@ -82,7 +80,7 @@ bitflags! {
     }
 }
 
-#[derive(Default, Clone, PartialEq, Eq)]
+#[derive(Default, Clone, PartialEq, Eq, Debug)]
 pub struct MessageMatch {
     typemask: Option<MessageType>,
     matchtag: Option<u32>,

@@ -7,7 +7,6 @@ pub mod handle;
 pub mod hostlist;
 pub mod idset;
 pub mod job;
-pub mod jobtap;
 pub mod kvs;
 pub mod module;
 pub mod msg;
@@ -20,6 +19,12 @@ pub mod rpc;
 pub mod uri;
 pub(crate) mod utils;
 pub mod watcher;
+
+#[cfg(feature = "jobtap")]
+pub mod jobtap;
+
+#[cfg(test)]
+pub(crate) mod tests;
 
 pub use crate::flux_ptr_management::{
     AsFluxPtr, BorrowFluxPtr, BorrowFluxPtrNoArgs, FromFluxPtr, FromFluxPtrNoArgs, IntoFluxPtr,

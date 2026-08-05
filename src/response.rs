@@ -17,7 +17,7 @@ use crate::request::{
 use crate::FromFluxPtrNoArgs;
 
 pub struct Response {
-    msg: Message,
+    pub(crate) msg: Message,
 }
 
 impl Response {
@@ -51,7 +51,6 @@ impl Response {
             }
         }
         check_ptr(topic as *mut c_char)?;
-        check_ptr(data as *mut c_void)?;
         let topic_str = unsafe { CStr::from_ptr(topic).to_str()? };
         let decoded_payload = if data.is_null() {
             None

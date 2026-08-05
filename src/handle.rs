@@ -251,9 +251,9 @@ impl FluxHandle {
         check_ptr(attr_ptr as *mut c_char)?;
         let c_attr_str = unsafe { CStr::from_ptr(attr_ptr) };
         let rust_attr_str = c_attr_str.to_str().map(|s| s.to_owned());
-        unsafe {
-            libc::free(attr_ptr as *mut c_void);
-        }
+        // unsafe {
+        //     libc::free(attr_ptr as *mut c_void);
+        // }
         let rust_attr = rust_attr_str?;
         Ok(rust_attr)
     }
