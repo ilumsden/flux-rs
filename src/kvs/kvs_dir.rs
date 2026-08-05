@@ -15,9 +15,9 @@ use crate::handle::FluxHandle;
 use crate::kvs::{Kvs, KvsFlags, KvsTransaction};
 
 pub struct KvsDir {
-    c_kvsdir: FluxPtr<flux_kvsdir_t>,
-    txn: Rc<KvsTransaction>,
-    path: String,
+    pub(crate) c_kvsdir: FluxPtr<flux_kvsdir_t>,
+    pub(crate) txn: Rc<KvsTransaction>,
+    pub(crate) path: String,
 }
 
 impl KvsDir {
@@ -166,20 +166,17 @@ pub struct KvsDirCursor<'a> {
 }
 
 impl<'a> KvsDirCursor<'a> {
-    pub fn next(&mut self) -> Result<&str> {
+    pub fn next(&mut self) -> Result<Option<&str>> {
         let c_str = unsafe { flux_kvsitr_next(self.iter.as_mut_ptr()) };
+        if c_str.is_null() {
+            return Ok(None);
+        }
         self.current = unsafe { CStr::from_ptr(c_str).to_str()?.to_string() };
-        Ok(self.current.as_str())
+        Ok(Some(self.current.as_str()))
     }
 
     pub fn current(&self) -> &str {
         self.current.as_str()
-    }
-
-    pub fn remove_current(&mut self) {
-        unsafe {
-            flux_kvsitr_destroy(self.iter.as_mut_ptr());
-        }
     }
 
     pub fn reset(&mut self) {
@@ -196,9 +193,13 @@ pub struct KvsDirIter<'a> {
 }
 
 impl<'a> Iterator for KvsDirIter<'a> {
-    type Item = String;
+    type Item = Result<String>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.cursor.next().ok().map(|s| s.to_string())
+        match self.cursor.next() {
+            Ok(Some(s)) => Some(Ok(s.to_string())),
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
+        }
     }
 }

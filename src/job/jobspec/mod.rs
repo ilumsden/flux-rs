@@ -5,6 +5,9 @@ mod resource_count;
 mod resource_vertex;
 mod task;
 
+#[cfg(test)]
+mod tests;
+
 pub use self::canonical_jobspec::Jobspec;
 pub use self::fileref::Fileref;
 pub use self::jobspec_v1::{

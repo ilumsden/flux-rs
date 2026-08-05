@@ -1,4 +1,4 @@
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{c_char, CStr, CString};
 use std::fmt::Display;
 use std::ops::{Deref, DerefMut};
 
@@ -30,10 +30,10 @@ bitflags! {
 impl JobResultCode {
     pub fn encode(&self, fmt: JobStateFormat) -> Result<String> {
         let c_fmt = fmt.as_c_str();
+        // Note: do not free this string since flux_job_resulttostr just returns a string literal
         let encoded_ptr = unsafe { flux_job_resulttostr(self.bits(), c_fmt.as_ptr()) };
         check_ptr(encoded_ptr as *mut i8)?;
         let mut owned_str = unsafe { CStr::from_ptr(encoded_ptr).to_str()?.to_owned() };
-        unsafe { libc::free(encoded_ptr as *mut c_void) };
         if matches!(fmt, JobStateFormat::Emoji) {
             owned_str = match owned_str.as_str() {
                 "CD" => String::from("\u{1F600}"), // grinning face

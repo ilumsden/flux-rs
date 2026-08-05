@@ -1,4 +1,4 @@
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{CStr, CString};
 use std::fmt::Display;
 
 use bitflags::bitflags;
@@ -63,11 +63,11 @@ bitflags! {
 impl JobState {
     pub fn encode(&self, fmt: JobStateFormat) -> Result<String> {
         let fmt_c_str = fmt.as_c_str();
+        // Note: do not free this string since flux_job_statetostr just returns a string literal
         let c_str =
             unsafe { flux_job_statetostr(self.bits() as flux_job_state_t, fmt_c_str.as_ptr()) };
         check_ptr(c_str as *mut i8)?;
         let mut owned_str = unsafe { CStr::from_ptr(c_str).to_str()?.to_owned() };
-        unsafe { libc::free(c_str as *mut c_void) };
         if matches!(fmt, JobStateFormat::Emoji) {
             owned_str = match owned_str.as_str() {
                 "N" => String::from("\u{1F381}"), // wrapped gift

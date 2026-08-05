@@ -284,7 +284,7 @@ impl JobInfo {
         }
         let userid = self.userid.unwrap();
         let pw_ptr = unsafe { libc::getpwuid(userid) };
-        if pw_ptr.is_null() {
+        if pw_ptr.is_null() || unsafe { (*pw_ptr).pw_name.is_null() } {
             return Some(userid.to_string());
         }
         unsafe {

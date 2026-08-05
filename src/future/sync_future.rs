@@ -23,7 +23,7 @@ use crate::flux_ptr_management::{
 use crate::handle::{AuxThinPtrWrapper, FluxHandle};
 use crate::reactor::Reactor;
 
-pub(crate) type FluxFutureInitializer = Arc<dyn Fn(&FluxFuture<'_>) + Send + 'static>;
+pub(crate) type FluxFutureInitializer = Arc<dyn Fn(&mut FluxFuture<'_>) + Send + 'static>;
 
 pub struct FluxFuture<'a> {
     /// The underlying flux_future_t C pointer wrapped in the FluxPtr struct
@@ -37,22 +37,22 @@ pub struct FluxFuture<'a> {
 impl<'a> FluxFuture<'a> {
     pub fn new<F>(initializer: F) -> Result<FluxFuture<'static>>
     where
-        F: Fn(&FluxFuture<'_>) + Send + Sync + 'static,
+        F: Fn(&mut FluxFuture<'_>) + Send + Sync + 'static,
     {
         let cb: FluxFutureInitializer = Arc::new(initializer);
         let raw_arg = Arc::into_raw(cb.clone()) as *mut c_void;
 
         extern "C" fn trampoline<F>(f: *mut flux_future_t, arg: *mut c_void)
         where
-            F: Fn(&FluxFuture<'_>) + Send + Sync + 'static,
+            F: Fn(&mut FluxFuture<'_>) + Send + Sync + 'static,
         {
             // Borrow the Arc without taking ownership — safe because _init_cb keeps it alive
             let cb = unsafe { &*(arg as *const F) };
-            let future = match unsafe { FluxFuture::borrow_ptr(f) } {
+            let mut future = match unsafe { FluxFuture::borrow_ptr(f) } {
                 Ok(f) => f,
                 Err(_) => return,
             };
-            cb(&future);
+            cb(&mut future);
         }
 
         let ptr = unsafe { flux_future_create(Some(trampoline::<F>), raw_arg) };
@@ -334,15 +334,16 @@ impl<'a> FluxFuture<'a> {
         Ok(true)
     }
 
-    pub fn fulfill<T>(&mut self, result: Box<T>) -> Result<()> {
-        let raw_ptr = Box::into_raw(result) as *mut c_void;
-        unsafe {
-            flux_future_fulfill(
-                self.c_future.as_mut_ptr(),
-                raw_ptr,
-                Some(Self::free_boxed_data_for_fulfill::<T>),
-            )
+    pub fn fulfill<T>(&mut self, result: Option<Box<T>>) -> Result<()> {
+        let raw_ptr = result
+            .map(|r| Box::into_raw(r) as *mut c_void)
+            .unwrap_or(std::ptr::null_mut() as *mut c_void);
+        let free_fn: Option<unsafe extern "C" fn(*mut c_void)> = if raw_ptr.is_null() {
+            None
+        } else {
+            Some(Self::free_boxed_data_for_fulfill::<T>)
         };
+        unsafe { flux_future_fulfill(self.c_future.as_mut_ptr(), raw_ptr, free_fn) };
         Ok(())
     }
 

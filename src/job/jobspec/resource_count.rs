@@ -1,5 +1,8 @@
-use crate::{error::FluxError, idset::Idset, utils::impl_serde_repr_str};
 use serde::{Deserialize, Serialize};
+
+use crate::error::FluxError;
+use crate::idset::Idset;
+use crate::utils::impl_serde_repr_str;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResourceCountOperator {

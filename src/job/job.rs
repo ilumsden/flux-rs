@@ -168,7 +168,7 @@ impl<'a> Job<'a> {
                     key_ptr,
                 )
             };
-            if rc == 0 {
+            if rc >= 0 {
                 let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const c_char) };
                 return Ok(c_str.to_string_lossy().into_owned());
             }
@@ -218,7 +218,7 @@ impl<'a> Job<'a> {
                     key_ptr,
                 )
             };
-            if rc == 0 {
+            if rc >= 0 {
                 let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const c_char) };
                 return Ok(c_str.to_string_lossy().into_owned());
             }
@@ -248,7 +248,7 @@ impl<'a> Job<'a> {
             let rc = unsafe {
                 flux_job_kvs_namespace(buf.as_mut_ptr() as *mut i8, bufsize as i32, *self.id)
             };
-            if rc == 0 {
+            if rc >= 0 {
                 let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const c_char) };
                 return Ok(c_str.to_string_lossy().into_owned());
             }

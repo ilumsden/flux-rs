@@ -8,6 +8,9 @@ mod status;
 mod submit;
 mod urgency;
 
+#[cfg(test)]
+mod tests;
+
 pub use self::info::{JobAnnotationsInfo, JobDependencyList, JobExceptionInfo, JobInfo};
 pub use self::job::{Job, JobEventSeverity};
 pub use self::jobid::{JobId, JobIdEncodingType};

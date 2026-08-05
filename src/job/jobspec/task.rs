@@ -27,7 +27,9 @@ pub struct Task {
     pub command: Vec<String>,
     pub slot: String,
     pub count: TaskCount,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub attributes: Option<HashMap<String, Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub distribution: Option<String>,
 }
 

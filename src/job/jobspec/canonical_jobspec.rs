@@ -80,7 +80,7 @@ macro_rules! create_jobspec_getters_setters {
 // pub(super) use create_jobspec_getters_setters;
 
 #[derive(Serialize, Deserialize)]
-#[serde(try_from = "RawJobsepc")]
+#[serde(try_from = "RawJobspec")]
 pub struct Jobspec {
     pub resources: Vec<ResourceVertex>,
     pub tasks: Vec<Task>,
@@ -335,17 +335,17 @@ impl_serde_repr_str!(Jobspec);
 
 /// Internal duplicate of the Jobspec struct used for validation
 #[derive(Deserialize)]
-struct RawJobsepc {
-    resources: Vec<ResourceVertex>,
-    tasks: Vec<Task>,
-    attributes: Value,
-    version: u64,
+pub(crate) struct RawJobspec {
+    pub(crate) resources: Vec<ResourceVertex>,
+    pub(crate) tasks: Vec<Task>,
+    pub(crate) attributes: Value,
+    pub(crate) version: u64,
 }
 
-impl TryFrom<RawJobsepc> for Jobspec {
+impl TryFrom<RawJobspec> for Jobspec {
     type Error = FluxError;
 
-    fn try_from(value: RawJobsepc) -> std::prelude::v1::Result<Self, Self::Error> {
+    fn try_from(value: RawJobspec) -> std::prelude::v1::Result<Self, Self::Error> {
         if value.resources.is_empty() {
             return Err(FluxError::Logic(
                 "The 'resources' field of the jobspec must have at least 1 element".to_string(),
@@ -356,7 +356,7 @@ impl TryFrom<RawJobsepc> for Jobspec {
                 "The 'tasks' field of the jobspec must have at least 1 element".to_string(),
             ));
         }
-        if value
+        if !value
             .attributes
             .as_object()
             .ok_or(FluxError::Logic(

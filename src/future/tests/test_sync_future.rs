@@ -558,7 +558,7 @@ fn reset_on_fresh_future_succeeds() {
 #[test]
 fn reset_on_fulfilled_future_succeeds() {
     let mut future = make_wait_all();
-    future.fulfill(Box::new(42u32)).unwrap();
+    future.fulfill(Some(Box::new(42u32))).unwrap();
     assert!(future.reset().is_ok());
 }
 
@@ -569,7 +569,7 @@ fn reset_on_fulfilled_future_succeeds() {
 #[test]
 fn fulfill_then_get_returns_stored_pointer() {
     let mut future = make_wait_all();
-    future.fulfill(Box::new(42u32)).unwrap();
+    future.fulfill(Some(Box::new(42u32))).unwrap();
     let result = future.get().unwrap();
     assert!(!result.is_null());
 }
@@ -577,7 +577,7 @@ fn fulfill_then_get_returns_stored_pointer() {
 #[test]
 fn fulfill_with_data_then_get_returns_nonnull() {
     let mut future = make_wait_all();
-    future.fulfill(Box::new(99u64)).unwrap();
+    future.fulfill(Some(Box::new(99u64))).unwrap();
     assert!(!future.get().unwrap().is_null());
 }
 
@@ -713,6 +713,6 @@ fn wait_for_zero_timeout_on_unfulfilled_child_returns_false() {
 #[test]
 fn wait_for_zero_timeout_on_fulfilled_future_returns_true() {
     let mut future = make_wait_all();
-    future.fulfill(Box::new(42u32)).unwrap();
+    future.fulfill(Some(Box::new(42u32))).unwrap();
     assert_eq!(future.wait_for(0.0).unwrap(), true);
 }

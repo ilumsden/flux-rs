@@ -114,14 +114,15 @@ impl<'a> Kvs<'a> {
         ))
     }
 
-    pub fn getroot(&mut self, namespace: &str) -> Result<Getroot> {
-        let c_namespace = CString::new(namespace)?;
+    pub fn getroot(&mut self, namespace: Option<&str>) -> Result<Getroot> {
+        let c_namespace = namespace
+            .map(|ns| CString::new(ns).map_err(FluxError::NulError))
+            .transpose()?;
+        let ns_ptr = c_namespace
+            .as_ref()
+            .map_or(std::ptr::null(), |cstr| cstr.as_ptr());
         // TODO if flags are ever used with `flux_kvs_getroot`, update the call appropriately
-        let future_ptr =
-            unsafe { flux_kvs_getroot(self.handle.h.as_mut_ptr(), c_namespace.as_ptr(), 0) };
-        if future_ptr.is_null() {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        }
+        let future_ptr = unsafe { flux_kvs_getroot(self.handle.h.as_mut_ptr(), ns_ptr, 0) };
         check_ptr(future_ptr)?;
         Ok(Getroot::new(unsafe { FluxFuture::from_ptr(future_ptr)? }))
     }
@@ -219,8 +220,8 @@ impl<'a> Kvs<'a> {
 }
 
 pub struct Lookup {
-    future: FluxFuture<'static>,
-    key: String,
+    pub(crate) future: FluxFuture<'static>,
+    pub(crate) key: String,
 }
 
 impl Lookup {
@@ -339,7 +340,7 @@ impl_async_future_wrapper!(
 );
 
 pub struct Getroot {
-    future: FluxFuture<'static>,
+    pub(crate) future: FluxFuture<'static>,
 }
 
 impl Getroot {
@@ -377,7 +378,7 @@ impl_async_future_wrapper!(
 );
 
 pub struct Commit {
-    future: FluxFuture<'static>,
+    pub(crate) future: FluxFuture<'static>,
 }
 
 impl Commit {

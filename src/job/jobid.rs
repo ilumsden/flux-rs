@@ -7,10 +7,8 @@ use flux_sys::core::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    error::{check_rc, FluxError, Result},
-    future::FluxFuture,
-};
+use crate::error::{check_rc, FluxError, Result};
+use crate::future::FluxFuture;
 
 pub enum JobIdEncodingType {
     Dec,
@@ -51,7 +49,7 @@ impl JobIdEncodingType {
     }
 }
 
-#[derive(Deserialize, Serialize, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct JobId(pub(crate) flux_jobid_t);
 
 impl JobId {
@@ -78,6 +76,10 @@ impl JobId {
 
         // Set the initial buffer size
         let mut buf_size = 128;
+
+        if buf_size > max_id_size {
+            buf_size = max_id_size;
+        }
 
         // Repeatedly call flux_job_id_encode until we have a value of buf_size that is
         // large enough to actually store the encoded job ID

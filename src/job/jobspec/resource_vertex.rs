@@ -25,7 +25,8 @@ impl_serde_repr_str!(ResourceVertex);
 
 /// Internal duplicate of ResourceVertex for validation
 #[derive(Deserialize)]
-pub struct RawResourceVertex {
+pub(crate) struct RawResourceVertex {
+    #[serde(rename = "type")]
     resource_type: String,
     count: ResourceCount,
     unit: Option<String>,

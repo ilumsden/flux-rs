@@ -18,9 +18,9 @@ pub enum FilerefEncoding {
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum FilerefData {
-    Json(Value),
     Encoded(Vec<u8>),
     Text(String),
+    Json(Value),
 }
 
 fn default_mode() -> u32 {
@@ -116,8 +116,8 @@ impl Fileref {
         Self::new(
             path,
             mode,
-            ctime,
             mtime,
+            ctime,
             None,
             None,
             Some(FilerefData::Json(data)),
@@ -138,8 +138,8 @@ impl Fileref {
         Self::new(
             path,
             mode,
-            ctime,
             mtime,
+            ctime,
             Some(data_str.len()),
             Some(FilerefEncoding::Utf8),
             Some(FilerefData::Text(data_str)),
