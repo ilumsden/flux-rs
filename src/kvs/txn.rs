@@ -1,4 +1,4 @@
-use std::ffi::{c_void, CString};
+use std::ffi::CString;
 
 use flux_sys::core::{
     flux_kvs_txn_create, flux_kvs_txn_destroy, flux_kvs_txn_mkdir, flux_kvs_txn_put_raw,
@@ -43,10 +43,10 @@ impl KvsTransaction {
             // TODO figure out why flux-sys has the length field be an int (i.e., i32) instead of size_t (i.e., usize)
             flux_kvs_txn_put_raw(
                 self.c_txn.as_mut_ptr(),
-                flags.bits() as i32,
+                flags.bits() as _,
                 c_key.as_ptr(),
-                data.as_ptr() as *const c_void,
-                data.len() as i32,
+                data.as_ptr() as *const _,
+                data.len() as _,
             )
         };
         check_rc(rc)
@@ -75,7 +75,7 @@ impl KvsTransaction {
         };
         let c_key = CString::new(full_key)?;
         let rc = unsafe {
-            flux_kvs_txn_mkdir(self.c_txn.as_mut_ptr(), flags.bits() as i32, c_key.as_ptr())
+            flux_kvs_txn_mkdir(self.c_txn.as_mut_ptr(), flags.bits() as _, c_key.as_ptr())
         };
         check_rc(rc)
     }
@@ -88,7 +88,7 @@ impl KvsTransaction {
         };
         let c_key = CString::new(full_key)?;
         let rc = unsafe {
-            flux_kvs_txn_unlink(self.c_txn.as_mut_ptr(), flags.bits() as i32, c_key.as_ptr())
+            flux_kvs_txn_unlink(self.c_txn.as_mut_ptr(), flags.bits() as _, c_key.as_ptr())
         };
         check_rc(rc)
     }
@@ -123,7 +123,7 @@ impl KvsTransaction {
         let rc = unsafe {
             flux_kvs_txn_symlink(
                 self.c_txn.as_mut_ptr(),
-                flags.bits() as i32,
+                flags.bits() as _,
                 c_key.as_ptr(),
                 c_namespace
                     .as_ref()

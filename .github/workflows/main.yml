@@ -30,16 +30,17 @@ jobs:
         run: cargo fmt --all -- --check
 
   test:
-    name: Test (${{ matrix.rust }} on ${{ matrix.image }})
+    name: Test (${{ matrix.rust }} on ${{ matrix.image }}-${{ matrix.flux_version }})
     runs-on: ubuntu-latest
     container:
-      image: fluxrm/flux-core:${{ matrix.image }}
+      image: fluxrm/flux-core:${{ matrix.image }}-${{ matrix.flux_version }}
       options: --user root
     strategy:
       fail-fast: false
       matrix:
         rust: ["1.88", "stable"]
         image: ["bookworm", "noble"]
+        flux_version: ["v0.88.0", "v0.83.0-amd64", "v0.69.0-amd64"]
 
     steps:
       - uses: actions/checkout@v4
@@ -74,7 +75,7 @@ jobs:
     name: Code Coverage
     runs-on: ubuntu-latest
     container:
-      image: fluxrm/flux-core:bookworm
+      image: fluxrm/flux-core:bookworm-v0.88.0
       options: --user root
     steps:
       - uses: actions/checkout@v4

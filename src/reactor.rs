@@ -32,7 +32,7 @@ unsafe impl Send for Reactor {}
 
 impl Reactor {
     pub fn new(flags: ReactorFlags) -> Result<Self> {
-        let reactor_ptr = unsafe { flux_reactor_create(flags.bits() as i32) };
+        let reactor_ptr = unsafe { flux_reactor_create(flags.bits() as _) };
         check_ptr(reactor_ptr)?;
         Ok(Self {
             c_reactor: FluxPtr::create_owned(reactor_ptr, flux_reactor_destroy)?,
@@ -40,7 +40,7 @@ impl Reactor {
     }
 
     pub fn run(&mut self, flags: ReactorFlags) -> Result<()> {
-        let rc = unsafe { flux_reactor_run(self.c_reactor.as_mut_ptr(), flags.bits() as i32) };
+        let rc = unsafe { flux_reactor_run(self.c_reactor.as_mut_ptr(), flags.bits() as _) };
         check_rc(rc)
     }
 

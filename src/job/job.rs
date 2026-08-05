@@ -103,7 +103,7 @@ impl<'a> Job<'a> {
                 self.handle.h.as_mut_ptr(),
                 *self.id,
                 c_exc_type.as_ptr(),
-                sev.as_raw() as i32,
+                sev.as_raw() as _,
                 c_msg.map(|cm| cm.as_ptr()).unwrap_or(std::ptr::null()),
             )
         };
@@ -135,7 +135,7 @@ impl<'a> Job<'a> {
 
     pub fn set_urgency(&mut self, urgency: JobUrgency) -> Result<FluxFuture<'static>> {
         let future_ptr = unsafe {
-            flux_job_set_urgency(self.handle.h.as_mut_ptr(), *self.id, urgency.as_u8() as i32)
+            flux_job_set_urgency(self.handle.h.as_mut_ptr(), *self.id, urgency.as_u8() as _)
         };
         check_ptr(future_ptr)?;
         unsafe { FluxFuture::from_ptr(future_ptr) }
@@ -162,8 +162,8 @@ impl<'a> Job<'a> {
             let mut buf = vec![0u8; bufsize];
             let rc = unsafe {
                 flux_job_kvs_key(
-                    buf.as_mut_ptr() as *mut i8,
-                    bufsize as i32,
+                    buf.as_mut_ptr() as *mut c_char,
+                    bufsize as _,
                     *self.id,
                     key_ptr,
                 )
@@ -212,8 +212,8 @@ impl<'a> Job<'a> {
             let mut buf = vec![0u8; bufsize];
             let rc = unsafe {
                 flux_job_kvs_guest_key(
-                    buf.as_mut_ptr() as *mut i8,
-                    bufsize as i32,
+                    buf.as_mut_ptr() as *mut c_char,
+                    bufsize as _,
                     *self.id,
                     key_ptr,
                 )
@@ -246,7 +246,7 @@ impl<'a> Job<'a> {
         loop {
             let mut buf = vec![0u8; bufsize];
             let rc = unsafe {
-                flux_job_kvs_namespace(buf.as_mut_ptr() as *mut i8, bufsize as i32, *self.id)
+                flux_job_kvs_namespace(buf.as_mut_ptr() as *mut c_char, bufsize as _, *self.id)
             };
             if rc >= 0 {
                 let c_str = unsafe { CStr::from_ptr(buf.as_ptr() as *const c_char) };

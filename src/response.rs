@@ -24,13 +24,13 @@ impl Response {
     pub fn decode(&self) -> Result<RawDecodedRequestResponse<'_>> {
         let mut topic: *const c_char = std::ptr::null_mut();
         let mut data: *const c_void = std::ptr::null_mut();
-        let mut len: i32 = 0;
+        let mut len = 0;
         let mut rc = unsafe {
             flux_response_decode_raw(
                 self.msg.c_msg.as_mut_ptr(),
                 &mut topic as *mut *const c_char,
                 &mut data as *mut *const c_void,
-                &mut len as *mut i32,
+                &mut len as *mut _,
             )
         };
         if rc == -1 {
@@ -55,7 +55,7 @@ impl Response {
         let decoded_payload = if data.is_null() {
             None
         } else {
-            Some(unsafe { std::slice::from_raw_parts(data as *const u8, len as usize) })
+            Some(unsafe { std::slice::from_raw_parts(data as *const u8, len as _) })
         };
         Ok(RawDecodedRequestResponse {
             topic: topic_str,
@@ -109,7 +109,7 @@ impl Response {
             flux_response_encode_raw(
                 c_topic.as_ptr(),
                 data.as_ptr() as *const c_void,
-                data.len() as i32,
+                data.len() as _,
             )
         };
         check_ptr(msg_ptr)?;

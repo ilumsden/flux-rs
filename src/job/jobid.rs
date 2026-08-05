@@ -91,7 +91,7 @@ impl JobId {
                 flux_job_id_encode(
                     self.0,
                     c_type.as_ptr(),
-                    buf.as_mut_ptr() as *mut i8,
+                    buf.as_mut_ptr() as *mut c_char,
                     buf_size,
                 )
             };
@@ -203,6 +203,6 @@ impl TryFrom<FluxFuture<'_>> for JobId {
 
 impl Default for JobId {
     fn default() -> Self {
-        Self(FLUX_JOBID_ANY as u64)
+        Self(FLUX_JOBID_ANY as flux_jobid_t)
     }
 }

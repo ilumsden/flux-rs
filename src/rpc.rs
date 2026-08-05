@@ -61,9 +61,9 @@ impl<'a> Rpc<'a> {
                 handle.h.as_mut_ptr(),
                 c_topic.as_ptr(),
                 data.as_ptr() as *const c_void,
-                data.len() as i32,
+                data.len() as _,
                 nodeid.as_c_nodeid(),
-                flags.bits() as i32,
+                flags.bits() as _,
             )
         };
         check_ptr(future_ptr)?;
@@ -106,7 +106,7 @@ impl<'a> Rpc<'a> {
                 handle.h.as_mut_ptr(),
                 msg.c_msg.as_mut_ptr(),
                 nodeid.as_c_nodeid(),
-                flags.bits() as i32,
+                flags.bits() as _,
             )
         };
         check_ptr(future_ptr)?;
@@ -118,12 +118,12 @@ impl<'a> Rpc<'a> {
 
     pub fn get(&self) -> Result<&'a [u8]> {
         let mut buf: *const c_void = std::ptr::null();
-        let mut size: i32 = 0;
+        let mut size = 0;
         let rc = unsafe {
             flux_rpc_get_raw(
                 self.future.c_future.as_mut_ptr(),
                 &mut buf as *mut *const c_void,
-                &mut size as *mut i32,
+                &mut size as *mut _,
             )
         };
         check_rc(rc)?;

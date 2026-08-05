@@ -44,7 +44,7 @@ impl<'a> Kvs<'a> {
                 self.handle.h.as_mut_ptr(),
                 c_namespace.as_ptr(),
                 c_owner,
-                flags.bits() as i32,
+                flags.bits() as _,
             )
         };
         check_ptr(future_ptr)?;
@@ -67,7 +67,7 @@ impl<'a> Kvs<'a> {
                 c_namespace.as_ptr(),
                 c_rootref.as_ptr(),
                 c_owner,
-                flags.bits() as i32,
+                flags.bits() as _,
             )
         };
         check_ptr(future_ptr)?;
@@ -103,7 +103,7 @@ impl<'a> Kvs<'a> {
                 c_namespace
                     .as_ref()
                     .map_or(std::ptr::null(), |cstr_ns| cstr_ns.as_ptr()),
-                flags.bits() as i32,
+                flags.bits() as _,
                 c_key.as_ptr(),
             )
         };
@@ -154,7 +154,7 @@ impl<'a> Kvs<'a> {
                     .as_ref()
                     .map_or(std::ptr::null(), |cstr| cstr.as_ptr()),
                 c_dstkey.as_ptr(),
-                commit_flags.bits() as i32,
+                commit_flags.bits() as _,
             )
         };
         check_ptr(future_ptr)?;
@@ -188,7 +188,7 @@ impl<'a> Kvs<'a> {
                     .as_ref()
                     .map_or(std::ptr::null(), |cstr| cstr.as_ptr()),
                 c_dstkey.as_ptr(),
-                commit_flags.bits() as i32,
+                commit_flags.bits() as _,
             )
         };
         check_ptr(future_ptr)?;
@@ -210,7 +210,7 @@ impl<'a> Kvs<'a> {
                 c_namespace
                     .as_ref()
                     .map_or(std::ptr::null(), |cstr| cstr.as_ptr()),
-                flags.bits() as i32,
+                flags.bits() as _,
                 txn.c_txn.as_mut_ptr(),
             )
         };
@@ -236,12 +236,12 @@ impl Lookup {
 
     pub fn get<'a>(&'a mut self) -> Result<&'a [u8]> {
         let mut value_ptr: *const c_void = std::ptr::null();
-        let mut value_len: i32 = 0;
+        let mut value_len = 0;
         let rc = unsafe {
             flux_kvs_lookup_get_raw(
                 self.future.c_future.as_mut_ptr(),
                 &mut value_ptr as *mut *const c_void,
-                &mut value_len as *mut i32,
+                &mut value_len as *mut _,
             )
         };
         check_rc(rc)?;
@@ -250,7 +250,7 @@ impl Lookup {
                 "Received a NULL value pointer from the Flux KVS",
             )));
         }
-        Ok(unsafe { std::slice::from_raw_parts(value_ptr as *const u8, value_len as usize) })
+        Ok(unsafe { std::slice::from_raw_parts(value_ptr as *const u8, value_len as _) })
     }
 
     pub fn get_json(&mut self) -> Result<Value> {
@@ -353,7 +353,7 @@ impl Getroot {
     pub fn get_sequence(&mut self) -> Result<i32> {
         let mut seq: i32 = 0;
         let rc = unsafe {
-            flux_kvs_getroot_get_sequence(self.future.c_future.as_mut_ptr(), &mut seq as *mut i32)
+            flux_kvs_getroot_get_sequence(self.future.c_future.as_mut_ptr(), &mut seq as *mut _)
         };
         check_rc(rc)?;
         Ok(seq)
@@ -362,7 +362,7 @@ impl Getroot {
     pub fn get_owner(&mut self) -> Result<u32> {
         let mut owner: u32 = 0;
         let rc = unsafe {
-            flux_kvs_getroot_get_owner(self.future.c_future.as_mut_ptr(), &mut owner as *mut u32)
+            flux_kvs_getroot_get_owner(self.future.c_future.as_mut_ptr(), &mut owner as *mut _)
         };
         check_rc(rc)?;
         Ok(owner)
@@ -391,7 +391,7 @@ impl Commit {
     pub fn get_sequence(&mut self) -> Result<i32> {
         let mut seq: i32 = 0;
         let rc = unsafe {
-            flux_kvs_commit_get_sequence(self.future.c_future.as_mut_ptr(), &mut seq as *mut i32)
+            flux_kvs_commit_get_sequence(self.future.c_future.as_mut_ptr(), &mut seq as *mut _)
         };
         check_rc(rc)?;
         Ok(seq)

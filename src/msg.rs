@@ -43,7 +43,7 @@ bitflags! {
 
 impl Display for MessageType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let typestr_ptr = unsafe { flux_msg_typestr(self.bits() as i32) };
+        let typestr_ptr = unsafe { flux_msg_typestr(self.bits() as _) };
         if typestr_ptr.is_null() {
             return write!(f, "unknown");
         }
@@ -130,7 +130,7 @@ impl TryFrom<flux_match> for MessageMatch {
             Some(unsafe { CStr::from_ptr(value.topic_glob).to_owned() })
         };
         Ok(Self {
-            typemask: Some(MessageType::from_bits_retain(value.typemask as u32)),
+            typemask: Some(MessageType::from_bits_retain(value.typemask as _)),
             matchtag: Some(value.matchtag),
             topic_glob: ru_topic_glob,
         })
@@ -140,7 +140,7 @@ impl TryFrom<flux_match> for MessageMatch {
 impl From<&MessageMatch> for flux_match {
     fn from(value: &MessageMatch) -> Self {
         flux_match {
-            typemask: value.typemask.map_or(0, |t| t.bits() as i32),
+            typemask: value.typemask.map_or(0, |t| t.bits() as _),
             matchtag: value.matchtag.unwrap_or(0),
             topic_glob: value
                 .topic_glob
@@ -156,7 +156,7 @@ pub struct Message {
 
 impl Message {
     pub fn new(msg_type: MessageType) -> Result<Self> {
-        let msg_ptr = unsafe { flux_msg_create(msg_type.bits() as i32) };
+        let msg_ptr = unsafe { flux_msg_create(msg_type.bits() as _) };
         check_ptr(msg_ptr)?;
         Ok(Self {
             c_msg: FluxPtr::create_owned(msg_ptr, flux_msg_destroy)?,
@@ -172,16 +172,16 @@ impl Message {
     }
 
     pub fn has_flag(&self, flag: MessageFlag) -> bool {
-        unsafe { flux_msg_has_flag(self.c_msg.as_mut_ptr(), flag.bits() as i32) }
+        unsafe { flux_msg_has_flag(self.c_msg.as_mut_ptr(), flag.bits() as _) }
     }
 
     pub fn set_flag(&mut self, flag: MessageFlag) -> Result<()> {
-        let rc = unsafe { flux_msg_set_flag(self.c_msg.as_mut_ptr(), flag.bits() as i32) };
+        let rc = unsafe { flux_msg_set_flag(self.c_msg.as_mut_ptr(), flag.bits() as _) };
         check_rc(rc)
     }
 
     pub fn clear_flag(&mut self, flag: MessageFlag) -> Result<()> {
-        let rc = unsafe { flux_msg_clear_flag(self.c_msg.as_mut_ptr(), flag.bits() as i32) };
+        let rc = unsafe { flux_msg_clear_flag(self.c_msg.as_mut_ptr(), flag.bits() as _) };
         check_rc(rc)
     }
 
@@ -245,7 +245,7 @@ impl Message {
             flux_msg_set_payload(
                 self.c_msg.as_mut_ptr(),
                 data.as_ptr() as *const c_void,
-                data.len() as i32,
+                data.len() as _,
             )
         };
         check_rc(rc)
@@ -263,12 +263,12 @@ impl Message {
 
     pub fn get_payload(&self) -> Result<&[u8]> {
         let mut buf: *const c_void = std::ptr::null();
-        let mut size: i32 = 0;
+        let mut size = 0;
         let rc = unsafe {
             flux_msg_get_payload(
                 self.c_msg.as_mut_ptr(),
                 &mut buf as *mut *const c_void,
-                &mut size as *mut i32,
+                &mut size as *mut _,
             )
         };
         check_rc(rc)?;
@@ -316,7 +316,7 @@ impl Message {
 
     pub fn get_nodeid(&self) -> Result<u32> {
         let mut nodeid: u32 = 0;
-        let rc = unsafe { flux_msg_get_nodeid(self.c_msg.as_mut_ptr(), &mut nodeid as *mut u32) };
+        let rc = unsafe { flux_msg_get_nodeid(self.c_msg.as_mut_ptr(), &mut nodeid as *mut _) };
         check_rc(rc)?;
         Ok(nodeid)
     }
@@ -324,7 +324,7 @@ impl Message {
     pub fn set_cred(&mut self, userid: u32, rolemask: MessageRolemask) -> Result<()> {
         let cred = flux_msg_cred {
             userid,
-            rolemask: rolemask.bits() as u32,
+            rolemask: rolemask.bits() as _,
         };
         let rc = unsafe { flux_msg_set_cred(self.c_msg.as_mut_ptr(), cred) };
         check_rc(rc)
@@ -363,7 +363,7 @@ impl Message {
     ) -> Result<bool> {
         let cred = flux_msg_cred {
             userid: cred_userid,
-            rolemask: cred_rolemask.bits() as u32,
+            rolemask: cred_rolemask.bits() as _,
         };
         let rc = unsafe { flux_msg_cred_authorize(cred, userid) };
         if rc == -1 {
@@ -392,7 +392,7 @@ impl Message {
 
     pub fn get_error(&self) -> Result<std::io::Error> {
         let mut errnum: i32 = 0;
-        let rc = unsafe { flux_msg_get_errnum(self.c_msg.as_mut_ptr(), &mut errnum as *mut i32) };
+        let rc = unsafe { flux_msg_get_errnum(self.c_msg.as_mut_ptr(), &mut errnum as *mut _) };
         check_rc(rc)?;
         Ok(std::io::Error::from_raw_os_error(errnum))
     }
@@ -404,7 +404,7 @@ impl Message {
 
     pub fn get_sequence(&self) -> Result<u32> {
         let mut seq: u32 = 0;
-        let rc = unsafe { flux_msg_get_seq(self.c_msg.as_mut_ptr(), &mut seq as *mut u32) };
+        let rc = unsafe { flux_msg_get_seq(self.c_msg.as_mut_ptr(), &mut seq as *mut _) };
         check_rc(rc)?;
         Ok(seq)
     }
@@ -422,8 +422,7 @@ impl Message {
 
     pub fn get_matchtag(&self) -> Result<u32> {
         let mut matchtag: u32 = 0;
-        let rc =
-            unsafe { flux_msg_get_matchtag(self.c_msg.as_mut_ptr(), &mut matchtag as *mut u32) };
+        let rc = unsafe { flux_msg_get_matchtag(self.c_msg.as_mut_ptr(), &mut matchtag as *mut _) };
         check_rc(rc)?;
         Ok(matchtag)
     }
@@ -445,7 +444,7 @@ impl Message {
             flux_msg_encode(
                 self.c_msg.as_mut_ptr(),
                 buffer.as_mut_ptr() as *mut c_void,
-                buf_size as usize,
+                buf_size as _,
             )
         };
         check_rc(rc)?;
@@ -469,7 +468,7 @@ impl Clone for Message {
 impl PartialEq<MessageMatch> for Message {
     fn eq(&self, other: &MessageMatch) -> bool {
         let c_match = flux_match {
-            typemask: other.typemask.unwrap_or(MessageType::NONE).bits() as i32,
+            typemask: other.typemask.unwrap_or(MessageType::NONE).bits() as _,
             matchtag: other.matchtag.unwrap_or(FLUX_MATCHTAG_NONE),
             topic_glob: other
                 .topic_glob

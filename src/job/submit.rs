@@ -34,7 +34,7 @@ pub fn submit_async(
     let serialized_jobspec = serde_json::to_string(jobspec)?;
     let c_serialized_jobspec = CString::new(serialized_jobspec)?;
     let c_urgency: i32 = urgency.unwrap_or(JobUrgency::DEFAULT).into();
-    let c_flags: i32 = flags.map(|f| f.bits() as i32).unwrap_or(0);
+    let c_flags: i32 = flags.map(|f| f.bits() as _).unwrap_or(0);
     let future_ptr = unsafe {
         flux_job_submit(
             handle.h.as_mut_ptr(),

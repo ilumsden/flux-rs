@@ -168,7 +168,7 @@ unsafe impl BorrowFluxPtr for PluginArgs {
         let rc = unsafe {
             flux_plugin_arg_get(
                 ptr,
-                PluginArgFlag::IN.bits() as i32,
+                PluginArgFlag::IN.bits() as _,
                 &mut json_c_str as *mut *mut c_char,
             )
         };
@@ -201,7 +201,7 @@ unsafe impl BorrowFluxPtr for PluginArgs {
         let rc = unsafe {
             flux_plugin_arg_get(
                 ptr,
-                PluginArgFlag::OUT.bits() as i32,
+                PluginArgFlag::OUT.bits() as _,
                 &mut json_c_str as *mut *mut c_char,
             )
         };
@@ -250,7 +250,7 @@ unsafe impl FromFluxPtr for PluginArgs {
         let rc = unsafe {
             flux_plugin_arg_get(
                 ptr,
-                PluginArgFlag::IN.bits() as i32,
+                PluginArgFlag::IN.bits() as _,
                 &mut json_c_str as *mut *mut c_char,
             )
         };
@@ -283,7 +283,7 @@ unsafe impl FromFluxPtr for PluginArgs {
         let rc = unsafe {
             flux_plugin_arg_get(
                 ptr,
-                PluginArgFlag::OUT.bits() as i32,
+                PluginArgFlag::OUT.bits() as _,
                 &mut json_c_str as *mut *mut c_char,
             )
         };
@@ -357,7 +357,7 @@ impl Plugin {
     }
 
     pub fn set_flags(&mut self, flags: PluginLoadFlags) -> Result<()> {
-        let rc = unsafe { flux_plugin_set_flags(self.c_plugin.as_mut_ptr(), flags.bits() as i32) };
+        let rc = unsafe { flux_plugin_set_flags(self.c_plugin.as_mut_ptr(), flags.bits() as _) };
         if rc == -1 {
             check_plugin_strerror!(self.c_plugin.as_mut_ptr()).map(|_| ())
         } else {
@@ -370,7 +370,7 @@ impl Plugin {
         if flags_raw == -1 {
             check_plugin_strerror!(self.c_plugin.as_mut_ptr()).map(|_| PluginLoadFlags::NONE)
         } else {
-            Ok(PluginLoadFlags::from_bits_truncate(flags_raw as u32))
+            Ok(PluginLoadFlags::from_bits_truncate(flags_raw as _))
         }
     }
 

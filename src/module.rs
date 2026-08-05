@@ -3,9 +3,7 @@ use flux_sys::core::{
     flux_error_t, flux_module_finalize, flux_module_initialize, flux_module_register_handlers,
 };
 #[cfg(flux_core_has_module_loader_helpers)]
-use std::ffi::c_char;
-#[cfg(flux_core_has_module_loader_helpers)]
-use std::ffi::CStr;
+use std::ffi::{c_char, c_void, CStr};
 #[cfg(flux_core_has_module_loader_helpers)]
 use std::mem::MaybeUninit;
 
@@ -70,11 +68,12 @@ pub fn initialize_module(handle: &FluxHandle) -> Result<String> {
         )
     };
     if rc == -1 {
-        let err_msg = unsafe {
-            CStr::from_bytes_until_nul(&err_buf.text)?
-                .to_string_lossy()
-                .to_owned()
+        let text_bytes = unsafe {
+            std::slice::from_raw_parts(err_buf.text.as_ptr() as *const u8, err_buf.text.len())
         };
+        let err_msg = CStr::from_bytes_until_nul(text_bytes)?
+            .to_string_lossy()
+            .to_string();
         Err(FluxError::Logic(err_msg))
     } else {
         if args_str_ptr.is_null() {
@@ -82,9 +81,9 @@ pub fn initialize_module(handle: &FluxHandle) -> Result<String> {
                 "The 'flux_module_initialize' function produced a NULL args string".to_string(),
             ))
         } else {
-            let args_str = unsafe { CStr::from_ptr(args_str_ptr).to_string_lossy().to_owned() };
+            let args_str = unsafe { CStr::from_ptr(args_str_ptr).to_string_lossy().to_string() };
             unsafe {
-                libc::free(args_str_ptr);
+                libc::free(args_str_ptr as *mut c_void);
             }
             Ok(args_str)
         }
@@ -98,11 +97,12 @@ pub fn register_default_handlers(handle: &FluxHandle) -> Result<()> {
         flux_module_register_handlers(handle.h.as_mut_ptr(), &mut err_buf as *mut flux_error_t)
     };
     if rc == -1 {
-        let err_msg = unsafe {
-            CStr::from_bytes_until_nul(&err_buf.text)?
-                .to_string_lossy()
-                .to_owned()
+        let text_bytes = unsafe {
+            std::slice::from_raw_parts(err_buf.text.as_ptr() as *const u8, err_buf.text.len())
         };
+        let err_msg = CStr::from_bytes_until_nul(text_bytes)?
+            .to_string_lossy()
+            .to_string();
         Err(FluxError::Logic(err_msg))
     } else {
         Ok(())
@@ -112,7 +112,7 @@ pub fn register_default_handlers(handle: &FluxHandle) -> Result<()> {
 #[cfg(flux_core_has_module_loader_helpers)]
 pub fn finalize_module(handle: &FluxHandle, error: Option<std::io::Error>) -> Result<()> {
     let errnum = if let Some(err) = error {
-        err.raw_os_error()
+        err.raw_os_error().unwrap_or(0)
     } else {
         0
     };
@@ -125,11 +125,11 @@ pub fn finalize_module(handle: &FluxHandle, error: Option<std::io::Error>) -> Re
         )
     };
     if rc == -1 {
-        let err_msg = unsafe {
-            CStr::from_bytes_until_nul(&err_buf.text)?
-                .to_string_lossy()
-                .to_owned()
-        };
+        let text_bytes =
+            unsafe { std::slice::from_raw_parts(err_buf.text.as_ptr(), err_buf.text.len()) };
+        let err_msg = CStr::from_bytes_until_nul(text_bytes)?
+            .to_string_lossy()
+            .to_string();
         Err(FluxError::Logic(err_msg))
     } else {
         Ok(())

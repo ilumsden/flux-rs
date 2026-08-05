@@ -43,7 +43,7 @@ pub struct Idset {
 impl Idset {
     /// Create a new Idset with the specified size and flags.
     pub fn new(size: usize, flags: IdsetFlags) -> Result<Self> {
-        let idset_ptr = unsafe { idset_create(size, flags.bits() as i32) };
+        let idset_ptr = unsafe { idset_create(size, flags.bits() as _) };
         check_ptr(idset_ptr)?;
         Ok(Self {
             c_idset: FluxPtr::create_owned(idset_ptr, idset_destroy)?,
@@ -62,7 +62,7 @@ impl Idset {
 
     /// Create a string encoding of the Idset using the specified flags.
     pub fn encode(&self, flags: IdsetFlags) -> Result<String> {
-        let encoded_ptr = unsafe { idset_encode(self.c_idset.as_mut_ptr(), flags.bits() as i32) };
+        let encoded_ptr = unsafe { idset_encode(self.c_idset.as_mut_ptr(), flags.bits() as _) };
         check_ptr(encoded_ptr)?;
         let owned_str = unsafe { CStr::from_ptr(encoded_ptr).to_str()?.to_owned() };
         unsafe { libc::free(encoded_ptr as *mut c_void) };

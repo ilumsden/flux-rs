@@ -276,7 +276,7 @@ impl JobtapPlugin {
                     self.plugin.as_mut_ptr(),
                     id.0,
                     c_type.as_ptr(),
-                    *severity as i32,
+                    *severity as _,
                     fmt.as_ptr(),
                     c_msg.as_ptr(),
                 )
@@ -287,7 +287,7 @@ impl JobtapPlugin {
                     self.plugin.as_mut_ptr(),
                     id.0,
                     c_type.as_ptr(),
-                    *severity as i32,
+                    *severity as _,
                     std::ptr::null(),
                 )
             }

@@ -178,8 +178,8 @@ impl Fileref {
             fileref_path,
             data,
             Some(Mode::from_bits_truncate(stat.st_mode)),
-            Some(stat.st_mtime as u64),
-            Some(stat.st_ctime as u64),
+            Some(stat.st_mtime as _),
+            Some(stat.st_ctime as _),
         ))
     }
 
@@ -193,8 +193,8 @@ impl Fileref {
             fileref_path,
             data,
             Some(Mode::from_bits_truncate(stat.st_mode)),
-            Some(stat.st_mtime as u64),
-            Some(stat.st_ctime as u64),
+            Some(stat.st_mtime as _),
+            Some(stat.st_ctime as _),
         ))
     }
 

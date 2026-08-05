@@ -37,7 +37,7 @@ impl Request {
             flux_request_encode_raw(
                 c_topic.as_ptr(),
                 data.as_ptr() as *const c_void,
-                data.len() as i32,
+                data.len() as _,
             )
         };
         check_ptr(msg_ptr)?;
@@ -59,13 +59,13 @@ impl Request {
     pub fn decode(&self) -> Result<RawDecodedRequestResponse<'_>> {
         let mut topic_ptr: *const c_char = std::ptr::null_mut();
         let mut data_ptr: *const c_void = std::ptr::null_mut();
-        let mut size: i32 = 0;
+        let mut size = 0;
         let rc = unsafe {
             flux_request_decode_raw(
                 self.msg.c_msg.as_mut_ptr(),
                 &mut topic_ptr as *mut *const c_char,
                 &mut data_ptr as *mut *const c_void,
-                &mut size as *mut i32,
+                &mut size as *mut _,
             )
         };
         check_rc(rc)?;

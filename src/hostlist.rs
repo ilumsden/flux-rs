@@ -83,7 +83,7 @@ impl Hostlist {
     }
 
     pub fn nth(&mut self, n: usize) -> Option<String> {
-        let ptr = unsafe { hostlist_nth(self.c_hostlist.as_mut_ptr(), n as i32) };
+        let ptr = unsafe { hostlist_nth(self.c_hostlist.as_mut_ptr(), n as _) };
         if ptr.is_null() {
             return None;
         }

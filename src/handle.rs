@@ -197,10 +197,10 @@ impl FluxHandle {
     pub fn new_from_str_uri(uri: &str, flags: HandleFlags) -> Result<Self> {
         // Treat an empty string URI as the equivalent of a NULL URI in the C API
         let flux_handle = if uri == "" {
-            unsafe { flux_open(std::ptr::null(), flags.bits() as i32) }
+            unsafe { flux_open(std::ptr::null(), flags.bits() as _) }
         } else {
             let c_uri = CString::new(uri.to_owned())?;
-            unsafe { flux_open(c_uri.as_ptr(), flags.bits() as i32) }
+            unsafe { flux_open(c_uri.as_ptr(), flags.bits() as _) }
         };
         let flux_handle_rs = FluxPtr::create_owned(flux_handle, flux_close)?;
         Ok(Self {
@@ -230,7 +230,7 @@ impl FluxHandle {
     /// Get the rank of the connected Flux broker in the Flux instance.
     pub fn get_rank(&self) -> Result<u32> {
         let mut rank: u32 = 0;
-        let rc = unsafe { flux_get_rank(self.h.as_mut_ptr(), &mut rank as *mut u32) };
+        let rc = unsafe { flux_get_rank(self.h.as_mut_ptr(), &mut rank as *mut _) };
         check_rc(rc)?;
         Ok(rank)
     }
@@ -238,7 +238,7 @@ impl FluxHandle {
     /// Get the number of brokers in the Flux instance.
     pub fn get_size(&self) -> Result<usize> {
         let mut size: u32 = 0;
-        let rc = unsafe { flux_get_size(self.h.as_mut_ptr(), &mut size as *mut u32) };
+        let rc = unsafe { flux_get_size(self.h.as_mut_ptr(), &mut size as *mut _) };
         check_rc(rc)?;
         Ok(size as usize)
     }
@@ -251,9 +251,6 @@ impl FluxHandle {
         check_ptr(attr_ptr as *mut c_char)?;
         let c_attr_str = unsafe { CStr::from_ptr(attr_ptr) };
         let rust_attr_str = c_attr_str.to_str().map(|s| s.to_owned());
-        // unsafe {
-        //     libc::free(attr_ptr as *mut c_void);
-        // }
         let rust_attr = rust_attr_str?;
         Ok(rust_attr)
     }
@@ -413,7 +410,7 @@ impl FluxHandle {
             flux_send_new(
                 self.h.as_mut_ptr(),
                 &mut raw_msg as *mut *mut flux_msg_t,
-                flags.bits() as i32,
+                flags.bits() as _,
             )
         };
         // flux_send_new only frees the message if it succeeds.
@@ -429,7 +426,7 @@ impl FluxHandle {
     /// Receive a message using the Flux broker associated with the handle.
     pub fn recv(&self, msg_match: MessageMatch, flags: HandleFlags) -> Result<Message> {
         let c_match: flux_match = (&msg_match).into();
-        let msg_ptr = unsafe { flux_recv(self.h.as_mut_ptr(), c_match, flags.bits() as i32) };
+        let msg_ptr = unsafe { flux_recv(self.h.as_mut_ptr(), c_match, flags.bits() as _) };
         check_ptr(msg_ptr)?;
         unsafe { Message::from_ptr(msg_ptr) }
     }
@@ -440,7 +437,7 @@ impl FluxHandle {
             flux_requeue(
                 self.h.as_mut_ptr(),
                 msg.c_msg.as_mut_ptr(),
-                flags.bits() as i32,
+                flags.bits() as _,
             )
         };
         check_rc(rc)
@@ -467,7 +464,7 @@ impl FluxHandle {
     pub fn get_pollevents(&self) -> Result<PollEvents> {
         let bitmask = unsafe { flux_pollevents(self.h.as_mut_ptr()) };
         check_rc(bitmask)?;
-        Ok(PollEvents::from_bits_retain(bitmask as u32))
+        Ok(PollEvents::from_bits_retain(bitmask as _))
     }
 
     /// Set the application name for the Flux log.
@@ -501,7 +498,7 @@ impl FluxHandle {
         let rc = unsafe {
             flux_log(
                 self.h.as_mut_ptr(),
-                level as i32,
+                level as _,
                 c_fmt_str.as_ptr(),
                 c_msg.as_ptr(),
             )
@@ -575,7 +572,7 @@ impl FluxHandle {
                 self.h.as_mut_ptr(),
                 request.msg.c_msg.as_mut_ptr(),
                 data_ptr as *const c_void,
-                data_len as i32,
+                data_len as _,
             )
         };
         check_rc(rc)

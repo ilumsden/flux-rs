@@ -26,7 +26,7 @@ impl JobStatus {
         let mut rc = unsafe {
             flux_job_wait_get_status(
                 self.future.c_future.as_mut_ptr(),
-                &mut success as *mut bool,
+                &mut success as *mut _,
                 &mut errstr_ptr as *mut *const c_char,
             )
         };
