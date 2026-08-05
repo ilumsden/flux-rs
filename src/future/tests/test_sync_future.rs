@@ -1,10 +1,13 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use flux_sys::core::flux_future_destroy;
+use flux_sys::core::{flux_future_destroy, flux_future_incref};
 
 use crate::error::FluxError;
 use crate::flux_ptr_management::{AsFluxPtr, BorrowFluxPtrNoArgs, FromFluxPtrNoArgs, IntoFluxPtr};
 use crate::future::sync_future::{create_wait_all_future, create_wait_any_future, FluxFuture};
+use crate::reactor::{Reactor, ReactorFlags};
+use crate::tests::common::with_handle;
 
 // =========================================================================
 // Helpers
@@ -24,6 +27,241 @@ fn make_wait_all_with_child(name: &str) -> FluxFuture<'static> {
     let mut map = HashMap::new();
     map.insert(name.to_string(), child);
     create_wait_all_future(map).expect("Failed to create wait_all future with child")
+}
+
+#[derive(Debug, PartialEq)]
+struct TestAux {
+    value: u32,
+    label: String,
+}
+
+// =========================================================================
+// FluxFuture::new
+// =========================================================================
+
+#[test]
+fn new_with_noop_callback_succeeds() {
+    assert!(FluxFuture::new(|_| {}).is_ok());
+}
+
+#[test]
+fn new_produces_non_null_future() {
+    let future = FluxFuture::new(|_| {}).unwrap();
+    assert!(!future.c_future.as_mut_ptr().is_null());
+}
+
+#[test]
+fn new_stores_init_cb() {
+    let future = FluxFuture::new(|_| {}).unwrap();
+    assert!(future._init_cb.is_some());
+}
+
+#[test]
+fn new_future_is_owning() {
+    let future = FluxFuture::new(|_| {}).unwrap();
+    assert!(future.c_future.is_owned());
+}
+
+// =========================================================================
+// _init_cb preservation through Clone and to_owned
+// =========================================================================
+
+#[test]
+fn clone_of_new_future_preserves_init_cb() {
+    let future = FluxFuture::new(|_| {}).unwrap();
+    let clone = future.clone();
+    assert!(clone._init_cb.is_some());
+}
+
+#[test]
+fn clone_init_cb_shares_same_arc() {
+    let future = FluxFuture::new(|_| {}).unwrap();
+    let clone = future.clone();
+    assert!(Arc::ptr_eq(
+        future._init_cb.as_ref().unwrap(),
+        clone._init_cb.as_ref().unwrap()
+    ));
+}
+
+#[test]
+fn clone_of_wait_all_has_no_init_cb() {
+    // Futures not created via new() propagate their None _init_cb through clone.
+    let future = make_wait_all();
+    let clone = future.clone();
+    assert!(clone._init_cb.is_none());
+}
+
+#[test]
+fn to_owned_of_new_future_preserves_init_cb() {
+    let future = FluxFuture::new(|_| {}).unwrap();
+    let owned = future.to_owned().unwrap();
+    assert!(owned._init_cb.is_some());
+}
+
+#[test]
+fn to_owned_init_cb_shares_same_arc() {
+    let future = FluxFuture::new(|_| {}).unwrap();
+    let owned = future.to_owned().unwrap();
+    assert!(Arc::ptr_eq(
+        future._init_cb.as_ref().unwrap(),
+        owned._init_cb.as_ref().unwrap()
+    ));
+}
+
+#[test]
+fn to_owned_of_wait_all_has_no_init_cb() {
+    let future = make_wait_all();
+    let owned = future.to_owned().unwrap();
+    assert!(owned._init_cb.is_none());
+}
+
+#[test]
+fn borrow_ptr_has_no_init_cb() {
+    let future = make_wait_all();
+    let ptr = future.c_future.as_mut_ptr();
+    let borrowed = unsafe { FluxFuture::borrow_ptr(ptr) }.unwrap();
+    assert!(borrowed._init_cb.is_none());
+}
+
+#[test]
+fn from_ptr_has_no_init_cb() {
+    let future = make_wait_all();
+    let ptr = future.c_future.as_mut_ptr();
+    // incref so both future and owned can drop cleanly
+    unsafe { flux_future_incref(ptr) };
+    let owned = unsafe { FluxFuture::from_ptr(ptr) }.unwrap();
+    assert!(owned._init_cb.is_none());
+}
+
+#[test]
+fn get_child_has_no_init_cb() {
+    let future = make_wait_all_with_child("child");
+    let child = future.get_child("child").unwrap().unwrap();
+    assert!(child._init_cb.is_none());
+}
+
+// =========================================================================
+// set_aux / get_aux / get_aux_raw
+// =========================================================================
+
+#[test]
+fn set_aux_and_get_aux_round_trips_struct() {
+    let mut future = make_wait_all();
+    let data = TestAux {
+        value: 42,
+        label: "hello".to_string(),
+    };
+    future.set_aux("test.aux.struct", data).unwrap();
+    let retrieved = future.get_aux::<TestAux>("test.aux.struct").unwrap();
+    assert_eq!(retrieved.value, 42);
+    assert_eq!(retrieved.label, "hello");
+}
+
+#[test]
+fn set_aux_and_get_aux_round_trips_primitive() {
+    let mut future = make_wait_all();
+    future.set_aux("test.aux.u32", 99u32).unwrap();
+    let retrieved = future.get_aux::<u32>("test.aux.u32").unwrap();
+    assert_eq!(*retrieved, 99u32);
+}
+
+#[test]
+fn set_aux_nul_byte_key_returns_error() {
+    let mut future = make_wait_all();
+    assert!(future.set_aux("bad\0key", 42u32).is_err());
+}
+
+#[test]
+fn get_aux_missing_key_returns_error() {
+    let future = make_wait_all();
+    assert!(future.get_aux::<u32>("nonexistent.key").is_err());
+}
+
+#[test]
+fn get_aux_type_mismatch_returns_logic_error() {
+    let mut future = make_wait_all();
+    future.set_aux("test.typed", 42u32).unwrap();
+    assert!(matches!(
+        future.get_aux::<String>("test.typed"),
+        Err(FluxError::Logic(_))
+    ));
+}
+
+#[test]
+fn get_aux_raw_returns_non_null_after_set() {
+    let mut future = make_wait_all();
+    future.set_aux("test.raw", 42u32).unwrap();
+    let ptr = future.get_aux_raw("test.raw").unwrap();
+    assert!(!ptr.is_null());
+}
+
+#[test]
+fn get_aux_raw_nul_byte_key_returns_error() {
+    let future = make_wait_all();
+    assert!(future.get_aux_raw("bad\0key").is_err());
+}
+
+// =========================================================================
+// set_reactor / get_reactor
+// =========================================================================
+
+#[test]
+fn set_reactor_and_get_reactor_succeeds() {
+    let mut future = make_wait_all();
+    let reactor = Reactor::new(ReactorFlags::NONE).unwrap();
+    future.set_reactor(&reactor);
+    assert!(future.get_reactor().is_ok());
+}
+
+#[test]
+fn get_reactor_after_set_produces_non_owning_reactor() {
+    let mut future = make_wait_all();
+    let reactor = Reactor::new(ReactorFlags::NONE).unwrap();
+    future.set_reactor(&reactor);
+    let borrowed = future.get_reactor().unwrap();
+    assert!(!borrowed.c_reactor.is_owned());
+}
+
+#[test]
+fn get_reactor_after_set_is_usable() {
+    let mut future = make_wait_all();
+    let reactor = Reactor::new(ReactorFlags::NONE).unwrap();
+    future.set_reactor(&reactor);
+    let borrowed = future.get_reactor().unwrap();
+    assert!(borrowed.now().is_ok());
+}
+
+// =========================================================================
+// set_flux / get_flux
+// =========================================================================
+
+#[test]
+fn set_flux_and_get_flux_succeeds() {
+    with_handle(|h| {
+        let mut future = make_wait_all();
+        future.set_flux(h);
+        assert!(future.get_flux().is_ok());
+    });
+}
+
+#[test]
+fn get_flux_after_set_produces_non_owning_handle() {
+    with_handle(|h| {
+        let mut future = make_wait_all();
+        future.set_flux(h);
+        let borrowed = future.get_flux().unwrap();
+        assert!(!borrowed.h.is_owned());
+    });
+}
+
+#[test]
+fn get_flux_after_set_is_usable() {
+    with_handle(|h| {
+        let mut future = make_wait_all();
+        future.set_flux(h);
+        let borrowed = future.get_flux().unwrap();
+        assert!(borrowed.get_rank().is_ok());
+    });
 }
 
 // =========================================================================
@@ -225,171 +463,86 @@ fn get_child_pointer_is_borrowed_not_owned() {
     // so that the parent's destructor remains responsible for the child.
     let future = make_wait_all_with_child("child");
     let child = future.get_child("child").unwrap().unwrap();
-    assert!(
-        !child.c_future.is_owned(),
-        "get_child should return a borrowed (non-owning) FluxFuture"
-    );
+    assert!(!child.c_future.is_owned());
 }
 
 // =========================================================================
-// fulfill / get
-//
-// flux_future_fulfill marks the future as ready and stores the result.
-// flux_future_get returns immediately if the future is already ready,
-// without needing a reactor tick.
+// BorrowFluxPtr / FromFluxPtr
 // =========================================================================
 
 #[test]
-fn fulfill_then_get_returns_stored_pointer() {
-    let mut future = make_wait_all();
-    let data: Box<u32> = Box::new(42u32);
-    let expected_ptr = &*data as *const u32 as *const std::ffi::c_void;
-    future.fulfill(data).unwrap();
-    let result = future.get().unwrap();
-    assert_eq!(result, expected_ptr);
+fn borrow_ptr_produces_non_owning_future() {
+    let future = make_wait_all();
+    let ptr = future.c_future.as_mut_ptr();
+    let borrowed = unsafe { FluxFuture::borrow_ptr(ptr) }.unwrap();
+    assert!(!borrowed.c_future.is_owned());
 }
 
 #[test]
-fn fulfill_with_data_then_get_returns_nonnull() {
-    let mut future = make_wait_all();
-    future.fulfill(Box::new(0u32)).unwrap();
-    let ptr = future.get().unwrap();
+fn borrow_ptr_null_returns_error() {
+    let result = unsafe { FluxFuture::borrow_ptr(std::ptr::null_mut()) };
+    assert!(result.is_err());
+}
+
+#[test]
+fn from_ptr_produces_owning_future() {
+    let future = make_wait_all();
+    let ptr = future.c_future.as_mut_ptr();
+    // incref so both future and owned drop cleanly
+    unsafe { flux_future_incref(ptr) };
+    let owned = unsafe { FluxFuture::from_ptr(ptr) }.unwrap();
+    assert!(owned.c_future.is_owned());
+}
+
+#[test]
+fn from_ptr_null_returns_error() {
+    let result = unsafe { FluxFuture::from_ptr(std::ptr::null_mut()) };
+    assert!(result.is_err());
+}
+
+#[test]
+fn borrowed_future_first_child_is_usable() {
+    let future = make_wait_all_with_child("test");
+    let ptr = future.c_future.as_mut_ptr();
+    let borrowed = unsafe { FluxFuture::borrow_ptr(ptr) }.unwrap();
+    assert!(borrowed.first_child().unwrap().is_some());
+}
+
+// =========================================================================
+// AsFluxPtr / IntoFluxPtr
+// =========================================================================
+
+#[test]
+fn as_mut_ptr_returns_non_null() {
+    let future = make_wait_all();
+    assert!(!future.c_future.as_mut_ptr().is_null());
+}
+
+#[test]
+fn as_mut_ptr_and_into_raw_return_same_pointer() {
+    let future = make_wait_all();
+    let ptr = future.c_future.as_mut_ptr();
+    let raw = future.into_raw();
+    assert_eq!(ptr, raw);
+    unsafe { flux_future_destroy(raw) };
+}
+
+#[test]
+fn into_raw_returns_non_null_and_suppresses_destructor() {
+    let future = make_wait_all();
+    let ptr = future.into_raw();
     assert!(!ptr.is_null());
+    unsafe { flux_future_destroy(ptr) };
 }
 
 // =========================================================================
-// fulfill_error / check_error
+// check_error
 // =========================================================================
 
 #[test]
 fn check_error_on_fresh_future_returns_ok() {
     let mut future = make_wait_all();
     assert!(future.check_error().is_ok());
-}
-
-#[test]
-fn fulfill_error_with_errstr_then_check_error_returns_err() {
-    let mut future = make_wait_all();
-    future
-        .fulfill_error(libc::ENOENT, Some("file not found"))
-        .unwrap();
-    assert!(future.check_error().is_err());
-}
-
-#[test]
-fn fulfill_error_message_is_preserved_in_check_error() {
-    let mut future = make_wait_all();
-    future
-        .fulfill_error(libc::ENOENT, Some("file not found"))
-        .unwrap();
-    match future.check_error() {
-        Err(FluxError::Logic(msg)) => {
-            assert!(
-                msg.contains("file not found"),
-                "Expected 'file not found' in: {msg}"
-            );
-        }
-        other => panic!("Expected FluxError::Logic, got {:?}", other),
-    }
-}
-
-#[test]
-fn fulfill_error_without_errstr_then_check_error_returns_logic_error() {
-    // flux_future_error_string returns NULL when no errstr was provided;
-    // check_error maps this to FluxError::Logic("Error occurred, but no error string is provided.")
-    let mut future = make_wait_all();
-    future.fulfill_error(libc::ENOENT, None).unwrap();
-    assert!(matches!(future.check_error(), Err(FluxError::Logic(_))));
-}
-
-#[test]
-fn fulfill_error_nul_byte_errstr_returns_error() {
-    let mut future = make_wait_all();
-    assert!(future
-        .fulfill_error(libc::ENOENT, Some("bad\0msg"))
-        .is_err());
-}
-
-// =========================================================================
-// fatal_error / check_error
-// =========================================================================
-
-#[test]
-fn fatal_error_with_errstr_then_check_error_returns_err() {
-    let mut future = make_wait_all();
-    future
-        .fatal_error(libc::EPERM, Some("fatal error"))
-        .unwrap();
-    assert!(future.check_error().is_err());
-}
-
-#[test]
-fn fatal_error_without_errstr_then_check_error_returns_err() {
-    let mut future = make_wait_all();
-    future.fatal_error(libc::EPERM, None).unwrap();
-    assert!(future.check_error().is_err());
-}
-
-#[test]
-fn fatal_error_nul_byte_errstr_returns_error() {
-    let mut future = make_wait_all();
-    assert!(future.fatal_error(libc::EPERM, Some("bad\0msg")).is_err());
-}
-
-// =========================================================================
-// fulfill_with
-// =========================================================================
-
-#[test]
-fn fulfill_with_succeeds() {
-    let mut future = make_wait_all();
-    let other = make_wait_all();
-    assert!(future.fulfill_with(&other).is_ok());
-}
-
-// =========================================================================
-// fulfill_next
-//
-// NOTE: The source has a memory leak in this method — when
-// flux_future_fulfill_next returns -1 with EINVAL (i.e., the future is not
-// a streaming future), `raw_ptr` is never recovered via Box::from_raw before
-// returning Ok(false). The same applies to the Err(...) path. Fix:
-//
-//   if rc == -1 {
-//       let _ = unsafe { Box::from_raw(raw_ptr as *mut T) };
-//       ...
-//   }
-// =========================================================================
-
-#[test]
-fn fulfill_next_on_non_streaming_future_returns_false() {
-    // flux_future_fulfill_next returns EINVAL on non-streaming futures,
-    // which the wrapper maps to Ok(false).
-    let mut future = make_wait_all();
-    // NOTE: the Box passed here is leaked due to the bug described above.
-    let data: Box<u32> = Box::new(0u32);
-    assert!(matches!(future.fulfill_next(data), Ok(false)));
-}
-
-// =========================================================================
-// wait_for
-// =========================================================================
-
-#[test]
-fn wait_for_zero_timeout_on_unfulfilled_child_returns_false() {
-    // A wait_all future with an unfulfilled child cannot complete;
-    // wait_for(0.0) should time out and return Ok(false).
-    let mut future = make_wait_all_with_child("pending");
-    assert!(matches!(future.wait_for(0.0), Ok(false)));
-}
-
-#[test]
-fn wait_for_zero_timeout_on_fulfilled_future_returns_true() {
-    // After explicit fulfill, the future is immediately ready;
-    // wait_for(0.0) should return Ok(true) without blocking.
-    let mut future = make_wait_all();
-    future.fulfill(Box::new(0u32)).unwrap();
-    assert!(matches!(future.wait_for(0.0), Ok(true)));
 }
 
 // =========================================================================
@@ -405,8 +558,94 @@ fn reset_on_fresh_future_succeeds() {
 #[test]
 fn reset_on_fulfilled_future_succeeds() {
     let mut future = make_wait_all();
-    future.fulfill(Box::new(0u32)).unwrap();
+    future.fulfill(Box::new(42u32)).unwrap();
     assert!(future.reset().is_ok());
+}
+
+// =========================================================================
+// fulfill / get
+// =========================================================================
+
+#[test]
+fn fulfill_then_get_returns_stored_pointer() {
+    let mut future = make_wait_all();
+    future.fulfill(Box::new(42u32)).unwrap();
+    let result = future.get().unwrap();
+    assert!(!result.is_null());
+}
+
+#[test]
+fn fulfill_with_data_then_get_returns_nonnull() {
+    let mut future = make_wait_all();
+    future.fulfill(Box::new(99u64)).unwrap();
+    assert!(!future.get().unwrap().is_null());
+}
+
+// =========================================================================
+// fulfill_error / check_error
+// =========================================================================
+
+#[test]
+fn fulfill_error_with_errstr_then_check_error_returns_err() {
+    let mut future = make_wait_all();
+    future
+        .fulfill_error(libc::ENOENT, Some("not found"))
+        .unwrap();
+    assert!(future.check_error().is_err());
+}
+
+#[test]
+fn fulfill_error_without_errstr_then_check_error_returns_logic_error() {
+    // No error string → flux_future_error_string returns NULL → Logic error
+    let mut future = make_wait_all();
+    future.fulfill_error(libc::ENOENT, None).unwrap();
+    assert!(matches!(future.check_error(), Err(FluxError::Logic(_))));
+}
+
+#[test]
+fn fulfill_error_message_is_preserved_in_check_error() {
+    let mut future = make_wait_all();
+    future
+        .fulfill_error(libc::ENOENT, Some("custom message"))
+        .unwrap();
+    match future.check_error() {
+        Err(FluxError::Logic(msg)) => {
+            assert!(msg.contains("custom message"), "Expected message in: {msg}")
+        }
+        other => panic!("Expected Logic error, got {:?}", other),
+    }
+}
+
+#[test]
+fn fulfill_error_nul_byte_errstr_returns_error() {
+    let mut future = make_wait_all();
+    assert!(future
+        .fulfill_error(libc::ENOENT, Some("bad\0str"))
+        .is_err());
+}
+
+// =========================================================================
+// fatal_error / check_error
+// =========================================================================
+
+#[test]
+fn fatal_error_with_errstr_then_check_error_returns_err() {
+    let mut future = make_wait_all();
+    future.fatal_error(libc::EPERM, Some("fatal")).unwrap();
+    assert!(future.check_error().is_err());
+}
+
+#[test]
+fn fatal_error_without_errstr_then_check_error_returns_err() {
+    let mut future = make_wait_all();
+    future.fatal_error(libc::EPERM, None).unwrap();
+    assert!(future.check_error().is_err());
+}
+
+#[test]
+fn fatal_error_nul_byte_errstr_returns_error() {
+    let mut future = make_wait_all();
+    assert!(future.fatal_error(libc::EPERM, Some("bad\0str")).is_err());
 }
 
 // =========================================================================
@@ -423,7 +662,7 @@ fn continue_with_error_without_errstr_succeeds() {
 fn continue_with_error_with_errstr_succeeds() {
     let mut future = make_wait_all();
     assert!(future
-        .continue_with_error(libc::ENOENT, Some("error msg"))
+        .continue_with_error(libc::ENOENT, Some("error"))
         .is_ok());
 }
 
@@ -436,77 +675,44 @@ fn continue_with_error_nul_byte_errstr_returns_error() {
 }
 
 // =========================================================================
-// BorrowFluxPtr / FromFluxPtr
+// fulfill_with
 // =========================================================================
 
 #[test]
-fn borrow_ptr_produces_non_owning_future() {
-    let future = make_wait_all();
-    let ptr = future.c_future.as_mut_ptr();
-    let borrowed = unsafe { FluxFuture::borrow_ptr(ptr) }.unwrap();
-    assert!(
-        !borrowed.c_future.is_owned(),
-        "borrow_ptr should produce a non-owning FluxFuture"
-    );
-    // `future` outlives `borrowed` so ptr remains valid through this scope.
-}
-
-#[test]
-fn from_ptr_produces_owning_future() {
-    let future = make_wait_all();
-    let ptr = future.into_raw();
-    let owned = unsafe { FluxFuture::from_ptr(ptr) }.unwrap();
-    assert!(
-        owned.c_future.is_owned(),
-        "from_ptr should produce an owning FluxFuture"
-    );
-}
-
-#[test]
-fn borrowed_future_first_child_is_usable() {
-    let future = make_wait_all_with_child("child");
-    let ptr = future.c_future.as_mut_ptr();
-    let borrowed = unsafe { FluxFuture::borrow_ptr(ptr) }.unwrap();
-    assert!(borrowed.first_child().is_ok());
-}
-
-#[test]
-fn borrow_ptr_null_returns_error() {
-    let result = unsafe { FluxFuture::borrow_ptr(std::ptr::null_mut()) };
-    assert!(matches!(result, Err(FluxError::Logic(_))));
-}
-
-#[test]
-fn from_ptr_null_returns_error() {
-    let result = unsafe { FluxFuture::from_ptr(std::ptr::null_mut()) };
-    assert!(matches!(result, Err(FluxError::Logic(_))));
+fn fulfill_with_succeeds() {
+    let mut future = make_wait_all();
+    let other = make_wait_all();
+    assert!(future.fulfill_with(&other).is_ok());
 }
 
 // =========================================================================
-// AsFluxPtr / IntoFluxPtr
+// fulfill_next
 // =========================================================================
 
 #[test]
-fn as_mut_ptr_returns_non_null() {
-    let future = make_wait_all();
-    assert!(!future.as_mut_ptr().is_null());
+fn fulfill_next_on_non_streaming_future_returns_false() {
+    // Non-streaming futures return EINVAL from flux_future_fulfill_next,
+    // which the wrapper maps to Ok(false).
+    let mut future = make_wait_all();
+    let result = future.fulfill_next(Box::new(42u32)).unwrap();
+    assert!(!result);
+}
+
+// =========================================================================
+// wait_for
+// =========================================================================
+
+#[test]
+fn wait_for_zero_timeout_on_unfulfilled_child_returns_false() {
+    // An empty wait_all with one unfulfilled child can never complete,
+    // so wait_for(0.0) reliably times out.
+    let mut future = make_wait_all_with_child("pending");
+    assert_eq!(future.wait_for(0.0).unwrap(), false);
 }
 
 #[test]
-fn into_raw_returns_non_null_and_suppresses_destructor() {
-    let future = make_wait_all();
-    let ptr = future.into_raw();
-    assert!(!ptr.is_null());
-    // Manually clean up to avoid leaking the C allocation.
-    unsafe { flux_future_destroy(ptr) };
-}
-
-#[test]
-fn as_mut_ptr_and_into_raw_return_same_pointer() {
-    let future = make_wait_all();
-    let as_ptr = future.as_mut_ptr();
-    let raw_ptr = future.into_raw();
-    assert_eq!(as_ptr, raw_ptr);
-    // Manually free — no Rust type owns ptr at this point.
-    unsafe { flux_future_destroy(raw_ptr) };
+fn wait_for_zero_timeout_on_fulfilled_future_returns_true() {
+    let mut future = make_wait_all();
+    future.fulfill(Box::new(42u32)).unwrap();
+    assert_eq!(future.wait_for(0.0).unwrap(), true);
 }

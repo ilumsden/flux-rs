@@ -1,32 +1,140 @@
 use std::collections::HashMap;
 use std::ffi::{c_void, CStr, CString};
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use flux_sys::core::{
-    flux_future_and_then, flux_future_continue, flux_future_continue_error, flux_future_destroy,
-    flux_future_error_string, flux_future_fatal_error, flux_future_first_child,
-    flux_future_fulfill, flux_future_fulfill_error, flux_future_fulfill_next,
-    flux_future_fulfill_with, flux_future_get, flux_future_get_child, flux_future_has_error,
+    flux_future_and_then, flux_future_aux_get, flux_future_aux_set, flux_future_continue,
+    flux_future_continue_error, flux_future_create, flux_future_destroy, flux_future_error_string,
+    flux_future_fatal_error, flux_future_first_child, flux_future_fulfill,
+    flux_future_fulfill_error, flux_future_fulfill_next, flux_future_fulfill_with, flux_future_get,
+    flux_future_get_child, flux_future_get_flux, flux_future_get_reactor, flux_future_has_error,
     flux_future_incref, flux_future_next_child, flux_future_or_then, flux_future_push,
-    flux_future_reset, flux_future_t, flux_future_then, flux_future_wait_all_create,
-    flux_future_wait_any_create, flux_future_wait_for,
+    flux_future_reset, flux_future_set_flux, flux_future_set_reactor, flux_future_t,
+    flux_future_then, flux_future_wait_all_create, flux_future_wait_any_create,
+    flux_future_wait_for,
 };
 
-use crate::error::{check_rc, FluxError, Result};
+use crate::error::{check_ptr, check_rc, FluxError, Result};
 use crate::flux_ptr_management::{
     default_impl_as_flux_ptr, BorrowFluxPtr, BorrowFluxPtrNoArgs, FluxPtr, FromFluxPtr,
     FromFluxPtrNoArgs,
 };
+use crate::handle::{AuxThinPtrWrapper, FluxHandle};
+use crate::reactor::Reactor;
+
+pub(crate) type FluxFutureInitializer = Arc<dyn Fn(&FluxFuture<'_>) + Send + 'static>;
 
 pub struct FluxFuture<'a> {
     /// The underlying flux_future_t C pointer wrapped in the FluxPtr struct
     pub(crate) c_future: FluxPtr<flux_future_t>,
     /// A PhantomData field to enforce borrowing rules on the flux_future_t pointer for child futures
     _phantom: PhantomData<&'a flux_future_t>,
+    /// A field to store the callback passed to FluxFuture::new to ensure it isn't dropped
+    pub(crate) _init_cb: Option<FluxFutureInitializer>,
 }
 
 impl<'a> FluxFuture<'a> {
-    // TODO in the future, provide a method wrapping flux_future_create.
+    pub fn new<F>(initializer: F) -> Result<FluxFuture<'static>>
+    where
+        F: Fn(&FluxFuture<'_>) + Send + Sync + 'static,
+    {
+        let cb: FluxFutureInitializer = Arc::new(initializer);
+        let raw_arg = Arc::into_raw(cb.clone()) as *mut c_void;
+
+        extern "C" fn trampoline<F>(f: *mut flux_future_t, arg: *mut c_void)
+        where
+            F: Fn(&FluxFuture<'_>) + Send + Sync + 'static,
+        {
+            // Borrow the Arc without taking ownership — safe because _init_cb keeps it alive
+            let cb = unsafe { &*(arg as *const F) };
+            let future = match unsafe { FluxFuture::borrow_ptr(f) } {
+                Ok(f) => f,
+                Err(_) => return,
+            };
+            cb(&future);
+        }
+
+        let ptr = unsafe { flux_future_create(Some(trampoline::<F>), raw_arg) };
+        check_ptr(ptr)?;
+        Ok(FluxFuture {
+            c_future: FluxPtr::create_owned(ptr, flux_future_destroy)?,
+            _phantom: PhantomData,
+            _init_cb: Some(cb),
+        })
+    }
+
+    pub fn set_aux<T: Send + Sync + 'static>(&mut self, name: &str, data: T) -> Result<()> {
+        let c_name = CString::new(name)?;
+        let wrapper = Box::new(AuxThinPtrWrapper {
+            inner: Box::new(data),
+        });
+        let raw_data_ptr = Box::into_raw(wrapper) as *mut c_void;
+
+        extern "C" fn destroy_aux_trampoline(ptr: *mut c_void) {
+            if !ptr.is_null() {
+                unsafe {
+                    let _ = Box::from_raw(ptr as *mut AuxThinPtrWrapper);
+                }
+            }
+        }
+
+        let rc = unsafe {
+            flux_future_aux_set(
+                self.c_future.as_mut_ptr(),
+                c_name.as_ptr(),
+                raw_data_ptr,
+                Some(destroy_aux_trampoline),
+            )
+        };
+        if rc == -1 {
+            let _ = unsafe { Box::from_raw(raw_data_ptr as *mut AuxThinPtrWrapper) };
+            return Err(FluxError::System(std::io::Error::last_os_error()));
+        }
+        Ok(())
+    }
+
+    pub fn get_aux<T: 'static>(&self, name: &str) -> Result<&T> {
+        let raw_ptr = self.get_aux_raw(name)?;
+        let wrapper = unsafe { &*(raw_ptr as *const AuxThinPtrWrapper) };
+        match wrapper.inner.downcast_ref::<T>() {
+            Some(typed_ref) => Ok(typed_ref),
+            None => Err(FluxError::Logic(format!(
+                "Type mismatch for aux key '{}'",
+                name
+            ))),
+        }
+    }
+
+    pub fn get_aux_raw(&self, name: &str) -> Result<*mut c_void> {
+        let c_name = CString::new(name)?;
+        let raw_ptr = unsafe { flux_future_aux_get(self.c_future.as_mut_ptr(), c_name.as_ptr()) };
+        check_ptr(raw_ptr)
+    }
+
+    pub fn set_reactor(&mut self, reactor: &Reactor) {
+        unsafe {
+            flux_future_set_reactor(self.c_future.as_mut_ptr(), reactor.c_reactor.as_mut_ptr());
+        }
+    }
+
+    pub fn get_reactor(&self) -> Result<Reactor> {
+        let ptr = unsafe { flux_future_get_reactor(self.c_future.as_mut_ptr()) };
+        check_ptr(ptr)?;
+        unsafe { Reactor::borrow_ptr(ptr) }
+    }
+
+    pub fn set_flux(&mut self, handle: &FluxHandle) {
+        unsafe {
+            flux_future_set_flux(self.c_future.as_mut_ptr(), handle.h.as_mut_ptr());
+        }
+    }
+
+    pub fn get_flux(&self) -> Result<FluxHandle> {
+        let ptr = unsafe { flux_future_get_flux(self.c_future.as_mut_ptr()) };
+        check_ptr(ptr)?;
+        unsafe { FluxHandle::borrow_ptr(ptr) }
+    }
 
     /// Created an Rust-owned version of this FluxFuture.
     ///
@@ -42,6 +150,7 @@ impl<'a> FluxFuture<'a> {
         Ok(FluxFuture {
             c_future: FluxPtr::create_owned(self.c_future.as_mut_ptr(), flux_future_destroy)?,
             _phantom: PhantomData,
+            _init_cb: self._init_cb.clone(),
         })
     }
 
@@ -339,6 +448,7 @@ impl<'a> Clone for FluxFuture<'a> {
             c_future: FluxPtr::create_owned(self.c_future.as_mut_ptr(), flux_future_destroy)
                 .expect("The cloned Future has a NULL C pointer, which should never happen"),
             _phantom: PhantomData,
+            _init_cb: self._init_cb.clone(),
         }
     }
 }
@@ -351,6 +461,7 @@ unsafe impl<'a> BorrowFluxPtr for FluxFuture<'a> {
         Ok(Self {
             c_future: FluxPtr::create_borrowed(ptr, flux_future_destroy)?,
             _phantom: PhantomData,
+            _init_cb: None,
         })
     }
 }
@@ -360,6 +471,7 @@ unsafe impl FromFluxPtr for FluxFuture<'static> {
         Ok(Self {
             c_future: FluxPtr::create_owned(ptr, flux_future_destroy)?,
             _phantom: PhantomData,
+            _init_cb: None,
         })
     }
 }

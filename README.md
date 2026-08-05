@@ -17,9 +17,6 @@ _Medium Priority (good to have for initial release)_
   - Log redirect (`flux_log_set_redirect`)
   - Message counters (`flux_get_msgcounters`, `flux_clr_msgcounters`)
   - Stats (`flux_stats` family of functions)
-- Future (`flux_future_t`)
-  - Creation (`flux_future_create`)
-  - Aux set/get (`flux_future_aux_get`, `flux_future_aux_set`)
 - Message (`flux_msg_t`)
   - Macros for `FLUX_MATCH_ANY`, `FLUX_MATCH_EVENT`, `FLUX_MATCH_REQUEST`, `FLUX_MATCH_RESPONSE`
   - Aux set/get (`flux_msg_aux_get`, `flux_msg_aux_set`)
