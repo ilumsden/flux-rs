@@ -1,6 +1,6 @@
 use std::io;
 
-use crate::error::{check_ptr, check_rc, to_flux_rc, FluxError, Result};
+use crate::error::{FluxError, Result, check_ptr, check_rc, to_flux_rc};
 use crate::tests::common::with_handle;
 
 #[test]
@@ -106,7 +106,7 @@ fn to_errno_system_with_raw_os_error_returns_that_errno() {
 #[test]
 fn to_errno_system_without_raw_os_error_returns_einval() {
     // io::Error::new does not carry a raw OS code.
-    let flux_err = FluxError::System(io::Error::new(io::ErrorKind::Other, "custom"));
+    let flux_err = FluxError::System(io::Error::other("custom"));
     assert_eq!(flux_err.to_errno(), libc::EINVAL);
 }
 
@@ -125,7 +125,7 @@ fn to_errno_request_response_with_raw_os_error_returns_that_errno() {
 
 #[test]
 fn to_errno_request_response_without_raw_os_error_returns_einval() {
-    let io_err = io::Error::new(io::ErrorKind::Other, "custom");
+    let io_err = io::Error::other("custom");
     let flux_err = FluxError::RequestResponseError(io_err, "msg".to_string());
     assert_eq!(flux_err.to_errno(), libc::EINVAL);
 }

@@ -338,25 +338,25 @@ fn try_from_iter_from_string_vec() {
 fn cursor_next_iterates_all_hosts_in_order() {
     let mut hl = make_hostlist(&["a", "b", "c"]);
     let mut cursor = hl.cursor_mut();
-    assert_eq!(cursor.next().as_deref(), Some("a"));
-    assert_eq!(cursor.next().as_deref(), Some("b"));
-    assert_eq!(cursor.next().as_deref(), Some("c"));
-    assert_eq!(cursor.next(), None);
+    assert_eq!(cursor.move_next().as_deref(), Some("a"));
+    assert_eq!(cursor.move_next().as_deref(), Some("b"));
+    assert_eq!(cursor.move_next().as_deref(), Some("c"));
+    assert_eq!(cursor.move_next(), None);
 }
 
 #[test]
 fn cursor_next_on_empty_hostlist_returns_none() {
     let mut hl = Hostlist::new().unwrap();
     let mut cursor = hl.cursor_mut();
-    assert_eq!(cursor.next(), None);
+    assert_eq!(cursor.move_next(), None);
 }
 
 #[test]
 fn cursor_current_returns_last_visited_host() {
     let mut hl = make_hostlist(&["x", "y", "z"]);
     let mut cursor = hl.cursor_mut();
-    cursor.next(); // "x"
-    cursor.next(); // "y"
+    cursor.move_next(); // "x"
+    cursor.move_next(); // "y"
     assert_eq!(cursor.current().as_deref(), Some("y"));
 }
 
@@ -365,8 +365,8 @@ fn cursor_remove_current_shrinks_hostlist() {
     let mut hl = make_hostlist(&["a", "b", "c"]);
     {
         let mut cursor = hl.cursor_mut();
-        cursor.next(); // "a"
-        cursor.next(); // "b"
+        cursor.move_next(); // "a"
+        cursor.move_next(); // "b"
         assert!(cursor.remove_current());
     }
     assert_eq!(hl.len(), 2);
@@ -377,10 +377,10 @@ fn cursor_next_after_remove_yields_remaining_hosts() {
     let mut hl = make_hostlist(&["a", "b", "c"]);
     {
         let mut cursor = hl.cursor_mut();
-        cursor.next(); // "a"
+        cursor.move_next(); // "a"
         cursor.remove_current();
         // After removing "a", subsequent nexts yield the remaining hosts.
-        let rest: Vec<String> = std::iter::from_fn(|| cursor.next()).collect();
+        let rest: Vec<String> = std::iter::from_fn(|| cursor.move_next()).collect();
         assert_eq!(rest, vec!["b", "c"]);
     }
 }
@@ -421,7 +421,7 @@ fn serialize_produces_encoded_json_string() {
     let encoded = hl.encode().unwrap();
     let json = serde_json::to_string(&hl).unwrap();
     // serde_json wraps the string value in quotes.
-    assert_eq!(json, format!("\"{}\"", encoded));
+    assert_eq!(json, format!("\"{encoded}\""));
 }
 
 #[test]

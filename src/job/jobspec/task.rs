@@ -56,7 +56,7 @@ impl<'de> Deserialize<'de> for TaskCount {
                     None => {
                         return Err(de::Error::custom(
                             "'count' field must have exactly one key set",
-                        ))
+                        ));
                     }
                 };
                 let result = match key.as_str() {

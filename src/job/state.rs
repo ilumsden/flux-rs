@@ -3,16 +3,15 @@ use std::fmt::Display;
 
 use bitflags::bitflags;
 use flux_sys::core::{
-    flux_job_state_t, flux_job_state_t_FLUX_JOB_STATE_CLEANUP,
-    flux_job_state_t_FLUX_JOB_STATE_DEPEND, flux_job_state_t_FLUX_JOB_STATE_INACTIVE,
-    flux_job_state_t_FLUX_JOB_STATE_NEW, flux_job_state_t_FLUX_JOB_STATE_PRIORITY,
-    flux_job_state_t_FLUX_JOB_STATE_RUN, flux_job_state_t_FLUX_JOB_STATE_SCHED,
-    flux_job_statetostr, flux_job_strtostate, FLUX_JOB_STATE_ACTIVE, FLUX_JOB_STATE_PENDING,
-    FLUX_JOB_STATE_RUNNING,
+    FLUX_JOB_STATE_ACTIVE, FLUX_JOB_STATE_PENDING, FLUX_JOB_STATE_RUNNING, flux_job_state_t,
+    flux_job_state_t_FLUX_JOB_STATE_CLEANUP, flux_job_state_t_FLUX_JOB_STATE_DEPEND,
+    flux_job_state_t_FLUX_JOB_STATE_INACTIVE, flux_job_state_t_FLUX_JOB_STATE_NEW,
+    flux_job_state_t_FLUX_JOB_STATE_PRIORITY, flux_job_state_t_FLUX_JOB_STATE_RUN,
+    flux_job_state_t_FLUX_JOB_STATE_SCHED, flux_job_statetostr, flux_job_strtostate,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::error::{check_ptr, check_rc, Result};
+use crate::error::{Result, check_ptr, check_rc};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum JobStateFormat {
@@ -101,7 +100,7 @@ impl Display for JobState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let job_state_str = match self.encode(JobStateFormat::UpperCaseLong) {
             Ok(s) => s,
-            Err(e) => format!("UNKNOWN (failed to convert C string to Rust string: {})", e),
+            Err(e) => format!("UNKNOWN (failed to convert C string to Rust string: {e})"),
         };
         write!(f, "{}", job_state_str)
     }

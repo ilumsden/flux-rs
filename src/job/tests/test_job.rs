@@ -1,10 +1,10 @@
+use crate::SignalCode;
 use crate::job::job::{Job, JobEventSeverity};
 use crate::job::jobid::JobId;
 use crate::job::jobspec::JobspecV1;
-use crate::job::submit::{submit, JobSubmitFlags};
+use crate::job::submit::{JobSubmitFlags, submit};
 use crate::job::urgency::JobUrgency;
 use crate::tests::common::with_handle;
-use crate::SignalCode;
 
 // =========================================================================
 // JobEventSeverity

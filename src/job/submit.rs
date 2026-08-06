@@ -7,7 +7,7 @@ use flux_sys::core::{
 
 use bitflags::bitflags;
 
-use crate::error::{check_ptr, Result};
+use crate::error::{Result, check_ptr};
 use crate::flux_ptr_management::FromFluxPtrNoArgs;
 use crate::future::FluxFuture;
 use crate::handle::FluxHandle;
@@ -47,9 +47,9 @@ pub fn submit_async(
     unsafe { FluxFuture::from_ptr(future_ptr) }
 }
 
-pub fn submit<'h, 'j>(
+pub fn submit<'h>(
     handle: &'h FluxHandle,
-    jobspec: &'j Jobspec,
+    jobspec: &Jobspec,
     urgency: Option<JobUrgency>,
     flags: Option<JobSubmitFlags>,
 ) -> Result<Job<'h>> {

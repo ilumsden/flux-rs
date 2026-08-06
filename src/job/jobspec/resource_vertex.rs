@@ -40,12 +40,12 @@ impl TryFrom<RawResourceVertex> for ResourceVertex {
     type Error = FluxError;
 
     fn try_from(value: RawResourceVertex) -> std::result::Result<Self, Self::Error> {
-        if let Some(with_vec) = &value.with {
-            if with_vec.is_empty() {
-                return Err(FluxError::Logic(
-                    "The 'with' field must contain at least one element if present".to_string(),
-                ));
-            }
+        if let Some(with_vec) = &value.with
+            && with_vec.is_empty()
+        {
+            return Err(FluxError::Logic(
+                "The 'with' field must contain at least one element if present".to_string(),
+            ));
         }
         if value.resource_type == "slot" && value.label.is_none() {
             return Err(FluxError::Logic(

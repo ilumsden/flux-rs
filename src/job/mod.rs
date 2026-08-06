@@ -1,4 +1,5 @@
 mod info;
+#[allow(clippy::module_inception)]
 mod job;
 mod jobid;
 pub mod jobspec;
@@ -17,5 +18,5 @@ pub use self::jobid::{JobId, JobIdEncodingType};
 pub use self::result::{AsyncJobResult, JobResult, JobResultCode};
 pub use self::state::{JobState, JobStateFormat};
 pub use self::status::{AsyncJobStatus, JobStatus};
-pub use self::submit::{submit, submit_async, JobSubmitFlags};
+pub use self::submit::{JobSubmitFlags, submit, submit_async};
 pub use self::urgency::JobUrgency;

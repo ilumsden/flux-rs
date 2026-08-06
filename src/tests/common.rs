@@ -41,5 +41,5 @@ where
         })
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    f(&*guard)
+    f(&guard)
 }

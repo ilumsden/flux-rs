@@ -6,10 +6,10 @@ use flux_sys::core::{
     flux_msg_handler_stop, flux_msg_handler_t, flux_msg_incref, flux_msg_t, flux_t,
 };
 
-use crate::error::{check_ptr, Result};
+use crate::error::{Result, check_ptr};
 use crate::flux_log_error;
 use crate::flux_ptr_management::{
-    default_impl_as_flux_ptr, BorrowFluxPtr, FluxPtr, FromFluxPtr, FromFluxPtrNoArgs,
+    BorrowFluxPtr, FluxPtr, FromFluxPtr, FromFluxPtrNoArgs, default_impl_as_flux_ptr,
 };
 use crate::handle::FluxHandle;
 use crate::msg::{Message, MessageMatch, MessageRolemask, MessageType};
@@ -61,7 +61,11 @@ impl MsgHandler {
             c_handler: match FluxPtr::create_borrowed(mh, flux_msg_handler_destroy) {
                 Ok(handler_ptr) => handler_ptr,
                 Err(err) => {
-                    flux_log_error!(handle, "Error occured in wrapping the flux_msg_handler_t in MessageHandler callback: {}", err);
+                    flux_log_error!(
+                        handle,
+                        "Error occured in wrapping the flux_msg_handler_t in MessageHandler callback: {}",
+                        err
+                    );
                     return;
                 }
             },

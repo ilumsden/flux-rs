@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use serde_json::json;
 use serde_json::Value;
+use serde_json::json;
 
 use crate::duration::FluxDuration;
 use crate::job::jobspec::canonical_jobspec::{Jobspec, RawJobspec};
@@ -254,9 +254,10 @@ fn unbuffered_false_removes_attributes() {
     js.unbuffered(true).unwrap();
     js.unbuffered(false).unwrap();
     assert!(!js.is_unbuffered());
-    assert!(js
-        .get_attr_shell_options("output.stdout.buffer.type")
-        .is_none());
+    assert!(
+        js.get_attr_shell_options("output.stdout.buffer.type")
+            .is_none()
+    );
     assert!(js.get_attr_shell_options("output.batch-timeout").is_none());
 }
 

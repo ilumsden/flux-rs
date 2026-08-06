@@ -1,13 +1,13 @@
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{CStr, CString, c_char};
 use std::fmt::Display;
 use std::ops::{Deref, DerefMut};
 
 use flux_sys::core::{
-    flux_job_id_encode, flux_job_id_parse, flux_job_submit_get_id, flux_jobid_t, FLUX_JOBID_ANY,
+    FLUX_JOBID_ANY, flux_job_id_encode, flux_job_id_parse, flux_job_submit_get_id, flux_jobid_t,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::error::{check_rc, FluxError, Result};
+use crate::error::{FluxError, Result, check_rc};
 use crate::future::FluxFuture;
 
 pub enum JobIdEncodingType {
@@ -112,8 +112,7 @@ impl JobId {
                 // If we exceed that value, we error out.
                 if buf_size > max_id_size {
                     return Err(FluxError::Logic(format!(
-                        "Job ID encoding exceeded {} bytes",
-                        max_id_size
+                        "Job ID encoding exceeded {max_id_size} bytes",
                     )));
                 }
                 continue;
@@ -173,7 +172,7 @@ impl Display for JobId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let str_repr = match self.f58() {
             Ok(s) => s,
-            Err(e) => format!("{} (failed to convert to f58: {})", self.0, e),
+            Err(e) => format!("{} (failed to convert to f58: {e})", self.0),
         };
         write!(f, "{}", str_repr)
     }

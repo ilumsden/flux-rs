@@ -1,18 +1,18 @@
 use std::thread::{self, JoinHandle};
 
 use bitflags::bitflags;
-use errno::{set_errno, Errno};
+use errno::{Errno, set_errno};
 use flux_sys::core::{
-    flux_reactor_create, flux_reactor_destroy, flux_reactor_now, flux_reactor_now_update,
-    flux_reactor_run, flux_reactor_stop, flux_reactor_stop_error, flux_reactor_t,
-    flux_reactor_time, FLUX_REACTOR_NOWAIT, FLUX_REACTOR_ONCE,
+    FLUX_REACTOR_NOWAIT, FLUX_REACTOR_ONCE, flux_reactor_create, flux_reactor_destroy,
+    flux_reactor_now, flux_reactor_now_update, flux_reactor_run, flux_reactor_stop,
+    flux_reactor_stop_error, flux_reactor_t, flux_reactor_time,
 };
 
 #[cfg(flux_core_has_reactor_ref_count)]
 use flux_sys::core::flux_reactor_incref;
 
-use crate::error::{check_ptr, check_rc, Result};
-use crate::flux_ptr_management::{default_impl_as_flux_ptr, BorrowFluxPtr, FluxPtr, FromFluxPtr};
+use crate::error::{Result, check_ptr, check_rc};
+use crate::flux_ptr_management::{BorrowFluxPtr, FluxPtr, FromFluxPtr, default_impl_as_flux_ptr};
 
 bitflags! {
     #[repr(transparent)]
@@ -45,14 +45,14 @@ impl Reactor {
     }
 
     pub fn stop(&mut self, error_code: Option<std::io::Error>) -> Result<()> {
-        if let Some(ec) = error_code {
-            if let Some(raw_errno_val) = ec.raw_os_error() {
-                set_errno(Errno(raw_errno_val));
-                unsafe {
-                    flux_reactor_stop_error(self.c_reactor.as_mut_ptr());
-                }
-                return Ok(());
+        if let Some(ec) = error_code
+            && let Some(raw_errno_val) = ec.raw_os_error()
+        {
+            set_errno(Errno(raw_errno_val));
+            unsafe {
+                flux_reactor_stop_error(self.c_reactor.as_mut_ptr());
             }
+            return Ok(());
         }
         unsafe {
             flux_reactor_stop(self.c_reactor.as_mut_ptr());

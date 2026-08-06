@@ -1,23 +1,23 @@
 use std::any::Any;
-use std::ffi::{c_char, c_int, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_int, c_void};
 
 use bitflags::bitflags;
 use flux_sys::core::{
-    flux_attr_get, flux_attr_set, flux_aux_get, flux_aux_set, flux_clone, flux_close,
-    flux_comms_error_set, flux_get_rank, flux_get_reactor, flux_get_size, flux_incref, flux_log,
-    flux_log_set_appname, flux_log_set_procid, flux_match, flux_msg_t, flux_open, flux_pollevents,
-    flux_pollfd, flux_reconnect, flux_recv, flux_requeue, flux_respond, flux_respond_error,
-    flux_respond_raw, flux_send_new, flux_set_reactor, flux_t, FLUX_O_CLONE, FLUX_O_MATCHDEBUG,
-    FLUX_O_NONBLOCK, FLUX_O_RPCTRACK, FLUX_O_TEST_NOSUB, FLUX_O_TRACE, FLUX_POLLERR, FLUX_POLLIN,
-    FLUX_POLLOUT,
+    FLUX_O_CLONE, FLUX_O_MATCHDEBUG, FLUX_O_NONBLOCK, FLUX_O_RPCTRACK, FLUX_O_TEST_NOSUB,
+    FLUX_O_TRACE, FLUX_POLLERR, FLUX_POLLIN, FLUX_POLLOUT, flux_attr_get, flux_attr_set,
+    flux_aux_get, flux_aux_set, flux_clone, flux_close, flux_comms_error_set, flux_get_rank,
+    flux_get_reactor, flux_get_size, flux_incref, flux_log, flux_log_set_appname,
+    flux_log_set_procid, flux_match, flux_msg_t, flux_open, flux_pollevents, flux_pollfd,
+    flux_reconnect, flux_recv, flux_requeue, flux_respond, flux_respond_error, flux_respond_raw,
+    flux_send_new, flux_set_reactor, flux_t,
 };
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::error::{check_ptr, check_rc, FluxError, Result};
+use crate::error::{FluxError, Result, check_ptr, check_rc};
 use crate::flux_ptr_management::{
-    default_impl_as_flux_ptr, BorrowFluxPtr, BorrowFluxPtrNoArgs, FluxPtr, FromFluxPtr,
-    FromFluxPtrNoArgs,
+    BorrowFluxPtr, BorrowFluxPtrNoArgs, FluxPtr, FromFluxPtr, FromFluxPtrNoArgs,
+    default_impl_as_flux_ptr,
 };
 use crate::msg::{Message, MessageMatch};
 use crate::reactor::Reactor;
@@ -196,7 +196,7 @@ impl FluxHandle {
     /// Create a handle for the Flux broker described by the URI string.
     pub fn new_from_str_uri(uri: &str, flags: HandleFlags) -> Result<Self> {
         // Treat an empty string URI as the equivalent of a NULL URI in the C API
-        let flux_handle = if uri == "" {
+        let flux_handle = if uri.is_empty() {
             unsafe { flux_open(std::ptr::null(), flags.bits() as _) }
         } else {
             let c_uri = CString::new(uri.to_owned())?;
@@ -580,10 +580,8 @@ impl FluxHandle {
 
     /// Respond to the provided Request with an optional data payload consisting of `serde`-serialized JSON data.
     pub fn respond_json(&self, request: &Request, data: Option<&Value>) -> Result<()> {
-        let data_vec_opt = data
-            .map(|data_value| serde_json::to_vec(data_value))
-            .transpose()?;
-        let data_slice_opt = data_vec_opt.as_ref().map(|v| v.as_slice());
+        let data_vec_opt = data.map(serde_json::to_vec).transpose()?;
+        let data_slice_opt = data_vec_opt.as_deref();
         self.respond(request, data_slice_opt)
     }
 
@@ -596,13 +594,13 @@ impl FluxHandle {
         let data_vec_opt = data
             .map(|data_value| serde_json::to_vec(data_value))
             .transpose()?;
-        let data_slice_opt = data_vec_opt.as_ref().map(|v| v.as_slice());
+        let data_slice_opt = data_vec_opt.as_deref();
         self.respond(request, data_slice_opt)
     }
 
     /// Respond to the provided Request with an optional data payload consisting of a UTF-8 string.
     pub fn respond_string(&self, request: &Request, data: Option<&str>) -> Result<()> {
-        let c_data = data.map(|s| CString::new(s)).transpose()?;
+        let c_data = data.map(CString::new).transpose()?;
         let c_data_ptr = c_data.as_ref().map(|cs| cs.as_ptr());
         let rc = unsafe {
             flux_respond(
@@ -640,7 +638,7 @@ impl FluxHandle {
         errnum: i32,
         errmsg: Option<&str>,
     ) -> Result<()> {
-        let c_errmsg = errmsg.map(|s| CString::new(s)).transpose()?;
+        let c_errmsg = errmsg.map(CString::new).transpose()?;
         let c_errmsg_ptr = c_errmsg.as_ref().map(|cs| cs.as_ptr());
         let rc = unsafe {
             flux_respond_error(

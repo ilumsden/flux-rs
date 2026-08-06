@@ -93,8 +93,7 @@ impl JobUri {
         let mut base = BaseUri::new(uri)?;
         if base.scheme.is_empty() {
             return Err(FluxError::Logic(format!(
-                "JobURI '{}' does not have a valid scheme",
-                uri
+                "JobURI '{uri}' does not have a valid scheme",
             )));
         }
         base.path = normalize_slashes(&base.path);
@@ -116,13 +115,13 @@ impl JobUri {
                         .remote_hostname
                         .clone()
                         .unwrap_or_else(get_system_hostname);
-                    format!("ssh://{}{}", hostname, self.base.path)
+                    format!("ssh://{hostname}{}", self.base.path)
                 }
                 _ => {
                     return Err(FluxError::Logic(format!(
                         "Cannot convert JobURI with scheme {} to remote",
                         self.base.scheme
-                    )))
+                    )));
                 }
             };
             *remote_uri_cache = Some(resolved);
@@ -141,7 +140,7 @@ impl JobUri {
                     return Err(FluxError::Logic(format!(
                         "Cannot convert JobURI with scheme {} to local",
                         self.base.scheme
-                    )))
+                    )));
                 }
             };
             *local_uri_cache = Some(resolved);

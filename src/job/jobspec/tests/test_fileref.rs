@@ -9,7 +9,7 @@ use crate::job::jobspec::fileref::{Fileref, FilerefData, FilerefEncoding};
 // =========================================================================
 
 fn write_temp_file(name: &str, contents: &[u8]) -> std::path::PathBuf {
-    let path = std::path::PathBuf::from(format!("/tmp/{}", name));
+    let path = std::path::PathBuf::from(format!("/tmp/{name}"));
     std::fs::write(&path, contents).expect("Failed to write temp file");
     path
 }

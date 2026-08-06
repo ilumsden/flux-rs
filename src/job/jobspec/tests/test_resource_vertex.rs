@@ -83,25 +83,29 @@ fn vertex_stores_id_when_provided() {
 
 #[test]
 fn vertex_with_single_child_succeeds() {
-    assert!(make_vertex(json!({
-        "type": "node",
-        "count": 1,
-        "with": [{"type": "core", "count": 4}]
-    }))
-    .is_ok());
+    assert!(
+        make_vertex(json!({
+            "type": "node",
+            "count": 1,
+            "with": [{"type": "core", "count": 4}]
+        }))
+        .is_ok()
+    );
 }
 
 #[test]
 fn vertex_with_multiple_children_succeeds() {
-    assert!(make_vertex(json!({
-        "type": "node",
-        "count": 1,
-        "with": [
-            {"type": "core", "count": 4},
-            {"type": "gpu", "count": 1}
-        ]
-    }))
-    .is_ok());
+    assert!(
+        make_vertex(json!({
+            "type": "node",
+            "count": 1,
+            "with": [
+                {"type": "core", "count": 4},
+                {"type": "gpu", "count": 1}
+            ]
+        }))
+        .is_ok()
+    );
 }
 
 #[test]
@@ -131,17 +135,19 @@ fn vertex_with_stores_correct_child_type() {
 
 #[test]
 fn vertex_with_deeply_nested_children_succeeds() {
-    assert!(make_vertex(json!({
-        "type": "node",
-        "count": 1,
-        "with": [{
-            "type": "slot",
+    assert!(
+        make_vertex(json!({
+            "type": "node",
             "count": 1,
-            "label": "task",
-            "with": [{"type": "core", "count": 1}]
-        }]
-    }))
-    .is_ok());
+            "with": [{
+                "type": "slot",
+                "count": 1,
+                "label": "task",
+                "with": [{"type": "core", "count": 1}]
+            }]
+        }))
+        .is_ok()
+    );
 }
 
 // =========================================================================
@@ -150,12 +156,14 @@ fn vertex_with_deeply_nested_children_succeeds() {
 
 #[test]
 fn vertex_empty_with_returns_error() {
-    assert!(make_vertex(json!({
-        "type": "node",
-        "count": 1,
-        "with": []
-    }))
-    .is_err());
+    assert!(
+        make_vertex(json!({
+            "type": "node",
+            "count": 1,
+            "with": []
+        }))
+        .is_err()
+    );
 }
 
 #[test]
@@ -191,20 +199,24 @@ fn vertex_missing_count_returns_error() {
 
 #[test]
 fn vertex_with_dict_count_succeeds() {
-    assert!(make_vertex(json!({
-        "type": "node",
-        "count": {"min": 1, "max": 8}
-    }))
-    .is_ok());
+    assert!(
+        make_vertex(json!({
+            "type": "node",
+            "count": {"min": 1, "max": 8}
+        }))
+        .is_ok()
+    );
 }
 
 #[test]
 fn vertex_with_idset_count_succeeds() {
-    assert!(make_vertex(json!({
-        "type": "node",
-        "count": "0-3"
-    }))
-    .is_ok());
+    assert!(
+        make_vertex(json!({
+            "type": "node",
+            "count": "0-3"
+        }))
+        .is_ok()
+    );
 }
 
 // =========================================================================
@@ -280,12 +292,12 @@ fn display_contains_type_field() {
 #[test]
 fn debug_format_starts_with_type_name() {
     let v = make_vertex(json!({"type": "node", "count": 1})).unwrap();
-    assert!(format!("{:?}", v).starts_with("ResourceVertex("));
+    assert!(format!("{v:?}").starts_with("ResourceVertex("));
 }
 
 #[test]
 fn debug_format_contains_serialized_value() {
     let v = make_vertex(json!({"type": "core", "count": 2})).unwrap();
-    let debug = format!("{:?}", v);
+    let debug = format!("{v:?}");
     assert!(debug.contains("core"));
 }

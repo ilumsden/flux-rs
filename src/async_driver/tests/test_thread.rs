@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
-use crate::async_driver::thread::ThreadDriver;
 use crate::async_driver::AsyncDriver;
+use crate::async_driver::thread::ThreadDriver;
 use crate::error::FluxError;
 use crate::handle::FluxHandle;
 use crate::handle::HandleFlags;

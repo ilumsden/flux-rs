@@ -50,7 +50,7 @@ pub(super) fn get_poll_fd_for_async(handle: Arc<Mutex<FluxHandle>>) -> Result<Ra
             ))
         })?
         .get_pollfd()
-        .map(|fd| RawFdWrapper(fd))
+        .map(RawFdWrapper)
 }
 
 pub(super) fn process_readable_event_for_async(handle: Arc<Mutex<FluxHandle>>) -> Result<()> {

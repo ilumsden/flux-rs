@@ -1,4 +1,4 @@
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{CStr, CString, c_char};
 use std::ops::{Deref, DerefMut};
 
 use flux_sys::core::{
@@ -6,7 +6,8 @@ use flux_sys::core::{
     flux_job_kvs_namespace, flux_job_raise, flux_job_result, flux_job_set_urgency, flux_job_wait,
 };
 
-use crate::error::{check_ptr, FluxError, Result};
+use crate::SignalCode;
+use crate::error::{FluxError, Result, check_ptr};
 use crate::flux_ptr_management::FromFluxPtrNoArgs;
 use crate::future::FluxFuture;
 use crate::handle::FluxHandle;
@@ -14,7 +15,6 @@ use crate::job::jobid::JobId;
 use crate::job::status::JobStatus;
 use crate::job::{JobResult, JobUrgency};
 use crate::kvs::KvsDir;
-use crate::SignalCode;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct JobEventSeverity(u8);
@@ -24,11 +24,7 @@ impl JobEventSeverity {
     pub const MIN_SEVERITY: Self = Self(7);
 
     pub fn new(val: u8) -> Option<Self> {
-        if val > 7 {
-            None
-        } else {
-            Some(Self(val))
-        }
+        if val > 7 { None } else { Some(Self(val)) }
     }
 
     pub fn as_raw(&self) -> u8 {
@@ -67,7 +63,7 @@ impl<'a> Job<'a> {
         Self::try_from((handle, future))
     }
 
-    pub fn get_id<'s>(&'s self) -> &'s JobId {
+    pub fn get_id(&self) -> &JobId {
         &self.id
     }
 
@@ -96,7 +92,7 @@ impl<'a> Job<'a> {
         exception_type: Option<&str>,
     ) -> Result<FluxFuture<'static>> {
         let sev = severity.unwrap_or(JobEventSeverity::FATAL);
-        let c_msg = message.map(|m| CString::new(m)).transpose()?;
+        let c_msg = message.map(CString::new).transpose()?;
         let c_exc_type = CString::new(exception_type.unwrap_or("cancel"))?;
         let future_ptr = unsafe {
             flux_job_raise(
@@ -112,7 +108,7 @@ impl<'a> Job<'a> {
     }
 
     pub fn cancel(&self, reason: Option<&str>) -> Result<FluxFuture<'static>> {
-        let c_reason = reason.map(|r| CString::new(r)).transpose()?;
+        let c_reason = reason.map(CString::new).transpose()?;
         let future_ptr = unsafe {
             flux_job_cancel(
                 self.handle.h.as_mut_ptr(),
@@ -152,7 +148,7 @@ impl<'a> Job<'a> {
 
     pub fn get_kvs_key_with_max_size(&self, key: &str, max_key_size: usize) -> Result<String> {
         let c_key = CString::new(key)?;
-        let key_ptr = if key == "" {
+        let key_ptr = if key.is_empty() {
             std::ptr::null()
         } else {
             c_key.as_ptr()
@@ -177,8 +173,7 @@ impl<'a> Job<'a> {
                 bufsize *= 2;
                 if bufsize > max_key_size {
                     return Err(FluxError::Logic(format!(
-                        "KVS Key encoding exceeded {} bytes",
-                        max_key_size
+                        "KVS Key encoding exceeded {max_key_size} bytes",
                     )));
                 }
                 continue;
@@ -202,7 +197,7 @@ impl<'a> Job<'a> {
         max_key_size: usize,
     ) -> Result<String> {
         let c_key = CString::new(key)?;
-        let key_ptr = if key == "" {
+        let key_ptr = if key.is_empty() {
             std::ptr::null()
         } else {
             c_key.as_ptr()
@@ -227,8 +222,7 @@ impl<'a> Job<'a> {
                 bufsize *= 2;
                 if bufsize > max_key_size {
                     return Err(FluxError::Logic(format!(
-                        "KVS Guest Key encoding exceeded {} bytes",
-                        max_key_size
+                        "KVS Guest Key encoding exceeded {max_key_size} bytes",
                     )));
                 }
                 continue;
@@ -257,8 +251,7 @@ impl<'a> Job<'a> {
                 bufsize *= 2;
                 if bufsize > max_ns_size {
                     return Err(FluxError::Logic(format!(
-                        "KVS namespace encoding exceeded {} bytes",
-                        max_ns_size
+                        "KVS namespace encoding exceeded {max_ns_size} bytes",
                     )));
                 }
                 continue;

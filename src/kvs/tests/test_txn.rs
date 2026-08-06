@@ -50,9 +50,10 @@ fn put_json_succeeds() {
 fn put_serializable_succeeds() {
     let mut txn = KvsTransaction::new().unwrap();
     let vec_data = vec![1, 2, 3];
-    assert!(txn
-        .put_serializable("vec_key", &vec_data, KvsFlags::NONE)
-        .is_ok());
+    assert!(
+        txn.put_serializable("vec_key", &vec_data, KvsFlags::NONE)
+            .is_ok()
+    );
 }
 
 #[test]
@@ -70,17 +71,19 @@ fn unlink_succeeds() {
 #[test]
 fn symlink_without_namespace_succeeds() {
     let mut txn = KvsTransaction::new().unwrap();
-    assert!(txn
-        .symlink("link_key", "target_key", None, KvsFlags::NONE)
-        .is_ok());
+    assert!(
+        txn.symlink("link_key", "target_key", None, KvsFlags::NONE)
+            .is_ok()
+    );
 }
 
 #[test]
 fn symlink_with_namespace_succeeds() {
     let mut txn = KvsTransaction::new().unwrap();
-    assert!(txn
-        .symlink("link_key", "target_key", Some("guest"), KvsFlags::NONE)
-        .is_ok());
+    assert!(
+        txn.symlink("link_key", "target_key", Some("guest"), KvsFlags::NONE)
+            .is_ok()
+    );
 }
 
 // =========================================================================
@@ -96,9 +99,10 @@ fn put_nul_byte_key_returns_error() {
 #[test]
 fn symlink_nul_byte_namespace_returns_error() {
     let mut txn = KvsTransaction::new().unwrap();
-    assert!(txn
-        .symlink("link", "target", Some("bad\0ns"), KvsFlags::NONE)
-        .is_err());
+    assert!(
+        txn.symlink("link", "target", Some("bad\0ns"), KvsFlags::NONE)
+            .is_err()
+    );
 }
 
 // =========================================================================

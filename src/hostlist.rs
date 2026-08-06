@@ -1,4 +1,4 @@
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_void};
 use std::fmt::Display;
 use std::str::FromStr;
 
@@ -11,8 +11,8 @@ use flux_sys::hostlist::{
 use serde::de::{self, Deserialize, Deserializer, Visitor};
 use serde::ser::{self, Serialize, Serializer};
 
-use crate::error::{check_ptr, check_rc, FluxError, Result};
-use crate::flux_ptr_management::{default_impl_as_flux_ptr, BorrowFluxPtr, FluxPtr, FromFluxPtr};
+use crate::error::{FluxError, Result, check_ptr, check_rc};
+use crate::flux_ptr_management::{BorrowFluxPtr, FluxPtr, FromFluxPtr, default_impl_as_flux_ptr};
 
 /// A struct representing a Flux Idset.
 ///
@@ -58,6 +58,10 @@ impl Hostlist {
 
     pub fn len(&self) -> usize {
         unsafe { hostlist_count(self.c_hostlist.as_mut_ptr()) as usize }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn dedup(&mut self) {
@@ -143,7 +147,7 @@ impl Display for Hostlist {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let encoded_hostlist = match self.encode() {
             Ok(s) => s,
-            Err(e) => format!("UNKNOWN (Failed to convert C string to Rust string: {})", e),
+            Err(e) => format!("UNKNOWN (Failed to convert C string to Rust string: {e})"),
         };
         write!(f, "{}", encoded_hostlist)
     }
@@ -187,7 +191,7 @@ impl Serialize for Hostlist {
     where
         S: Serializer,
     {
-        let encoded_data = self.encode().map_err(|e| ser::Error::custom(e))?;
+        let encoded_data = self.encode().map_err(ser::Error::custom)?;
         serializer.serialize_str(&encoded_data)
     }
 }
@@ -224,7 +228,7 @@ pub struct HostlistCursor<'a> {
 }
 
 impl<'a> HostlistCursor<'a> {
-    pub fn next(&mut self) -> Option<String> {
+    pub fn move_next(&mut self) -> Option<String> {
         let ptr = if self.is_first {
             self.is_first = false;
             unsafe { hostlist_first(self.hostlist.c_hostlist.as_mut_ptr()) }

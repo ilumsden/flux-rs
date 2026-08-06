@@ -1,4 +1,4 @@
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{CStr, CString, c_char};
 use std::fmt::Display;
 use std::ops::{Deref, DerefMut};
 
@@ -11,7 +11,7 @@ use flux_sys::core::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::error::{check_ptr, check_rc, FluxError, Result};
+use crate::error::{FluxError, Result, check_ptr, check_rc};
 use crate::future::FluxFuture;
 use crate::job::{JobId, JobInfo, JobStateFormat};
 use crate::utils::impl_async_future_wrapper;
@@ -70,7 +70,7 @@ impl Display for JobResultCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let job_result_str = match self.encode(JobStateFormat::UpperCaseLong) {
             Ok(s) => s,
-            Err(e) => format!("UNKNOWN (failed to convert C string to Rust string: {})", e),
+            Err(e) => format!("UNKNOWN (failed to convert C string to Rust string: {e})"),
         };
         write!(f, "{}", job_result_str)
     }
@@ -156,35 +156,35 @@ impl JobResult {
                 "Cannot convert waitstatus to integer".to_string(),
             ))? as i32);
         }
-        if let Some(severity) = unpacked_info.get("exception_severity") {
-            if jobinfo.exception.occured {
-                jobinfo.exception.severity = Some(severity.as_i64().ok_or(FluxError::Logic(
-                    "Cannot convert exception severity to integer".to_string(),
-                ))? as i32);
-            }
+        if let Some(severity) = unpacked_info.get("exception_severity")
+            && jobinfo.exception.occured
+        {
+            jobinfo.exception.severity = Some(severity.as_i64().ok_or(FluxError::Logic(
+                "Cannot convert exception severity to integer".to_string(),
+            ))? as i32);
         }
-        if let Some(exception_type) = unpacked_info.get("exception_type") {
-            if jobinfo.exception.occured {
-                jobinfo.exception.execption_type = Some(
-                    exception_type
-                        .as_str()
-                        .ok_or(FluxError::Logic(
-                            "Cannot convert exception type to string".to_string(),
-                        ))?
-                        .to_owned(),
-                );
-            }
+        if let Some(exception_type) = unpacked_info.get("exception_type")
+            && jobinfo.exception.occured
+        {
+            jobinfo.exception.execption_type = Some(
+                exception_type
+                    .as_str()
+                    .ok_or(FluxError::Logic(
+                        "Cannot convert exception type to string".to_string(),
+                    ))?
+                    .to_owned(),
+            );
         }
-        if let Some(note) = unpacked_info.get("exception_note") {
-            if jobinfo.exception.occured {
-                jobinfo.exception.note = Some(
-                    note.as_str()
-                        .ok_or(FluxError::Logic(
-                            "Cannot convert exception note to string".to_string(),
-                        ))?
-                        .to_owned(),
-                );
-            }
+        if let Some(note) = unpacked_info.get("exception_note")
+            && jobinfo.exception.occured
+        {
+            jobinfo.exception.note = Some(
+                note.as_str()
+                    .ok_or(FluxError::Logic(
+                        "Cannot convert exception note to string".to_string(),
+                    ))?
+                    .to_owned(),
+            );
         }
         Ok(jobinfo)
     }

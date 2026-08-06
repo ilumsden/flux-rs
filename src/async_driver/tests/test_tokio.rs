@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
-use crate::async_driver::tokio::TokioDriver;
 use crate::async_driver::AsyncDriver;
+use crate::async_driver::tokio::TokioDriver;
 use crate::error::FluxError;
 use crate::handle::FluxHandle;
 use crate::handle::HandleFlags;

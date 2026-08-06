@@ -436,12 +436,12 @@ fn task_display_is_non_empty() {
 #[test]
 fn task_debug_format_starts_with_type_name() {
     let t = make_task(minimal_task_json()).unwrap();
-    assert!(format!("{:?}", t).starts_with("Task"));
+    assert!(format!("{t:?}").starts_with("Task"));
 }
 
 #[test]
 fn task_debug_format_contains_command() {
     let t = make_task(minimal_task_json()).unwrap();
-    let debug_str = format!("{:?}", t);
+    let debug_str = format!("{t:?}");
     assert!(debug_str.contains("echo"));
 }

@@ -52,10 +52,10 @@ impl TryFrom<RawResourceCountDict> for ResourceCountDict {
 
     fn try_from(raw: RawResourceCountDict) -> std::result::Result<Self, Self::Error> {
         // Max must be >= min if  specified
-        if let Some(max_val) = &raw.max {
-            if *max_val < raw.min {
-                return Err(FluxError::Logic("The 'max' value for the 'count' field must be greater than or equal to the 'min' value".to_string()));
-            }
+        if let Some(max_val) = &raw.max
+            && *max_val < raw.min
+        {
+            return Err(FluxError::Logic("The 'max' value for the 'count' field must be greater than or equal to the 'min' value".to_string()));
         }
         // Several rules apply if 'operator' is specified
         if let Some(operator) = &raw.operator {
@@ -66,18 +66,18 @@ impl TryFrom<RawResourceCountDict> for ResourceCountDict {
                         return Err(FluxError::Logic("The 'min' value for the 'count' field must be greater than or equal to 2 when 'operator' is '^'".to_string()));
                     }
                     // If 'operator' is '^', 'operand' must be >= 2
-                    if let Some(operand) = &raw.operand {
-                        if *operand < 2 {
-                            return Err(FluxError::Logic("The 'operand' value for the 'count' field must be greater than or equal to 2 when 'operator' is '^'".to_string()));
-                        }
+                    if let Some(operand) = &raw.operand
+                        && *operand < 2
+                    {
+                        return Err(FluxError::Logic("The 'operand' value for the 'count' field must be greater than or equal to 2 when 'operator' is '^'".to_string()));
                     }
                 }
                 ResourceCountOperator::Multipy => {
                     // If 'operator' is '*', 'operand' must be >= 2
-                    if let Some(operand) = &raw.operand {
-                        if *operand < 2 {
-                            return Err(FluxError::Logic("The 'operand' value for the 'count' field must be greater than or equal to 2 when 'operator' is '*'".to_string()));
-                        }
+                    if let Some(operand) = &raw.operand
+                        && *operand < 2
+                    {
+                        return Err(FluxError::Logic("The 'operand' value for the 'count' field must be greater than or equal to 2 when 'operator' is '*'".to_string()));
                     }
                 }
                 ResourceCountOperator::Plus => {}

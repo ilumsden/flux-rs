@@ -1,3 +1,5 @@
+#![allow(clippy::uninlined_format_args)]
+
 pub mod async_driver;
 pub mod duration;
 pub mod error;

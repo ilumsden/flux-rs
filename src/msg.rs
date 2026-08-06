@@ -1,30 +1,30 @@
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_void};
 use std::fmt::Display;
 
 use bitflags::bitflags;
 use flux_sys::core::{
-    flux_match, flux_msg_authorize, flux_msg_clear_flag, flux_msg_cmp, flux_msg_cmp_matchtag,
-    flux_msg_copy, flux_msg_create, flux_msg_cred, flux_msg_cred_authorize, flux_msg_decode,
-    flux_msg_destroy, flux_msg_encode, flux_msg_encode_size, flux_msg_get_cred,
-    flux_msg_get_errnum, flux_msg_get_matchtag, flux_msg_get_nodeid, flux_msg_get_payload,
-    flux_msg_get_seq, flux_msg_get_string, flux_msg_get_topic, flux_msg_has_flag,
-    flux_msg_has_payload, flux_msg_incref, flux_msg_is_local, flux_msg_is_noresponse,
-    flux_msg_is_private, flux_msg_is_streaming, flux_msg_set_cred, flux_msg_set_errnum,
-    flux_msg_set_flag, flux_msg_set_matchtag, flux_msg_set_nodeid, flux_msg_set_noresponse,
-    flux_msg_set_payload, flux_msg_set_private, flux_msg_set_seq, flux_msg_set_streaming,
-    flux_msg_set_string, flux_msg_set_topic, flux_msg_t, flux_msg_typestr, FLUX_MATCHTAG_NONE,
-    FLUX_MSGFLAG_NORESPONSE, FLUX_MSGFLAG_PAYLOAD, FLUX_MSGFLAG_PRIVATE, FLUX_MSGFLAG_ROUTE,
-    FLUX_MSGFLAG_STREAMING, FLUX_MSGFLAG_TOPIC, FLUX_MSGFLAG_UPSTREAM, FLUX_MSGFLAG_USER1,
-    FLUX_MSGTYPE_ANY, FLUX_MSGTYPE_CONTROL, FLUX_MSGTYPE_EVENT, FLUX_MSGTYPE_MASK,
-    FLUX_MSGTYPE_REQUEST, FLUX_MSGTYPE_RESPONSE, FLUX_ROLE_ALL, FLUX_ROLE_LOCAL, FLUX_ROLE_NONE,
-    FLUX_ROLE_OWNER, FLUX_ROLE_USER,
+    FLUX_MATCHTAG_NONE, FLUX_MSGFLAG_NORESPONSE, FLUX_MSGFLAG_PAYLOAD, FLUX_MSGFLAG_PRIVATE,
+    FLUX_MSGFLAG_ROUTE, FLUX_MSGFLAG_STREAMING, FLUX_MSGFLAG_TOPIC, FLUX_MSGFLAG_UPSTREAM,
+    FLUX_MSGFLAG_USER1, FLUX_MSGTYPE_ANY, FLUX_MSGTYPE_CONTROL, FLUX_MSGTYPE_EVENT,
+    FLUX_MSGTYPE_MASK, FLUX_MSGTYPE_REQUEST, FLUX_MSGTYPE_RESPONSE, FLUX_ROLE_ALL, FLUX_ROLE_LOCAL,
+    FLUX_ROLE_NONE, FLUX_ROLE_OWNER, FLUX_ROLE_USER, flux_match, flux_msg_authorize,
+    flux_msg_clear_flag, flux_msg_cmp, flux_msg_cmp_matchtag, flux_msg_copy, flux_msg_create,
+    flux_msg_cred, flux_msg_cred_authorize, flux_msg_decode, flux_msg_destroy, flux_msg_encode,
+    flux_msg_encode_size, flux_msg_get_cred, flux_msg_get_errnum, flux_msg_get_matchtag,
+    flux_msg_get_nodeid, flux_msg_get_payload, flux_msg_get_seq, flux_msg_get_string,
+    flux_msg_get_topic, flux_msg_has_flag, flux_msg_has_payload, flux_msg_incref,
+    flux_msg_is_local, flux_msg_is_noresponse, flux_msg_is_private, flux_msg_is_streaming,
+    flux_msg_set_cred, flux_msg_set_errnum, flux_msg_set_flag, flux_msg_set_matchtag,
+    flux_msg_set_nodeid, flux_msg_set_noresponse, flux_msg_set_payload, flux_msg_set_private,
+    flux_msg_set_seq, flux_msg_set_streaming, flux_msg_set_string, flux_msg_set_topic, flux_msg_t,
+    flux_msg_typestr,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::error::{check_ptr, check_rc, FluxError, Result};
+use crate::error::{FluxError, Result, check_ptr, check_rc};
 use crate::flux_ptr_management::{
-    default_impl_as_flux_ptr, BorrowFluxPtr, FluxPtr, FromFluxPtr, FromFluxPtrNoArgs,
+    BorrowFluxPtr, FluxPtr, FromFluxPtr, FromFluxPtrNoArgs, default_impl_as_flux_ptr,
 };
 
 bitflags! {
@@ -93,9 +93,7 @@ impl MessageMatch {
         matchtag: Option<u32>,
         topic_glob: Option<&str>,
     ) -> Result<Self> {
-        let c_topic_glob = topic_glob
-            .map(|rust_str| CString::new(rust_str))
-            .transpose()?;
+        let c_topic_glob = topic_glob.map(CString::new).transpose()?;
         Ok(Self {
             typemask,
             matchtag,
@@ -112,9 +110,7 @@ impl MessageMatch {
     }
 
     pub fn set_topic_glob(&mut self, topic_glob: Option<&str>) -> Result<()> {
-        let c_topic_glob = topic_glob
-            .map(|rust_str| CString::new(rust_str))
-            .transpose()?;
+        let c_topic_glob = topic_glob.map(CString::new).transpose()?;
         self.topic_glob = c_topic_glob;
         Ok(())
     }
@@ -268,11 +264,11 @@ impl Message {
             flux_msg_get_payload(
                 self.c_msg.as_mut_ptr(),
                 &mut buf as *mut *const c_void,
-                &mut size as *mut _,
+                &mut size,
             )
         };
         check_rc(rc)?;
-        Ok(unsafe { std::slice::from_raw_parts(buf as *const u8, size as usize) })
+        Ok(unsafe { std::slice::from_raw_parts(buf as *const u8, size as _) })
     }
 
     pub fn get_payload_json(&self) -> Result<Value> {
@@ -345,10 +341,10 @@ impl Message {
         let rc = unsafe { flux_msg_authorize(self.c_msg.as_mut_ptr(), userid) };
         if rc == -1 {
             let last_errno = std::io::Error::last_os_error();
-            if let Some(raw_errno) = last_errno.raw_os_error() {
-                if raw_errno == libc::EPERM {
-                    return Ok(false);
-                }
+            if let Some(raw_errno) = last_errno.raw_os_error()
+                && raw_errno == libc::EPERM
+            {
+                return Ok(false);
             }
             return Err(FluxError::System(last_errno));
         }
@@ -368,10 +364,10 @@ impl Message {
         let rc = unsafe { flux_msg_cred_authorize(cred, userid) };
         if rc == -1 {
             let last_errno = std::io::Error::last_os_error();
-            if let Some(raw_errno) = last_errno.raw_os_error() {
-                if raw_errno == libc::EPERM {
-                    return Ok(false);
-                }
+            if let Some(raw_errno) = last_errno.raw_os_error()
+                && raw_errno == libc::EPERM
+            {
+                return Ok(false);
             }
             return Err(FluxError::System(last_errno));
         }

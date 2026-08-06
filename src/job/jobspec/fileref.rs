@@ -1,7 +1,7 @@
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use nix::sys::stat::{lstat, Mode, SFlag};
+use nix::sys::stat::{Mode, SFlag, lstat};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

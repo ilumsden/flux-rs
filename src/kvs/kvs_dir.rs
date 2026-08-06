@@ -1,4 +1,4 @@
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_void};
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
@@ -9,8 +9,8 @@ use flux_sys::core::{
     flux_kvsitr_t,
 };
 
-use crate::error::{check_ptr, check_rc, FluxError, Result};
-use crate::flux_ptr_management::{default_impl_as_flux_ptr, BorrowFluxPtr, FluxPtr, FromFluxPtr};
+use crate::error::{FluxError, Result, check_ptr, check_rc};
+use crate::flux_ptr_management::{BorrowFluxPtr, FluxPtr, FromFluxPtr, default_impl_as_flux_ptr};
 use crate::handle::FluxHandle;
 use crate::kvs::{Kvs, KvsFlags, KvsTransaction};
 
@@ -36,6 +36,10 @@ impl KvsDir {
         let len_val = unsafe { flux_kvsdir_get_size(self.c_kvsdir.as_mut_ptr()) };
         check_rc(len_val)?;
         Ok(len_val as usize)
+    }
+
+    pub fn is_empty(&self) -> Result<bool> {
+        Ok(self.len()? == 0)
     }
 
     pub fn contains(&self, key: &str) -> Result<bool> {
@@ -135,7 +139,7 @@ unsafe impl BorrowFluxPtr for KvsDir {
         });
         Ok(Self {
             c_kvsdir: FluxPtr::create_borrowed(ptr, flux_kvsdir_destroy)?,
-            txn: txn,
+            txn,
             path: dir_path,
         })
     }
@@ -151,7 +155,7 @@ unsafe impl FromFluxPtr for KvsDir {
         });
         Ok(Self {
             c_kvsdir: FluxPtr::create_owned(ptr, flux_kvsdir_destroy)?,
-            txn: txn,
+            txn,
             path: dir_path,
         })
     }
@@ -166,7 +170,7 @@ pub struct KvsDirCursor<'a> {
 }
 
 impl<'a> KvsDirCursor<'a> {
-    pub fn next(&mut self) -> Result<Option<&str>> {
+    pub fn move_next(&mut self) -> Result<Option<&str>> {
         let c_str = unsafe { flux_kvsitr_next(self.iter.as_mut_ptr()) };
         if c_str.is_null() {
             return Ok(None);
@@ -196,7 +200,7 @@ impl<'a> Iterator for KvsDirIter<'a> {
     type Item = Result<String>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.cursor.next() {
+        match self.cursor.move_next() {
             Ok(Some(s)) => Some(Ok(s.to_string())),
             Ok(None) => None,
             Err(e) => Some(Err(e)),

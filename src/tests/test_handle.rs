@@ -139,11 +139,13 @@ fn open_with_empty_uri_uses_flux_uri_env_var() {
 
 #[test]
 fn open_with_invalid_socket_path_returns_error() {
-    assert!(FluxHandle::new_from_str_uri(
-        "local:///definitely/nonexistent/flux/socket/xyzzy",
-        HandleFlags::NONE
-    )
-    .is_err());
+    assert!(
+        FluxHandle::new_from_str_uri(
+            "local:///definitely/nonexistent/flux/socket/xyzzy",
+            HandleFlags::NONE
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -202,9 +204,10 @@ fn get_attr_size_matches_get_size() {
 #[test]
 fn get_attr_nonexistent_key_returns_error() {
     with_handle(|h| {
-        assert!(h
-            .get_attr("this.attr.definitely.does.not.exist.xyzzy")
-            .is_err());
+        assert!(
+            h.get_attr("this.attr.definitely.does.not.exist.xyzzy")
+                .is_err()
+        );
     });
 }
 
@@ -271,9 +274,10 @@ fn get_aux_raw_returns_non_null_after_set() {
 #[test]
 fn get_aux_raw_missing_key_returns_error() {
     let h = open_fresh();
-    assert!(h
-        .get_aux_raw("test.aux.definitely.missing.key.xyzzy")
-        .is_err());
+    assert!(
+        h.get_aux_raw("test.aux.definitely.missing.key.xyzzy")
+            .is_err()
+    );
 }
 
 #[test]
@@ -411,9 +415,10 @@ fn log_at_info_level_succeeds() {
 #[test]
 fn log_at_warning_level_succeeds() {
     with_handle(|h| {
-        assert!(h
-            .log(LogLevel::Warning, "unit test warning message")
-            .is_ok());
+        assert!(
+            h.log(LogLevel::Warning, "unit test warning message")
+                .is_ok()
+        );
     });
 }
 
@@ -677,7 +682,7 @@ fn respond_error_with_os_error_does_not_panic() {
 fn respond_error_with_non_os_error_returns_logic_error() {
     with_handle(|h| {
         let req = make_request();
-        let err = std::io::Error::new(std::io::ErrorKind::Other, "custom");
+        let err = std::io::Error::other("custom");
         assert!(matches!(
             h.respond_error(&req, err, None),
             Err(FluxError::Logic(_))
@@ -714,8 +719,9 @@ fn respond_raw_error_with_errmsg_does_not_panic() {
 fn respond_raw_error_with_nul_byte_errmsg_returns_error() {
     with_handle(|h| {
         let req = make_request();
-        assert!(h
-            .respond_raw_error(&req, libc::EPERM, Some("bad\0msg"))
-            .is_err());
+        assert!(
+            h.respond_raw_error(&req, libc::EPERM, Some("bad\0msg"))
+                .is_err()
+        );
     });
 }

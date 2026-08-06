@@ -3,7 +3,7 @@ use flux_sys::core::{
     flux_error_t, flux_module_finalize, flux_module_initialize, flux_module_register_handlers,
 };
 #[cfg(flux_core_has_module_loader_helpers)]
-use std::ffi::{c_char, c_void, CStr};
+use std::ffi::{CStr, c_char, c_void};
 #[cfg(flux_core_has_module_loader_helpers)]
 use std::mem::MaybeUninit;
 
@@ -12,7 +12,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use flux_sys::core::{flux_module_debug_test, flux_module_set_running};
 
 #[allow(unused_imports)]
-use crate::error::{check_rc, FluxError, Result};
+use crate::error::{FluxError, Result, check_rc};
 use crate::handle::FluxHandle;
 
 pub struct PanickingAllocator;
@@ -69,7 +69,7 @@ pub fn initialize_module(handle: &FluxHandle) -> Result<String> {
     };
     if rc == -1 {
         let text_bytes = unsafe {
-            std::slice::from_raw_parts(err_buf.text.as_ptr() as *const u8, err_buf.text.len())
+            std::slice::from_raw_parts(err_buf.text.as_ptr() as *const _, err_buf.text.len())
         };
         let err_msg = CStr::from_bytes_until_nul(text_bytes)?
             .to_string_lossy()
@@ -98,7 +98,7 @@ pub fn register_default_handlers(handle: &FluxHandle) -> Result<()> {
     };
     if rc == -1 {
         let text_bytes = unsafe {
-            std::slice::from_raw_parts(err_buf.text.as_ptr() as *const u8, err_buf.text.len())
+            std::slice::from_raw_parts(err_buf.text.as_ptr() as *const _, err_buf.text.len())
         };
         let err_msg = CStr::from_bytes_until_nul(text_bytes)?
             .to_string_lossy()
@@ -125,8 +125,9 @@ pub fn finalize_module(handle: &FluxHandle, error: Option<std::io::Error>) -> Re
         )
     };
     if rc == -1 {
-        let text_bytes =
-            unsafe { std::slice::from_raw_parts(err_buf.text.as_ptr(), err_buf.text.len()) };
+        let text_bytes = unsafe {
+            std::slice::from_raw_parts(err_buf.text.as_ptr() as *mut u8, err_buf.text.len())
+        };
         let err_msg = CStr::from_bytes_until_nul(text_bytes)?
             .to_string_lossy()
             .to_string();

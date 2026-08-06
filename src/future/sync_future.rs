@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_void};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -15,10 +15,10 @@ use flux_sys::core::{
     flux_future_wait_for,
 };
 
-use crate::error::{check_ptr, check_rc, FluxError, Result};
+use crate::error::{FluxError, Result, check_ptr, check_rc};
 use crate::flux_ptr_management::{
-    default_impl_as_flux_ptr, BorrowFluxPtr, BorrowFluxPtrNoArgs, FluxPtr, FromFluxPtr,
-    FromFluxPtrNoArgs,
+    BorrowFluxPtr, BorrowFluxPtrNoArgs, FluxPtr, FromFluxPtr, FromFluxPtrNoArgs,
+    default_impl_as_flux_ptr,
 };
 use crate::handle::{AuxThinPtrWrapper, FluxHandle};
 use crate::reactor::Reactor;
@@ -100,8 +100,7 @@ impl<'a> FluxFuture<'a> {
         match wrapper.inner.downcast_ref::<T>() {
             Some(typed_ref) => Ok(typed_ref),
             None => Err(FluxError::Logic(format!(
-                "Type mismatch for aux key '{}'",
-                name
+                "Type mismatch for aux key '{name}'",
             ))),
         }
     }
@@ -324,10 +323,10 @@ impl<'a> FluxFuture<'a> {
         if rc == -1 {
             let last_os_error = std::io::Error::last_os_error();
             let errno_val = last_os_error.raw_os_error();
-            if let Some(inner_errno_val) = errno_val {
-                if inner_errno_val == libc::EINVAL {
-                    return Ok(false);
-                }
+            if let Some(inner_errno_val) = errno_val
+                && inner_errno_val == libc::EINVAL
+            {
+                return Ok(false);
             }
             return Err(FluxError::System(last_os_error));
         }
@@ -337,7 +336,7 @@ impl<'a> FluxFuture<'a> {
     pub fn fulfill<T>(&mut self, result: Option<Box<T>>) -> Result<()> {
         let raw_ptr = result
             .map(|r| Box::into_raw(r) as *mut c_void)
-            .unwrap_or(std::ptr::null_mut() as *mut c_void);
+            .unwrap_or(std::ptr::null_mut());
         let free_fn: Option<unsafe extern "C" fn(*mut c_void)> = if raw_ptr.is_null() {
             None
         } else {
@@ -394,10 +393,10 @@ impl<'a> FluxFuture<'a> {
         if rc == -1 {
             let last_os_error = std::io::Error::last_os_error();
             let errno_val = last_os_error.raw_os_error();
-            if let Some(inner_errno_val) = errno_val {
-                if inner_errno_val == libc::ETIMEDOUT {
-                    return Ok(false);
-                }
+            if let Some(inner_errno_val) = errno_val
+                && inner_errno_val == libc::ETIMEDOUT
+            {
+                return Ok(false);
             }
             return Err(FluxError::System(last_os_error));
         }

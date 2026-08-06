@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::future::async_future::AsyncFluxFuture;
-use crate::future::sync_future::{create_wait_all_future, create_wait_any_future, FluxFuture};
+use crate::future::sync_future::{FluxFuture, create_wait_all_future, create_wait_any_future};
 use crate::tests::common::with_handle;
 
 // =========================================================================

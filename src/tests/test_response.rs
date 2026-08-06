@@ -108,7 +108,7 @@ fn encode_error_with_os_error_succeeds() {
 #[test]
 fn encode_error_without_os_error_returns_logic_error() {
     // io::Error::new does not carry a raw OS error code.
-    let err = std::io::Error::new(std::io::ErrorKind::Other, "custom error");
+    let err = std::io::Error::other("custom error");
     assert!(matches!(
         Response::encode_error("test.error", err),
         Err(FluxError::Logic(_))
@@ -284,7 +284,7 @@ fn derive_with_os_error_succeeds() {
 #[test]
 fn derive_with_non_os_error_returns_logic_error() {
     let req = make_request();
-    let err = std::io::Error::new(std::io::ErrorKind::Other, "custom");
+    let err = std::io::Error::other("custom");
     assert!(matches!(
         Response::derive(&req, Some(err)),
         Err(FluxError::Logic(_))

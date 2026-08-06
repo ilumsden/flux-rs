@@ -1,4 +1,4 @@
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_void};
 
 use flux_sys::core::{
     flux_response_decode_error, flux_response_decode_raw, flux_response_derive,
@@ -8,13 +8,13 @@ use flux_sys::core::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::error::{check_ptr, FluxError, Result};
+use crate::FromFluxPtrNoArgs;
+use crate::error::{FluxError, Result, check_ptr};
 use crate::msg::Message;
 use crate::request::{
     DeserializedDecodedRequestResponse, JsonDecodedRequestResponse, RawDecodedRequestResponse,
     Request,
 };
-use crate::FromFluxPtrNoArgs;
 
 pub struct Response {
     pub(crate) msg: Message,
@@ -30,7 +30,7 @@ impl Response {
                 self.msg.c_msg.as_mut_ptr(),
                 &mut topic as *mut *const c_char,
                 &mut data as *mut *const c_void,
-                &mut len as *mut _,
+                &mut len,
             )
         };
         if rc == -1 {
@@ -46,7 +46,9 @@ impl Response {
                 return Err(FluxError::System(last_os_error));
             } else {
                 return Err(FluxError::RequestResponseError(last_os_error, unsafe {
-                    CStr::from_ptr(errmsg_ptr as *const i8).to_str()?.to_owned()
+                    CStr::from_ptr(errmsg_ptr as *const c_char)
+                        .to_str()?
+                        .to_owned()
                 }));
             }
         }

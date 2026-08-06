@@ -62,20 +62,22 @@ impl JobspecV1 {
         if let Some(stdin) = builder.input {
             self.set_input(stdin)?;
         }
-        if let Some(stdout) = builder.output {
-            if stdout != Path::new("none") && stdout != Path::new("kvs") {
-                self.set_output(stdout)?;
-                if label_io_val {
-                    self.set_attr_shell_options("output.stdout.label", &true)?;
-                }
+        if let Some(stdout) = builder.output
+            && stdout != Path::new("none")
+            && stdout != Path::new("kvs")
+        {
+            self.set_output(stdout)?;
+            if label_io_val {
+                self.set_attr_shell_options("output.stdout.label", &true)?;
             }
         }
-        if let Some(stderr) = builder.error {
-            if stderr != Path::new("none") && stderr != Path::new("kvs") {
-                self.set_error(stderr)?;
-                if label_io_val {
-                    self.set_attr_shell_options("output.stderr.label", &true)?;
-                }
+        if let Some(stderr) = builder.error
+            && stderr != Path::new("none")
+            && stderr != Path::new("kvs")
+        {
+            self.set_error(stderr)?;
+            if label_io_val {
+                self.set_attr_shell_options("output.stderr.label", &true)?;
             }
         }
         if unbuffered_val {
@@ -329,6 +331,12 @@ impl<'a> BaseJobspecV1Builder<'a> {
     }
 }
 
+impl<'a> Default for BaseJobspecV1Builder<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 macro_rules! delegate_to_base {
     ($base_field:ident, $method_name:ident, $val_type:ty) => {
         pub fn $method_name(mut self, value: $val_type) -> Self {
@@ -418,13 +426,13 @@ impl<'a> PerResourceBuilder<'a> {
         if self.per_resource_type.is_none() && self.per_resource_count.is_some() {
             return Err(FluxError::Logic("The 'per_resource_type' parameter must be specified when 'per_resource_count' is specified".to_string()));
         }
-        if let Some(pr_type) = self.per_resource_type {
-            if let Some(pr_count) = self.per_resource_count {
-                let mut pr_map = Map::new();
-                pr_map.insert("type".to_string(), serde_json::to_value(pr_type)?);
-                pr_map.insert("count".to_string(), Value::from(pr_count));
-                per_resource = Some(Value::Object(pr_map));
-            }
+        if let Some(pr_type) = self.per_resource_type
+            && let Some(pr_count) = self.per_resource_count
+        {
+            let mut pr_map = Map::new();
+            pr_map.insert("type".to_string(), serde_json::to_value(pr_type)?);
+            pr_map.insert("count".to_string(), Value::from(pr_count));
+            per_resource = Some(Value::Object(pr_map));
         }
         if self.gpus_per_node.is_some() && self.nnodes.is_none() {
             return Err(FluxError::Logic(
@@ -439,22 +447,21 @@ impl<'a> PerResourceBuilder<'a> {
         }
         let nslots: usize;
         let slot_size: usize;
-        if self.nnodes.is_some() && self.ncores.is_some() {
-            let num_nodes = self.nnodes.unwrap();
-            let num_cores = self.ncores.unwrap();
+        if let Some(num_nodes) = self.nnodes
+            && let Some(num_cores) = self.ncores
+        {
             if num_cores < num_nodes {
                 return Err(FluxError::Logic(
                     "The 'ncores' parameter cannot be less than 'nnodes' when both are provided"
                         .to_string(),
                 ));
             }
-            if num_cores % num_nodes != 0 {
+            if !num_cores.is_multiple_of(num_nodes) {
                 return Err(FluxError::Logic("The 'ncores' parameter must be evenly divisible by 'nnodes' when both are provided".to_string()));
             }
             nslots = 1;
             slot_size = num_cores / num_nodes;
-        } else if self.ncores.is_some() {
-            let num_cores = self.ncores.unwrap();
+        } else if let Some(num_cores) = self.ncores {
             nslots = num_cores;
             slot_size = 1;
         } else if self.nnodes.is_some() {
@@ -597,23 +604,23 @@ impl<'a> FromCommandBuilder<'a> {
             label: None,
             id: None,
         }];
-        if let Some(gpus) = self.gpus_per_task {
-            if gpus > 0 {
-                children.push(ResourceVertex {
-                    resource_type: "gpu".to_string(),
-                    count: ResourceCount::Integer(gpus),
-                    unit: None,
-                    exclusive: None,
-                    with: None,
-                    label: None,
-                    id: None,
-                });
-            }
+        if let Some(gpus) = self.gpus_per_task
+            && gpus > 0
+        {
+            children.push(ResourceVertex {
+                resource_type: "gpu".to_string(),
+                count: ResourceCount::Integer(gpus),
+                unit: None,
+                exclusive: None,
+                with: None,
+                label: None,
+                id: None,
+            });
         }
         let task_count: TaskCount;
         let resources: Vec<ResourceVertex> = if let Some(nnodes) = self.num_nodes {
             let num_slots = (self.num_tasks as f64 / nnodes as f64).ceil() as usize;
-            if self.num_tasks % nnodes != 0 {
+            if !self.num_tasks.is_multiple_of(nnodes) {
                 task_count = TaskCount::Total(self.num_tasks as u64);
             } else {
                 task_count = TaskCount::PerSlot(1);
@@ -726,11 +733,7 @@ impl<'a> FromNestCommandBuilder<'a> {
     delegate_to_base!(base, 'a);
 
     pub fn build_jobspec(mut self) -> Result<JobspecV1> {
-        let mut broker_opts = if let Some(bopts) = self.broker_opts {
-            bopts
-        } else {
-            Vec::new()
-        };
+        let mut broker_opts = self.broker_opts.unwrap_or_default();
         let conf_fileref = if let Some(conf_contents) = self.conf {
             broker_opts.push("-c{{tmpdir}}/conf.json".to_string());
             if conf_contents.contains('\n') {
@@ -751,7 +754,7 @@ impl<'a> FromNestCommandBuilder<'a> {
         command.append(&mut broker_opts);
         command.append(&mut self.command);
         let mut jobspec = FromCommandBuilder {
-            command: command,
+            command,
             num_tasks: self.num_slots,
             cores_per_task: self.cores_per_slot,
             exclusive: self.exclusive,
@@ -838,11 +841,7 @@ impl<'a> FromBatchCommandBuilder<'a> {
         if !self.script.starts_with("#!") {
             return Err(FluxError::Logic("The 'script' parameter must be the contents of the batch script starting with a shebang (i.e., '#!')".to_string()));
         }
-        let mut args = if let Some(js_args) = self.args {
-            js_args
-        } else {
-            Vec::new()
-        };
+        let mut args = self.args.unwrap_or_default();
         let mut command = vec!["{{tmpdir}}/script".to_string()];
         command.append(&mut args);
         let mut jobspec = FromNestCommandBuilder {

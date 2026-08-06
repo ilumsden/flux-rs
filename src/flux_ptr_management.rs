@@ -1,3 +1,5 @@
+#![allow(clippy::missing_safety_doc)]
+
 use std::ptr::NonNull;
 
 use crate::error::{FluxError, Result};

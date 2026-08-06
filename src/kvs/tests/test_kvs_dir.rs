@@ -59,23 +59,23 @@ fn kvs_dir_cursor_and_iter() {
 
         // Cursor iteration & reset
         let mut cursor = dir.cursor().unwrap();
-        let first_opt = cursor.next().unwrap();
+        let first_opt = cursor.move_next().unwrap();
         assert!(first_opt.is_some());
         let first = first_opt.unwrap().to_string();
         assert!(!first.is_empty());
         assert_eq!(cursor.current(), first.as_str());
 
         // Second item
-        let second_opt = cursor.next().unwrap();
+        let second_opt = cursor.move_next().unwrap();
         assert!(second_opt.is_some());
 
         // EOF returns Ok(None)
-        let eof_opt = cursor.next().unwrap();
+        let eof_opt = cursor.move_next().unwrap();
         assert!(eof_opt.is_none());
 
         // Rewind / reset cursor back to beginning
         cursor.reset();
-        let rewind_first = cursor.next().unwrap().unwrap().to_string();
+        let rewind_first = cursor.move_next().unwrap().unwrap().to_string();
         assert_eq!(first, rewind_first);
 
         // Iter

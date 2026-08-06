@@ -1,13 +1,13 @@
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_void};
 
 use flux_sys::core::{flux_request_decode_raw, flux_request_encode_raw};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::error::{check_ptr, check_rc, Result};
-use crate::msg::Message;
 use crate::FromFluxPtrNoArgs;
+use crate::error::{Result, check_ptr, check_rc};
+use crate::msg::Message;
 
 #[derive(Debug)]
 pub struct RawDecodedRequestResponse<'a> {
@@ -65,7 +65,7 @@ impl Request {
                 self.msg.c_msg.as_mut_ptr(),
                 &mut topic_ptr as *mut *const c_char,
                 &mut data_ptr as *mut *const c_void,
-                &mut size as *mut _,
+                &mut size,
             )
         };
         check_rc(rc)?;
@@ -74,7 +74,7 @@ impl Request {
         let decoded_payload = if data_ptr.is_null() {
             None
         } else {
-            Some(unsafe { std::slice::from_raw_parts(data_ptr as *const u8, size as usize) })
+            Some(unsafe { std::slice::from_raw_parts(data_ptr as *const u8, size as _) })
         };
         Ok(RawDecodedRequestResponse {
             topic: topic_str,

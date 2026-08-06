@@ -133,7 +133,7 @@ fn stop_with_raw_os_error_calls_stop_error_path() {
 fn stop_with_non_os_error_falls_through_to_normal_stop() {
     // error_code has no raw OS error → falls through to flux_reactor_stop.
     let mut reactor = make_reactor();
-    let err = std::io::Error::new(std::io::ErrorKind::Other, "custom error");
+    let err = std::io::Error::other("custom error");
     assert!(reactor.stop(Some(err)).is_ok());
 }
 

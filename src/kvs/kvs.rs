@@ -1,17 +1,16 @@
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_void};
 
 use flux_sys::core::{
-    flux_kvs_commit, flux_kvs_commit_get_sequence, flux_kvs_copy, flux_kvs_getroot,
-    flux_kvs_getroot_get_owner, flux_kvs_getroot_get_sequence, flux_kvs_lookup,
+    FLUX_USERID_UNKNOWN, flux_kvs_commit, flux_kvs_commit_get_sequence, flux_kvs_copy,
+    flux_kvs_getroot, flux_kvs_getroot_get_owner, flux_kvs_getroot_get_sequence, flux_kvs_lookup,
     flux_kvs_lookup_cancel, flux_kvs_lookup_get_dir, flux_kvs_lookup_get_key,
     flux_kvs_lookup_get_raw, flux_kvs_lookup_get_symlink, flux_kvs_move, flux_kvs_namespace_create,
     flux_kvs_namespace_create_with, flux_kvs_namespace_remove, flux_kvsdir_copy, flux_kvsdir_t,
-    FLUX_USERID_UNKNOWN,
 };
 use serde::Deserialize;
-use serde_json::{from_slice, Value};
+use serde_json::{Value, from_slice};
 
-use crate::error::{check_ptr, check_rc, FluxError, Result};
+use crate::error::{FluxError, Result, check_ptr, check_rc};
 use crate::flux_ptr_management::{FromFluxPtr, FromFluxPtrNoArgs};
 use crate::future::FluxFuture;
 use crate::handle::FluxHandle;
@@ -94,7 +93,7 @@ impl<'a> Kvs<'a> {
         // If an error occurs during that conversion, it will be returned through this method's
         // Result<()> via '.transpose()?'.
         let c_namespace: Option<CString> = namespace
-            .and_then(|ns| Some(CString::new(ns).map_err(|cstr_err| FluxError::NulError(cstr_err))))
+            .map(|ns| CString::new(ns).map_err(FluxError::NulError))
             .transpose()?;
         let c_key = CString::new(key)?;
         let future_ptr = unsafe {
@@ -138,10 +137,10 @@ impl<'a> Kvs<'a> {
         let c_srckey = CString::new(srckey)?;
         let c_dstkey = CString::new(dstkey)?;
         let c_src_namespace: Option<CString> = src_namespace
-            .and_then(|ns| Some(CString::new(ns).map_err(|cstr_err| FluxError::NulError(cstr_err))))
+            .map(|ns| CString::new(ns).map_err(FluxError::NulError))
             .transpose()?;
         let c_dst_namespace: Option<CString> = dst_namespace
-            .and_then(|ns| Some(CString::new(ns).map_err(|cstr_err| FluxError::NulError(cstr_err))))
+            .map(|ns| CString::new(ns).map_err(FluxError::NulError))
             .transpose()?;
         let future_ptr = unsafe {
             flux_kvs_copy(
@@ -172,10 +171,10 @@ impl<'a> Kvs<'a> {
         let c_srckey = CString::new(srckey)?;
         let c_dstkey = CString::new(dstkey)?;
         let c_src_namespace: Option<CString> = src_namespace
-            .and_then(|ns| Some(CString::new(ns).map_err(|cstr_err| FluxError::NulError(cstr_err))))
+            .map(|ns| CString::new(ns).map_err(FluxError::NulError))
             .transpose()?;
         let c_dst_namespace: Option<CString> = dst_namespace
-            .and_then(|ns| Some(CString::new(ns).map_err(|cstr_err| FluxError::NulError(cstr_err))))
+            .map(|ns| CString::new(ns).map_err(FluxError::NulError))
             .transpose()?;
         let future_ptr = unsafe {
             flux_kvs_move(
@@ -202,7 +201,7 @@ impl<'a> Kvs<'a> {
         namespace: Option<&str>,
     ) -> Result<Commit> {
         let c_namespace: Option<CString> = namespace
-            .and_then(|ns| Some(CString::new(ns).map_err(|cstr_err| FluxError::NulError(cstr_err))))
+            .map(|ns| CString::new(ns).map_err(FluxError::NulError))
             .transpose()?;
         let future_ptr = unsafe {
             flux_kvs_commit(
@@ -234,14 +233,14 @@ impl Lookup {
         }
     }
 
-    pub fn get<'a>(&'a mut self) -> Result<&'a [u8]> {
+    pub fn get(&mut self) -> Result<&[u8]> {
         let mut value_ptr: *const c_void = std::ptr::null();
         let mut value_len = 0;
         let rc = unsafe {
             flux_kvs_lookup_get_raw(
                 self.future.c_future.as_mut_ptr(),
                 &mut value_ptr as *mut *const c_void,
-                &mut value_len as *mut _,
+                &mut value_len,
             )
         };
         check_rc(rc)?;
@@ -277,7 +276,7 @@ impl Lookup {
         unsafe { KvsDir::from_raw(kvsdir_copy, Some(self.key.clone())) }
     }
 
-    pub fn get_symlink<'a>(&'a mut self) -> Result<(&'a str, Option<&'a str>)> {
+    pub fn get_symlink(&mut self) -> Result<(&str, Option<&str>)> {
         let mut ns_val: *const c_char = std::ptr::null();
         let mut target_val: *const c_char = std::ptr::null();
         let rc = unsafe {
@@ -307,15 +306,15 @@ impl Lookup {
     /// * `Ok(Some(&str))` when the key is successfully obtained from Flux.
     /// * `Ok(None)` when the future used to create the `Lookup` object did not come from a KVS lookup.
     /// * `Err(FluxError)` when an error occurs.
-    pub fn get_key<'a>(&'a mut self) -> Result<Option<&'a str>> {
+    pub fn get_key(&mut self) -> Result<Option<&str>> {
         let key_ptr = unsafe { flux_kvs_lookup_get_key(self.future.c_future.as_mut_ptr()) };
         if key_ptr.is_null() {
             let last_os_error = std::io::Error::last_os_error();
             let last_errno = last_os_error.raw_os_error();
-            if let Some(errno_val) = last_errno {
-                if errno_val == libc::EINVAL {
-                    return Ok(None);
-                }
+            if let Some(errno_val) = last_errno
+                && errno_val == libc::EINVAL
+            {
+                return Ok(None);
             }
             return Err(FluxError::System(last_os_error));
         }

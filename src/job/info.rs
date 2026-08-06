@@ -19,7 +19,7 @@ use crate::job::state::{JobState, JobStateFormat};
 use crate::job::urgency::JobUrgency;
 use crate::uri::JobUri;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone)]
 pub struct JobExceptionInfo {
     #[serde(default)]
     pub occured: bool,
@@ -31,17 +31,6 @@ pub struct JobExceptionInfo {
     pub note: Option<String>,
 }
 
-impl Default for JobExceptionInfo {
-    fn default() -> Self {
-        Self {
-            occured: false,
-            severity: None,
-            execption_type: None,
-            note: None,
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct JobAnnotationsInfo {
     #[serde(flatten, default)]
@@ -50,17 +39,11 @@ pub struct JobAnnotationsInfo {
 
 impl JobAnnotationsInfo {
     pub fn get_sched(&self) -> Option<&Map<String, Value>> {
-        self.annotations
-            .get("sched")
-            .map(|v| v.as_object())
-            .flatten()
+        self.annotations.get("sched").and_then(|v| v.as_object())
     }
 
     pub fn get_user(&self) -> Option<&Map<String, Value>> {
-        self.annotations
-            .get("user")
-            .map(|v| v.as_object())
-            .flatten()
+        self.annotations.get("user").and_then(|v| v.as_object())
     }
 }
 
@@ -89,21 +72,21 @@ impl JobDependencyList {
             .into_iter()
             .map(|i| i.to_string())
             .map(|dep| {
-                if let Some(timestamp_str) = dep.strip_prefix("begin-time=") {
-                    if let Ok(ts_float) = timestamp_str.parse::<f64>() {
-                        let secs = ts_float.trunc() as i64;
-                        let nsecs = (ts_float.fract() * 1_000_000_000.0) as u32;
-                        if let chrono::LocalResult::Single(dt) = Local.timestamp_opt(secs, nsecs) {
-                            let mut formatted_dep = if dt.date_naive() == today {
-                                format!("begin@{}", dt.format("%H:%M"))
-                            } else {
-                                format!("begin@{}", dt.format("%b%d-%H:%M"))
-                            };
-                            if dt.second() > 0 {
-                                formatted_dep.push_str(&format!(":{}", dt.format("%S")));
-                            }
-                            return formatted_dep;
+                if let Some(timestamp_str) = dep.strip_prefix("begin-time=")
+                    && let Ok(ts_float) = timestamp_str.parse::<f64>()
+                {
+                    let secs = ts_float.trunc() as i64;
+                    let nsecs = (ts_float.fract() * 1_000_000_000.0) as u32;
+                    if let chrono::LocalResult::Single(dt) = Local.timestamp_opt(secs, nsecs) {
+                        let mut formatted_dep = if dt.date_naive() == today {
+                            format!("begin@{}", dt.format("%H:%M"))
+                        } else {
+                            format!("begin@{}", dt.format("%b%d-%H:%M"))
+                        };
+                        if dt.second() > 0 {
+                            formatted_dep.push_str(&format!(":{}", dt.format("%S")));
                         }
+                        return formatted_dep;
                     }
                 }
                 dep
@@ -214,11 +197,7 @@ impl JobInfo {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs_f64();
-        if tleft < 0.0 {
-            Ok(0.0)
-        } else {
-            Ok(tleft)
-        }
+        if tleft < 0.0 { Ok(0.0) } else { Ok(tleft) }
     }
 
     pub fn get_uri(&self) -> Option<JobUri> {
@@ -226,14 +205,12 @@ impl JobInfo {
         if cache.is_none() {
             let resolved = {
                 let mut resolved_ret = None;
-                if let Some(user_value) = self.annotations.get("user") {
-                    if let Some(user_map) = user_value.as_object() {
-                        if let Some(uri_value) = user_map.get("uri") {
-                            if let Some(uri_str) = uri_value.as_str() {
-                                resolved_ret = JobUri::new(uri_str, None).ok();
-                            }
-                        }
-                    }
+                if let Some(user_value) = self.annotations.get("user")
+                    && let Some(user_map) = user_value.as_object()
+                    && let Some(uri_value) = user_map.get("uri")
+                    && let Some(uri_str) = uri_value.as_str()
+                {
+                    resolved_ret = JobUri::new(uri_str, None).ok();
                 }
                 resolved_ret
             }?;
@@ -279,10 +256,7 @@ impl JobInfo {
     }
 
     pub fn get_username(&self) -> Option<String> {
-        if self.userid.is_none() {
-            return None;
-        }
-        let userid = self.userid.unwrap();
+        let userid = self.userid?;
         let pw_ptr = unsafe { libc::getpwuid(userid) };
         if pw_ptr.is_null() || unsafe { (*pw_ptr).pw_name.is_null() } {
             return Some(userid.to_string());
@@ -295,15 +269,15 @@ impl JobInfo {
 
     fn encode_status(&self, fmt: JobStateFormat) -> Result<Option<String>> {
         let mut encoded = None;
-        if let Some(state) = self.state {
-            if state.intersects(JobState::PENDING | JobState::RUNNING) {
-                encoded = Some(state.encode(fmt)?);
-            }
+        if let Some(state) = self.state
+            && state.intersects(JobState::PENDING | JobState::RUNNING)
+        {
+            encoded = Some(state.encode(fmt)?);
         }
-        if encoded.is_none() {
-            if let Some(result) = self.result {
-                encoded = Some(result.encode(fmt)?);
-            }
+        if encoded.is_none()
+            && let Some(result) = self.result
+        {
+            encoded = Some(result.encode(fmt)?);
         }
         Ok(encoded)
     }
@@ -362,35 +336,34 @@ impl JobInfo {
                     } else {
                         String::new()
                     };
-                if let Some(sched_map) = self.annotations.get_sched() {
-                    if let Some(t_estimate) = sched_map.get("t_estimate") {
-                        if let Some(t_estimate_float) = t_estimate.as_f64() {
-                            let now = SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs_f64();
-                            let eta = t_estimate_float - now;
-                            let eta = if eta < 0.0 {
-                                "now".to_string()
-                            } else {
-                                FluxDuration::Secs(eta).to_string()
-                            };
-                            ctx_info_str = format!("eta:{}", eta);
-                        }
-                    }
+                if let Some(sched_map) = self.annotations.get_sched()
+                    && let Some(t_estimate) = sched_map.get("t_estimate")
+                    && let Some(t_estimate_float) = t_estimate.as_f64()
+                {
+                    let now = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs_f64();
+                    let eta = t_estimate_float - now;
+                    let eta = if eta < 0.0 {
+                        "now".to_string()
+                    } else {
+                        FluxDuration::Secs(eta).to_string()
+                    };
+                    ctx_info_str = format!("eta:{eta}");
                 }
                 ctx_info_str
             } else {
                 self.nodelist
                     .as_ref()
                     .map(|hl| hl.to_string())
-                    .unwrap_or(String::new())
+                    .unwrap_or_default()
             }
         } else {
             self.nodelist
                 .as_ref()
                 .map(|hl| hl.to_string())
-                .unwrap_or(String::new())
+                .unwrap_or_default()
         }
     }
 
@@ -414,14 +387,12 @@ impl JobInfo {
         if let Some(result) = self.result {
             if result.contains(JobResultCode::CANCELED) {
                 let mut canceled_str = "Canceled".to_string();
-                if self.exception.occured {
-                    if let Some(exception_type) = self.exception.execption_type.as_ref() {
-                        if exception_type == "cancel" {
-                            if let Some(exception_note) = self.exception.note.as_ref() {
-                                canceled_str = format!("Canceled: {}", exception_note);
-                            }
-                        }
-                    }
+                if self.exception.occured
+                    && let Some(exception_type) = self.exception.execption_type.as_ref()
+                    && exception_type == "cancel"
+                    && let Some(exception_note) = self.exception.note.as_ref()
+                {
+                    canceled_str = format!("Canceled: {exception_note}");
                 }
                 canceled_str
             } else if result.contains(JobResultCode::FAILED) {
@@ -433,28 +404,25 @@ impl JobInfo {
                     }
                 );
                 if self.exception.occured {
-                    if let Some(exception_type) = self.exception.execption_type.as_ref() {
-                        if exception_type != "exec" {
-                            if let Some(severity) = self.exception.severity {
-                                if severity == 0 {
-                                    let note_str = self
-                                        .exception
-                                        .note
-                                        .as_ref()
-                                        .map(|n| format!(" note={}", n))
-                                        .unwrap_or_default();
-                                    failed_str =
-                                        format!("Exception: type={}{}", exception_type, note_str);
-                                }
-                            }
-                        }
+                    if let Some(exception_type) = self.exception.execption_type.as_ref()
+                        && exception_type != "exec"
+                        && let Some(severity) = self.exception.severity
+                        && severity == 0
+                    {
+                        let note_str = self
+                            .exception
+                            .note
+                            .as_ref()
+                            .map(|n| format!(" note={n}"))
+                            .unwrap_or_default();
+                        failed_str = format!("Exception: type={exception_type}{note_str}");
                     }
                 } else if let Some(returncode) = self.get_return_code() {
                     if returncode > 128 {
                         let signum = returncode - 128;
                         let c_sig_ptr = unsafe { libc::strsignal(signum) };
                         if c_sig_ptr.is_null() {
-                            failed_str = format!("Signaled {}", signum);
+                            failed_str = format!("Signaled {signum}");
                         } else {
                             failed_str =
                                 unsafe { CStr::from_ptr(c_sig_ptr).to_string_lossy().to_string() };

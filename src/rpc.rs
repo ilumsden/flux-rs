@@ -1,14 +1,14 @@
-use std::ffi::{c_void, CString};
+use std::ffi::{CString, c_void};
 
 use bitflags::bitflags;
 use flux_sys::core::{
-    flux_rpc_get_matchtag, flux_rpc_get_nodeid, flux_rpc_get_raw, flux_rpc_message, flux_rpc_raw,
     FLUX_NODEID_ANY, FLUX_NODEID_UPSTREAM, FLUX_RPC_NORESPONSE, FLUX_RPC_STREAMING,
+    flux_rpc_get_matchtag, flux_rpc_get_nodeid, flux_rpc_get_raw, flux_rpc_message, flux_rpc_raw,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::error::{check_ptr, check_rc, Result};
+use crate::error::{Result, check_ptr, check_rc};
 use crate::flux_ptr_management::FromFluxPtrNoArgs;
 use crate::future::FluxFuture;
 use crate::handle::FluxHandle;
@@ -111,7 +111,7 @@ impl<'a> Rpc<'a> {
         };
         check_ptr(future_ptr)?;
         Ok(Self {
-            handle: handle,
+            handle,
             future: unsafe { FluxFuture::from_ptr(future_ptr)? },
         })
     }
@@ -123,11 +123,11 @@ impl<'a> Rpc<'a> {
             flux_rpc_get_raw(
                 self.future.c_future.as_mut_ptr(),
                 &mut buf as *mut *const c_void,
-                &mut size as *mut _,
+                &mut size,
             )
         };
         check_rc(rc)?;
-        Ok(unsafe { std::slice::from_raw_parts(buf as *const u8, size as usize) })
+        Ok(unsafe { std::slice::from_raw_parts(buf as *const u8, size as _) })
     }
 
     pub fn get_json(&self) -> Result<Value> {

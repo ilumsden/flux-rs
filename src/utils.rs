@@ -7,11 +7,7 @@ pub struct SignalCode(i32);
 
 impl SignalCode {
     pub fn new(sig: i32) -> Option<Self> {
-        if sig > 0 {
-            Some(Self(sig))
-        } else {
-            None
-        }
+        if sig > 0 { Some(Self(sig)) } else { None }
     }
 
     pub fn as_raw(&self) -> i32 {
@@ -31,16 +27,16 @@ pub(crate) fn parse_fsd(fsd_string: &str) -> Result<f64> {
     if matches!(fsd_string, "inf" | "infinity" | "INF" | "INFINITY") {
         return Ok(f64::INFINITY);
     }
-    let (val_str, unit_multiplier) = if fsd_string.ends_with("ms") {
-        (&fsd_string[..fsd_string.len() - 2], (1_f64 / 1000_f64))
-    } else if fsd_string.ends_with('s') {
-        (&fsd_string[..fsd_string.len() - 1], 1_f64)
-    } else if fsd_string.ends_with('m') {
-        (&fsd_string[..fsd_string.len() - 1], 60_f64)
-    } else if fsd_string.ends_with('h') {
-        (&fsd_string[..fsd_string.len() - 1], 3600_f64)
-    } else if fsd_string.ends_with('d') {
-        (&fsd_string[..fsd_string.len() - 1], 86400_f64)
+    let (val_str, unit_multiplier) = if let Some(stripped) = fsd_string.strip_suffix("ms") {
+        (stripped, (1_f64 / 1000_f64))
+    } else if let Some(stripped) = fsd_string.strip_suffix('s') {
+        (stripped, 1_f64)
+    } else if let Some(stripped) = fsd_string.strip_suffix('m') {
+        (stripped, 60_f64)
+    } else if let Some(stripped) = fsd_string.strip_suffix('h') {
+        (stripped, 3600_f64)
+    } else if let Some(stripped) = fsd_string.strip_suffix('d') {
+        (stripped, 86400_f64)
     } else {
         (fsd_string, 1_f64)
     };

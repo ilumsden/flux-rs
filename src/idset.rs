@@ -1,4 +1,4 @@
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_void};
 use std::fmt::Display;
 use std::ops::Range;
 
@@ -15,8 +15,8 @@ use flux_sys::idset::{
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{check_ptr, check_rc, FluxError, Result};
-use crate::flux_ptr_management::{default_impl_as_flux_ptr, BorrowFluxPtr, FluxPtr, FromFluxPtr};
+use crate::error::{FluxError, Result, check_ptr, check_rc};
+use crate::flux_ptr_management::{BorrowFluxPtr, FluxPtr, FromFluxPtr, default_impl_as_flux_ptr};
 use crate::utils::impl_serde_repr_str;
 
 pub(crate) const IDSET_INVALID_ID: u32 = u32::MAX - 1;
@@ -188,7 +188,7 @@ impl Display for Idset {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let encoded_idset = match self.encode(IdsetFlags::RANGE | IdsetFlags::BRACKETS) {
             Ok(s) => s,
-            Err(e) => format!("UNKNOWN (Failed to convert C string to Rust string: {})", e),
+            Err(e) => format!("UNKNOWN (Failed to convert C string to Rust string: {e})"),
         };
         write!(f, "{}", encoded_idset)
     }

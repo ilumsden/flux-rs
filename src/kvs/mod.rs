@@ -1,4 +1,5 @@
 pub(crate) mod flags;
+#[allow(clippy::module_inception)]
 pub(crate) mod kvs;
 pub(crate) mod kvs_dir;
 pub(crate) mod txn;

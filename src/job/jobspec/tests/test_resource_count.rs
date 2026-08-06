@@ -237,7 +237,7 @@ fn dict_missing_min_returns_error() {
 #[test]
 fn dict_round_trips_min_only() {
     let d = make_dict(json!({"min": 4})).unwrap();
-    let json = serde_json::to_value(&d).unwrap();
+    let json = serde_json::to_value(d).unwrap();
     let decoded = make_dict(json).unwrap();
     assert_eq!(d.min, decoded.min);
     assert_eq!(d.max, decoded.max);
@@ -252,7 +252,7 @@ fn dict_round_trips_all_fields() {
         "operand": 2
     }))
     .unwrap();
-    let json = serde_json::to_value(&d).unwrap();
+    let json = serde_json::to_value(d).unwrap();
     let decoded = make_dict(json).unwrap();
     assert_eq!(d.min, decoded.min);
     assert_eq!(d.max, decoded.max);
@@ -263,7 +263,7 @@ fn dict_round_trips_all_fields() {
 #[test]
 fn dict_serialized_json_omits_none_fields() {
     let d = make_dict(json!({"min": 1})).unwrap();
-    let json = serde_json::to_value(&d).unwrap();
+    let json = serde_json::to_value(d).unwrap();
     assert!(json.get("max").is_none());
     assert!(json.get("operator").is_none());
     assert!(json.get("operand").is_none());
@@ -282,7 +282,7 @@ fn dict_display_contains_min_value() {
 #[test]
 fn dict_debug_starts_with_type_name() {
     let d = make_dict(json!({"min": 1})).unwrap();
-    assert!(format!("{:?}", d).starts_with("ResourceCountDict("));
+    assert!(format!("{d:?}").starts_with("ResourceCountDict("));
 }
 
 // =========================================================================
@@ -371,7 +371,7 @@ fn resource_count_integer_display_is_json_number() {
 #[test]
 fn resource_count_integer_debug_starts_with_type_name() {
     let rc = ResourceCount::Integer(42);
-    assert!(format!("{:?}", rc).starts_with("ResourceCount("));
+    assert!(format!("{rc:?}").starts_with("ResourceCount("));
 }
 
 #[test]

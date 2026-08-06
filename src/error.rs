@@ -66,7 +66,7 @@ impl FluxError {
 
     /// Get an `errno` value for the FluxError object and log the error with the FluxHandle.
     pub fn to_errno_with_flux_log(&self, handle: &FluxHandle) -> i32 {
-        let _ = flux_log_error!(handle, "{}", self);
+        flux_log_error!(handle, "{}", self);
         self.to_errno()
     }
 

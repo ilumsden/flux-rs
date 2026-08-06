@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 use crate::error::FluxError;
-use crate::utils::{impl_serde_repr_str, parse_fsd, SignalCode};
+use crate::utils::{SignalCode, impl_serde_repr_str, parse_fsd};
 
 // =========================================================================
 // Helpers
@@ -220,7 +220,7 @@ fn serde_repr_str_display_format() {
 fn serde_repr_str_debug_format() {
     // The Debug impl wraps the serialized value as "TypeName(serialized)".
     let val = TestRepr(42);
-    assert_eq!(format!("{:?}", val), "TestRepr(42)");
+    assert_eq!(format!("{val:?}"), "TestRepr(42)");
 }
 
 // =========================================================================
@@ -240,5 +240,5 @@ fn serde_repr_str_no_debug_display_format() {
 #[test]
 fn serde_repr_str_no_display_debug_format() {
     let val = TestReprNoDisplay(99);
-    assert_eq!(format!("{:?}", val), "TestReprNoDisplay(99)");
+    assert_eq!(format!("{val:?}"), "TestReprNoDisplay(99)");
 }

@@ -3,7 +3,7 @@ use flux_sys::core::flux_msg_handler_destroy;
 use crate::flux_ptr_management::{AsFluxPtr, BorrowFluxPtrNoArgs, FromFluxPtrNoArgs, IntoFluxPtr};
 use crate::handle::FluxHandle;
 use crate::msg::{MessageMatch, MessageRolemask, MessageType};
-use crate::msg_handler::{add_handler_vec, MsgHandler, MsgHandlerSpec};
+use crate::msg_handler::{MsgHandler, MsgHandlerSpec, add_handler_vec};
 use crate::tests::common::with_handle;
 
 // =========================================================================

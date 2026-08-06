@@ -1,8 +1,8 @@
 use serde_json::json;
 
 use crate::duration::FluxDuration;
-use crate::job::jobspec::jobspec_v1::{JobspecV1, PerResourceType};
 use crate::job::jobspec::Jobspec;
+use crate::job::jobspec::jobspec_v1::{JobspecV1, PerResourceType};
 
 // =========================================================================
 // Helpers

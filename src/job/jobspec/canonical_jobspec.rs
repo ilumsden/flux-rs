@@ -125,8 +125,7 @@ impl Jobspec {
                 *current = Value::Object(Map::new());
             }
             let obj = current.as_object_mut().ok_or(FluxError::Logic(format!(
-                "Cannot get key {} as a JSON Object",
-                comp
+                "Cannot get key {comp} as a JSON Object",
             )))?;
             current = obj.entry(comp).or_insert_with(|| Value::Object(Map::new()));
         }
@@ -137,8 +136,7 @@ impl Jobspec {
         current
             .as_object_mut()
             .ok_or(FluxError::Logic(format!(
-                "Cannot get {} as a JSON object",
-                last_key_in_path
+                "Cannot get {last_key_in_path} as a JSON object",
             )))?
             .insert(leaf_comp.to_string(), serde_json::to_value(val)?);
         Ok(())
@@ -156,12 +154,11 @@ impl Jobspec {
         }
         let next_val = obj.get_mut(*current_key)?;
         let removed_val = Self::del_attr_recurse(next_val, rest_of_path, remove_empty);
-        if remove_empty {
-            if let Some(child) = obj.get(*current_key) {
-                if child.as_object().map_or(false, |m| m.is_empty()) {
-                    obj.remove(*current_key);
-                }
-            }
+        if remove_empty
+            && let Some(child) = obj.get(*current_key)
+            && child.as_object().is_some_and(|m| m.is_empty())
+        {
+            obj.remove(*current_key);
         }
         removed_val
     }
@@ -175,18 +172,18 @@ impl Jobspec {
     }
 
     pub fn get_attr_shell_options(&self, attr_path: &str) -> Option<&Value> {
-        self.get_attr(&format!("system.shell.options.{}", attr_path))
+        self.get_attr(&format!("system.shell.options.{attr_path}"))
     }
 
     pub fn get_attr_shell_options_mut(&mut self, attr_path: &str) -> Option<&mut Value> {
-        self.get_attr_mut(&format!("system.shell.options.{}", attr_path))
+        self.get_attr_mut(&format!("system.shell.options.{attr_path}"))
     }
 
     pub fn get_attr_shell_options_as<T: for<'de> Deserialize<'de>>(
         &self,
         attr_path: &str,
     ) -> Option<T> {
-        self.get_attr_as(&format!("system.shell.options.{}", attr_path))
+        self.get_attr_as(&format!("system.shell.options.{attr_path}"))
     }
 
     pub fn set_attr_shell_options<T: Serialize + ?Sized>(
@@ -194,11 +191,11 @@ impl Jobspec {
         attr_path: &str,
         val: &T,
     ) -> Result<()> {
-        self.set_attr(&format!("system.shell.options.{}", attr_path), val)
+        self.set_attr(&format!("system.shell.options.{attr_path}"), val)
     }
 
     pub fn del_attr_shell_options(&mut self, attr_path: &str, remove_empty: bool) -> Option<Value> {
-        self.del_attr(&format!("system.shell.options.{}", attr_path), remove_empty)
+        self.del_attr(&format!("system.shell.options.{attr_path}"), remove_empty)
     }
 
     pub fn duration(&self) -> Option<&Value> {
@@ -258,15 +255,15 @@ impl Jobspec {
         } else {
             self.del_attr_shell_options("output.stdout.buffer", true);
             self.del_attr_shell_options("output.stderr.buffer", true);
-            if let Some(bt) = self.get_attr_shell_options_as::<f64>("output.batch-timeout") {
-                if bt == 0.05_f64 {
-                    self.del_attr_shell_options("output.batch-timeout", true);
-                }
+            if let Some(bt) = self.get_attr_shell_options_as::<f64>("output.batch-timeout")
+                && bt == 0.05_f64
+            {
+                self.del_attr_shell_options("output.batch-timeout", true);
             }
-            if let Some(bt) = self.get_attr_shell_options_as::<f64>("input.batch-timeout") {
-                if bt == 0.0_f64 {
-                    self.del_attr_shell_options("input.batch-timeout", true);
-                }
+            if let Some(bt) = self.get_attr_shell_options_as::<f64>("input.batch-timeout")
+                && bt == 0.0_f64
+            {
+                self.del_attr_shell_options("input.batch-timeout", true);
             }
             Ok(())
         }

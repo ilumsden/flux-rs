@@ -7,8 +7,8 @@ use flux_sys::core::{
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::error::{check_ptr, check_rc, FluxError, Result};
-use crate::flux_ptr_management::{default_impl_as_flux_ptr, BorrowFluxPtr, FluxPtr, FromFluxPtr};
+use crate::error::{FluxError, Result, check_ptr, check_rc};
+use crate::flux_ptr_management::{BorrowFluxPtr, FluxPtr, FromFluxPtr, default_impl_as_flux_ptr};
 use crate::kvs::flags::KvsFlags;
 
 pub struct KvsTransaction {
@@ -34,7 +34,7 @@ impl KvsTransaction {
 
     pub fn put(&mut self, key: &str, data: &[u8], flags: KvsFlags) -> Result<()> {
         let full_key = if let Some(base) = &self.base_path {
-            format!("{}.{}", base, key)
+            format!("{base}.{key}")
         } else {
             key.to_string()
         };
@@ -69,7 +69,7 @@ impl KvsTransaction {
 
     pub fn mkdir(&mut self, key: &str, flags: KvsFlags) -> Result<()> {
         let full_key = if let Some(base) = &self.base_path {
-            format!("{}.{}", base, key)
+            format!("{base}.{key}")
         } else {
             key.to_string()
         };
@@ -82,7 +82,7 @@ impl KvsTransaction {
 
     pub fn unlink(&mut self, key: &str, flags: KvsFlags) -> Result<()> {
         let full_key = if let Some(base) = &self.base_path {
-            format!("{}.{}", base, key)
+            format!("{base}.{key}")
         } else {
             key.to_string()
         };
@@ -101,7 +101,7 @@ impl KvsTransaction {
         flags: KvsFlags,
     ) -> Result<()> {
         let full_key = if let Some(base) = &self.base_path {
-            format!("{}.{}", base, key)
+            format!("{base}.{key}")
         } else {
             key.to_string()
         };
@@ -113,7 +113,7 @@ impl KvsTransaction {
         // If an error occurs during that conversion, it will be returned through this method's
         // Result<()> via '.transpose()?'.
         let c_namespace: Option<CString> = namespace
-            .and_then(|ns| Some(CString::new(ns).map_err(|cstr_err| FluxError::NulError(cstr_err))))
+            .map(|ns| CString::new(ns).map_err(FluxError::NulError))
             .transpose()?;
         // Convert 'target' to a C String
         let c_target = CString::new(target)?;

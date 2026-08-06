@@ -1,15 +1,15 @@
 use std::collections::HashMap;
-use std::ffi::{c_char, c_int, c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_int, c_void};
 
 use bitflags::bitflags;
 use flux_sys::core::{
-    flux_plugin_add_handler, flux_plugin_arg_create, flux_plugin_arg_destroy, flux_plugin_arg_get,
-    flux_plugin_arg_strerror, flux_plugin_arg_t, flux_plugin_aux_get, flux_plugin_aux_set,
-    flux_plugin_create, flux_plugin_destroy, flux_plugin_get_flags, flux_plugin_get_name,
-    flux_plugin_get_path, flux_plugin_get_uuid, flux_plugin_remove_handler, flux_plugin_set_flags,
-    flux_plugin_set_name, flux_plugin_t, FLUX_PLUGIN_ARG_IN, FLUX_PLUGIN_ARG_OUT,
-    FLUX_PLUGIN_ARG_REPLACE, FLUX_PLUGIN_RTLD_DEEPBIND, FLUX_PLUGIN_RTLD_GLOBAL,
-    FLUX_PLUGIN_RTLD_LAZY, FLUX_PLUGIN_RTLD_NOW,
+    FLUX_PLUGIN_ARG_IN, FLUX_PLUGIN_ARG_OUT, FLUX_PLUGIN_ARG_REPLACE, FLUX_PLUGIN_RTLD_DEEPBIND,
+    FLUX_PLUGIN_RTLD_GLOBAL, FLUX_PLUGIN_RTLD_LAZY, FLUX_PLUGIN_RTLD_NOW, flux_plugin_add_handler,
+    flux_plugin_arg_create, flux_plugin_arg_destroy, flux_plugin_arg_get, flux_plugin_arg_strerror,
+    flux_plugin_arg_t, flux_plugin_aux_get, flux_plugin_aux_set, flux_plugin_create,
+    flux_plugin_destroy, flux_plugin_get_flags, flux_plugin_get_name, flux_plugin_get_path,
+    flux_plugin_get_uuid, flux_plugin_remove_handler, flux_plugin_set_flags, flux_plugin_set_name,
+    flux_plugin_t,
 };
 use indexmap::IndexMap;
 
@@ -17,9 +17,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::map::Entry;
 use serde_json::{Map, Value};
 
-use crate::error::{check_ptr, check_rc, to_flux_rc, FluxError, Result};
+use crate::error::{FluxError, Result, check_ptr, check_rc, to_flux_rc};
 use crate::flux_ptr_management::{
-    default_impl_as_flux_ptr, BorrowFluxPtr, BorrowFluxPtrNoArgs, FluxPtr, FromFluxPtr,
+    BorrowFluxPtr, BorrowFluxPtrNoArgs, FluxPtr, FromFluxPtr, default_impl_as_flux_ptr,
 };
 use crate::handle::AuxThinPtrWrapper;
 
@@ -447,8 +447,7 @@ impl Plugin {
         match wrapper.inner.downcast_ref::<T>() {
             Some(typed_ref) => Ok(typed_ref),
             None => Err(FluxError::Logic(format!(
-                "Type mismatch for aux key '{}'",
-                key
+                "Type mismatch for aux key '{key}'",
             ))),
         }
     }
@@ -510,8 +509,7 @@ impl Plugin {
     pub fn add_handler(&mut self, topic: &str, mut callback: PluginCallback) -> Result<()> {
         if self._cb_boxes.contains_key(topic) {
             return Err(FluxError::Logic(format!(
-                "Handler for topic '{}' already exists",
-                topic
+                "Handler for topic '{topic}' already exists",
             )));
         }
         let c_topic = CString::new(topic)?;

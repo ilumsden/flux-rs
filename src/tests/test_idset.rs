@@ -73,7 +73,7 @@ fn from_str_parses_comma_separated() {
 
 #[test]
 fn from_str_nul_byte_returns_error() {
-    let result: Result<Idset> = "1\02".parse();
+    let result: Result<Idset> = "1\x002".parse();
     assert!(result.is_err());
 }
 
@@ -564,7 +564,7 @@ fn deserialize_wrong_type_returns_error() {
 #[test]
 fn debug_format_starts_with_type_name() {
     let idset = make_idset(&[1]);
-    let debug_str = format!("{:?}", idset);
+    let debug_str = format!("{idset:?}");
     assert!(
         debug_str.starts_with("Idset("),
         "Expected debug to start with 'Idset(', got: {debug_str}"
@@ -575,7 +575,7 @@ fn debug_format_starts_with_type_name() {
 fn debug_format_contains_serialized_value() {
     let idset = make_idset(&[1]);
     let serialized = serde_json::to_string(&idset).unwrap();
-    let debug_str = format!("{:?}", idset);
+    let debug_str = format!("{idset:?}");
     assert!(
         debug_str.contains(&serialized),
         "Expected debug to contain serialized value '{serialized}', got: {debug_str}"

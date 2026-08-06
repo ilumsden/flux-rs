@@ -1,4 +1,4 @@
-use std::ffi::{c_void, CString};
+use std::ffi::{CString, c_void};
 use std::ops::{Deref, DerefMut};
 
 use flux_sys::core::{
@@ -13,7 +13,7 @@ use flux_sys::core::{
 };
 use indexmap::IndexMap;
 
-use crate::error::{check_ptr, check_rc, FluxError, Result};
+use crate::error::{FluxError, Result, check_ptr, check_rc};
 use crate::flux_ptr_management::{AsFluxPtr, BorrowFluxPtr, FromFluxPtr, FromFluxPtrNoArgs};
 use crate::handle::{AuxThinPtrWrapper, FluxHandle};
 use crate::job::{JobEventSeverity, JobId, JobResultCode};
@@ -171,10 +171,10 @@ impl JobtapPlugin {
         if rc == -1 {
             let last_os_error = std::io::Error::last_os_error();
             let errno_val = last_os_error.raw_os_error();
-            if let Some(inner_errno_val) = errno_val {
-                if inner_errno_val == libc::ENOENT {
-                    return Err(FluxError::Logic("Provided job ID not found".to_string()));
-                }
+            if let Some(inner_errno_val) = errno_val
+                && inner_errno_val == libc::ENOENT
+            {
+                return Err(FluxError::Logic("Provided job ID not found".to_string()));
             }
         }
         // Handle all other errors with check_rc
@@ -224,8 +224,7 @@ impl JobtapPlugin {
         match wrapper.inner.downcast_ref::<T>() {
             Some(typed_ref) => Ok(typed_ref),
             None => Err(FluxError::Logic(format!(
-                "Type mismatch for aux key '{}' and job '{}'",
-                key,
+                "Type mismatch for aux key '{key}' and job '{}'",
                 id.f58().ok().unwrap_or_else(|| id.0.to_string())
             ))),
         }
@@ -334,10 +333,10 @@ impl JobtapPlugin {
         if plugin_arg_ptr.is_null() {
             let last_os_error = std::io::Error::last_os_error();
             let errno_val = last_os_error.raw_os_error();
-            if let Some(inner_errno_val) = errno_val {
-                if inner_errno_val == libc::ENOENT {
-                    return Err(FluxError::Logic("Provided job ID not found".to_string()));
-                }
+            if let Some(inner_errno_val) = errno_val
+                && inner_errno_val == libc::ENOENT
+            {
+                return Err(FluxError::Logic("Provided job ID not found".to_string()));
             }
         }
         check_ptr(plugin_arg_ptr)?;
@@ -428,7 +427,7 @@ unsafe impl BorrowFluxPtr for JobtapPlugin {
 
     unsafe fn borrow_raw(ptr: *mut Self::CType, args: Self::FromRawArgs) -> Result<Self> {
         Ok(Self {
-            plugin: Plugin::borrow_raw(ptr, args)?,
+            plugin: unsafe { Plugin::borrow_raw(ptr, args)? },
             _cb_boxes: IndexMap::new(),
         })
     }
@@ -437,7 +436,7 @@ unsafe impl BorrowFluxPtr for JobtapPlugin {
 unsafe impl FromFluxPtr for JobtapPlugin {
     unsafe fn from_raw(ptr: *mut Self::CType, args: Self::FromRawArgs) -> Result<Self> {
         Ok(Self {
-            plugin: Plugin::from_raw(ptr, args)?,
+            plugin: unsafe { Plugin::from_raw(ptr, args)? },
             _cb_boxes: IndexMap::new(),
         })
     }

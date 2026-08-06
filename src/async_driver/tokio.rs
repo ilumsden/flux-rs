@@ -4,7 +4,7 @@ use tokio::io::unix::AsyncFd;
 use tokio::task::JoinHandle;
 
 use crate::async_driver::base::{
-    get_poll_fd_for_async, process_readable_event_for_async, AsyncDriver,
+    AsyncDriver, get_poll_fd_for_async, process_readable_event_for_async,
 };
 use crate::error::{FluxError, Result};
 use crate::handle::FluxHandle;

@@ -1,5 +1,5 @@
 use crate::job::jobspec::JobspecV1;
-use crate::job::submit::{submit, submit_async, JobSubmitFlags};
+use crate::job::submit::{JobSubmitFlags, submit, submit_async};
 use crate::job::urgency::JobUrgency;
 use crate::tests::common::with_handle;
 

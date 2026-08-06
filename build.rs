@@ -4,7 +4,7 @@ use std::env;
 use semver::Version;
 
 thread_local! {
-    static KNOWN_CFGS: RefCell<Vec<&'static str>> = RefCell::new(Vec::new());
+    static KNOWN_CFGS: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
 }
 
 macro_rules! create_conditional_compilation_var {
@@ -27,7 +27,7 @@ fn declare_check_cfgs() {
             return;
         }
         let joined = known.join(", ");
-        println!("cargo::rustc-check-cfg=cfg({})", joined);
+        println!("cargo::rustc-check-cfg=cfg({joined})");
     });
 }
 

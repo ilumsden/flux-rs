@@ -1,4 +1,4 @@
-use flux_sys::core::{flux_jobid_t, FLUX_JOBID_ANY};
+use flux_sys::core::{FLUX_JOBID_ANY, flux_jobid_t};
 
 use crate::error::FluxError;
 use crate::job::jobid::{JobId, JobIdEncodingType};

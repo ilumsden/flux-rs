@@ -5,7 +5,7 @@ use flux_sys::core::{flux_future_destroy, flux_future_incref};
 
 use crate::error::FluxError;
 use crate::flux_ptr_management::{BorrowFluxPtrNoArgs, FromFluxPtrNoArgs, IntoFluxPtr};
-use crate::future::sync_future::{create_wait_all_future, create_wait_any_future, FluxFuture};
+use crate::future::sync_future::{FluxFuture, create_wait_all_future, create_wait_any_future};
 use crate::reactor::{Reactor, ReactorFlags};
 use crate::tests::common::with_handle;
 
@@ -619,9 +619,11 @@ fn fulfill_error_message_is_preserved_in_check_error() {
 #[test]
 fn fulfill_error_nul_byte_errstr_returns_error() {
     let mut future = make_wait_all();
-    assert!(future
-        .fulfill_error(libc::ENOENT, Some("bad\0str"))
-        .is_err());
+    assert!(
+        future
+            .fulfill_error(libc::ENOENT, Some("bad\0str"))
+            .is_err()
+    );
 }
 
 // =========================================================================
@@ -661,17 +663,21 @@ fn continue_with_error_without_errstr_succeeds() {
 #[test]
 fn continue_with_error_with_errstr_succeeds() {
     let mut future = make_wait_all();
-    assert!(future
-        .continue_with_error(libc::ENOENT, Some("error"))
-        .is_ok());
+    assert!(
+        future
+            .continue_with_error(libc::ENOENT, Some("error"))
+            .is_ok()
+    );
 }
 
 #[test]
 fn continue_with_error_nul_byte_errstr_returns_error() {
     let mut future = make_wait_all();
-    assert!(future
-        .continue_with_error(libc::ENOENT, Some("bad\0str"))
-        .is_err());
+    assert!(
+        future
+            .continue_with_error(libc::ENOENT, Some("bad\0str"))
+            .is_err()
+    );
 }
 
 // =========================================================================
@@ -707,12 +713,12 @@ fn wait_for_zero_timeout_on_unfulfilled_child_returns_false() {
     // An empty wait_all with one unfulfilled child can never complete,
     // so wait_for(0.0) reliably times out.
     let mut future = make_wait_all_with_child("pending");
-    assert_eq!(future.wait_for(0.0).unwrap(), false);
+    assert!(future.wait_for(0.0).unwrap());
 }
 
 #[test]
 fn wait_for_zero_timeout_on_fulfilled_future_returns_true() {
     let mut future = make_wait_all();
     future.fulfill(Some(Box::new(42u32))).unwrap();
-    assert_eq!(future.wait_for(0.0).unwrap(), true);
+    assert!(future.wait_for(0.0).unwrap());
 }

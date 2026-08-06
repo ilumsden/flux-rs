@@ -51,9 +51,10 @@ fn getroot_nul_byte_namespace_returns_error() {
 fn create_namespace_nul_byte_returns_error() {
     with_handle(|h| {
         let mut kvs = Kvs::new(h);
-        assert!(kvs
-            .create_namespace("bad\0ns", KvsFlags::NONE, None)
-            .is_err());
+        assert!(
+            kvs.create_namespace("bad\0ns", KvsFlags::NONE, None)
+                .is_err()
+        );
     });
 }
 
@@ -69,9 +70,10 @@ fn remove_namespace_nul_byte_returns_error() {
 fn copy_entry_nul_byte_returns_error() {
     with_handle(|h| {
         let mut kvs = Kvs::new(h);
-        assert!(kvs
-            .copy_entry("bad\0src", "dst", KvsFlags::NONE, None, None)
-            .is_err());
+        assert!(
+            kvs.copy_entry("bad\0src", "dst", KvsFlags::NONE, None, None)
+                .is_err()
+        );
     });
 }
 
@@ -79,9 +81,10 @@ fn copy_entry_nul_byte_returns_error() {
 fn move_entry_nul_byte_returns_error() {
     with_handle(|h| {
         let mut kvs = Kvs::new(h);
-        assert!(kvs
-            .move_entry("src", "bad\0dst", KvsFlags::NONE, None, None)
-            .is_err());
+        assert!(
+            kvs.move_entry("src", "bad\0dst", KvsFlags::NONE, None, None)
+                .is_err()
+        );
     });
 }
 

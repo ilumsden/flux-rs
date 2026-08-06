@@ -524,21 +524,21 @@ fn authorize_owner_role_allows_any_userid() {
     let mut msg = make_request();
     msg.set_cred(0, MessageRolemask::OWNER).unwrap();
     // OWNER role bypasses the userid check entirely.
-    assert_eq!(msg.authorize(9999).unwrap(), true);
+    assert!(msg.authorize(9999).unwrap());
 }
 
 #[test]
 fn authorize_user_role_matching_userid_returns_true() {
     let mut msg = make_request();
     msg.set_cred(1000, MessageRolemask::USER).unwrap();
-    assert_eq!(msg.authorize(1000).unwrap(), true);
+    assert!(msg.authorize(1000).unwrap());
 }
 
 #[test]
 fn authorize_user_role_mismatched_userid_returns_false() {
     let mut msg = make_request();
     msg.set_cred(1000, MessageRolemask::USER).unwrap();
-    assert_eq!(msg.authorize(9999).unwrap(), false);
+    assert!(!msg.authorize(9999).unwrap());
 }
 
 // =========================================================================
@@ -549,29 +549,24 @@ fn authorize_user_role_mismatched_userid_returns_false() {
 fn authorize_cred_owner_rolemask_allows_any_userid() {
     let msg = make_request();
     // OWNER role in the cred bypasses the userid check.
-    assert_eq!(
-        msg.authorize_cred(9999, 0, MessageRolemask::OWNER).unwrap(),
-        true
-    );
+    assert!(msg.authorize_cred(9999, 0, MessageRolemask::OWNER).unwrap());
 }
 
 #[test]
 fn authorize_cred_user_rolemask_matching_userid_returns_true() {
     let msg = make_request();
-    assert_eq!(
+    assert!(
         msg.authorize_cred(1000, 1000, MessageRolemask::USER)
-            .unwrap(),
-        true
+            .unwrap()
     );
 }
 
 #[test]
 fn authorize_cred_user_rolemask_mismatched_userid_returns_false() {
     let msg = make_request();
-    assert_eq!(
-        msg.authorize_cred(9999, 1000, MessageRolemask::USER)
-            .unwrap(),
-        false
+    assert!(
+        !msg.authorize_cred(9999, 1000, MessageRolemask::USER)
+            .unwrap()
     );
 }
 
@@ -600,7 +595,7 @@ fn set_error_with_raw_os_error_round_trips() {
 fn set_error_without_raw_os_error_returns_logic_error() {
     let mut msg = make_response();
     // io::Error::new does not carry a raw OS errno.
-    let io_err = io::Error::new(io::ErrorKind::Other, "no errno attached");
+    let io_err = io::Error::other("no errno attached");
     assert!(matches!(msg.set_error(io_err), Err(FluxError::Logic(_))));
 }
 

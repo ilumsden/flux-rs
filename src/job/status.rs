@@ -1,9 +1,9 @@
-use std::ffi::{c_char, CStr};
+use std::ffi::{CStr, c_char};
 use std::ops::{Deref, DerefMut};
 
 use flux_sys::core::{flux_job_wait_get_id, flux_job_wait_get_status, flux_jobid_t};
 
-use crate::error::{check_rc, FluxError, Result};
+use crate::error::{FluxError, Result, check_rc};
 use crate::future::FluxFuture;
 use crate::job::jobid::JobId;
 use crate::utils::impl_async_future_wrapper;
@@ -60,12 +60,9 @@ impl JobStatus {
 
     pub fn get_errstr(&mut self) -> Result<&str> {
         self.update_with_status()?;
-        self.errstr
-            .as_ref()
-            .map(|es| es.as_str())
-            .ok_or(FluxError::Logic(
-                "Success state is None after fetching it from Flux".to_string(),
-            ))
+        self.errstr.as_deref().ok_or(FluxError::Logic(
+            "Success state is None after fetching it from Flux".to_string(),
+        ))
     }
 }
 
