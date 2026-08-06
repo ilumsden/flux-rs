@@ -1,4 +1,4 @@
-FROM fluxrm/flux-sched:focal
+FROM fluxrm/flux-sched:noble-v0.53.0
 
 LABEL maintainer="Vanessasaurus <@vsoch>"
 
@@ -13,30 +13,27 @@ ENV USER_GID=${USER_GID}
 # Switch back to root
 USER root
 
-# Pip not provided in this version
+# Note: Added `sudo` and `curl` to ensure they are available
 RUN apt-get update && \
-    apt-get install -y libclang-dev && \
+    apt-get install -y libclang-dev sudo curl && \
     apt-get clean
 
 # Assuming installing to /usr/local
 ENV LD_LIBRARY_PATH=/usr/local/lib
-ENV LIBCLANG_PATH=/usr/lib/llvm-10/lib/libclang.so
 
 # Install Rust to a system location via rustup
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH
 
-# Install rust nightly
-RUN url="https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init"; \
-    wget "$url"; \
-    chmod +x rustup-init; \
-    ./rustup-init -y --no-modify-path --default-toolchain nightly; \
-    rm rustup-init; \
-    chmod -R a+w $RUSTUP_HOME $CARGO_HOME;
+# Install rust nightly (Architecture-agnostic using the official script)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain nightly && \
+    chmod -R a+w $RUSTUP_HOME $CARGO_HOME
 
 # Add the group and user that match our ids
 RUN groupadd -g ${USER_GID} ${USERNAME} && \
     adduser --disabled-password --uid ${USER_UID} --gid ${USER_GID} --gecos "" ${USERNAME} && \
-    echo "${USERNAME} ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers
+    echo "${USERNAME} ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/${USERNAME} && \
+    chmod 0440 /etc/sudoers.d/${USERNAME}
+
 USER $USERNAME
