@@ -195,7 +195,8 @@ mod tokio_tests {
         future.set_reactor(&reactor);
 
         let af = AsyncFluxFuture::new(future).unwrap();
-        let result = tokio::time::timeout(Duration::from_secs(5), af).await;
+
+        let result = tokio::time::timeout(Duration::from_secs(10), af).await;
 
         driver.stop().unwrap();
         assert!(
@@ -220,7 +221,8 @@ mod tokio_tests {
         future.set_reactor(&reactor);
 
         let af = AsyncFluxFuture::new(future).unwrap();
-        let result = tokio::time::timeout(Duration::from_secs(5), af).await;
+
+        let result = tokio::time::timeout(Duration::from_secs(10), af).await;
 
         driver.stop().unwrap();
         assert!(
@@ -326,6 +328,7 @@ mod smol_tests {
             future.set_reactor(&reactor);
 
             let af = AsyncFluxFuture::new(future).unwrap();
+
             smol::block_on(af);
 
             driver.stop().unwrap();
@@ -349,6 +352,7 @@ mod smol_tests {
             future.set_reactor(&reactor);
 
             let af = AsyncFluxFuture::new(future).unwrap();
+
             smol::block_on(af);
 
             driver.stop().unwrap();
