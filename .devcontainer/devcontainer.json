@@ -17,9 +17,9 @@
           "/workspaces/flux-core/src/bindings/python"
         ],
         "rust-analyzer.cargo.features": [
-          "tokio",
-          "smol",
-          "jobtap"
+          "flux-core/tokio",
+          "flux-core/smol",
+          "flux-core/jobtap"
         ]
       },
       "extensions": [

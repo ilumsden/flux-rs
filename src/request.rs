@@ -1,4 +1,5 @@
 use std::ffi::{CStr, CString, c_char, c_void};
+use std::ops::{Deref, DerefMut};
 
 use flux_sys::core::{flux_request_decode_raw, flux_request_encode_raw};
 
@@ -126,5 +127,19 @@ impl From<Message> for Request {
 impl From<Request> for Message {
     fn from(value: Request) -> Self {
         value.msg
+    }
+}
+
+impl Deref for Request {
+    type Target = Message;
+
+    fn deref(&self) -> &Self::Target {
+        &self.msg
+    }
+}
+
+impl DerefMut for Request {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.msg
     }
 }

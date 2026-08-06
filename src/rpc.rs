@@ -43,7 +43,7 @@ impl RpcNodeId {
 }
 
 pub struct Rpc<'a> {
-    handle: &'a FluxHandle,
+    handle: Option<&'a FluxHandle>,
     future: FluxFuture<'static>,
 }
 
@@ -65,7 +65,7 @@ impl<'a> Rpc<'a> {
             flags.bits() as _,
         ))?;
         Ok(Self {
-            handle,
+            handle: Some(handle),
             future: unsafe { FluxFuture::from_ptr(future_ptr)? },
         })
     }
@@ -105,7 +105,7 @@ impl<'a> Rpc<'a> {
             flags.bits() as _,
         ))?;
         Ok(Self {
-            handle,
+            handle: Some(handle),
             future: unsafe { FluxFuture::from_ptr(future_ptr)? },
         })
     }
@@ -146,12 +146,21 @@ impl<'a> Rpc<'a> {
     }
 }
 
+impl From<FluxFuture<'static>> for Rpc<'_> {
+    fn from(value: FluxFuture<'static>) -> Self {
+        Self {
+            handle: None,
+            future: value,
+        }
+    }
+}
+
 impl_async_future_wrapper!(
     #[from_sync(Rpc<'a>)]
     pub struct AsyncRpc<'a> {
         #[from_sync(future)]
         future: AsyncFluxFuture,
         #[from_sync(handle)]
-        handle: &'a FluxHandle,
+        handle: Option<&'a FluxHandle>,
     }
 );

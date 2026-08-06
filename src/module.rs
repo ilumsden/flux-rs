@@ -164,9 +164,9 @@ macro_rules! __create_module_entrypoint_macro {
     ($user_main:path) => {
         const _: $crate::module::BrokerModuleEntrypoint = $user_main;
 
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "C" fn mod_main(
-            h: *mut ::flux_sys::core::flux_t,
+            h: *mut $crate::flux_sys::core::flux_t,
             argc: ::std::ffi::c_int,
             argv: *mut *mut ::std::ffi::c_char,
         ) -> ::std::ffi::c_int {
@@ -181,7 +181,7 @@ macro_rules! __create_module_entrypoint_macro {
                 }
             }
             unsafe {
-                ::flux_sys::core::flux_incref(h);
+                $crate::flux_sys::core::flux_incref(h);
             }
             let rust_handle = match unsafe {
                 <$crate::handle::FluxHandle as $crate::FromFluxPtrNoArgs>::from_ptr(h)

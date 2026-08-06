@@ -1,4 +1,5 @@
 use std::ffi::{CStr, CString, c_char, c_void};
+use std::ops::{Deref, DerefMut};
 
 use flux_sys::core::{
     flux_response_decode_error, flux_response_decode_raw, flux_response_derive,
@@ -173,5 +174,19 @@ impl From<Message> for Response {
 impl From<Response> for Message {
     fn from(value: Response) -> Self {
         value.msg
+    }
+}
+
+impl Deref for Response {
+    type Target = Message;
+
+    fn deref(&self) -> &Self::Target {
+        &self.msg
+    }
+}
+
+impl DerefMut for Response {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.msg
     }
 }

@@ -43,3 +43,13 @@ jobtap = ["flux-sys/jobtap"]
 
 [package.metadata.llvm-cov]
 ignore-filename-regex = ["src/**/tests/", "build\\.rs"]
+
+[workspace]
+members = [
+    ".",
+    "xtask",
+    "tests/test_broker_module",
+    # "tests/test_jobtap_plugin",
+    # "tests/test_rpc",
+]
+default-members = ["."]
