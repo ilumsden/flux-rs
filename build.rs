@@ -37,18 +37,33 @@ fn add_core_conditional_compilation_checks() {
         .and_then(|v| Version::parse(&v).ok())
         .map(|v| v >= Version::parse("0.83.1").unwrap())
         .unwrap_or(false);
+    // Module loader helpers are first exported in v0.83.1
+    create_conditional_compilation_var!(
+        "flux_core_has_module_loader_helpers",
+        has_module_loader_helpers
+    );
+
     let has_proper_reactor_ref_count = env::var("DEP_FLUX_CORE_VERSION")
         .ok()
         .and_then(|v| Version::parse(&v).ok())
         .map(|v| v >= Version::parse("0.70.0").unwrap())
         .unwrap_or(false);
-    create_conditional_compilation_var!(
-        "flux_core_has_module_loader_helpers",
-        has_module_loader_helpers
-    );
+    // v0.70.0 was the first version where flux_reactor_incref/decref exist
     create_conditional_compilation_var!(
         "flux_core_has_reactor_ref_count",
         has_proper_reactor_ref_count
+    );
+
+    let reactor_create_accepts_flags = env::var("DEP_FLUX_CORE_VERSION")
+        .ok()
+        .and_then(|v| Version::parse(&v).ok())
+        .map(|v| v <= Version::parse("0.70.0").unwrap())
+        .unwrap_or(false);
+    // v0.70.0 was the last version where flux_reactor_create
+    // accepts flags that != 0
+    create_conditional_compilation_var!(
+        "flux_core_reactor_create_accepts_flags",
+        reactor_create_accepts_flags
     );
 }
 

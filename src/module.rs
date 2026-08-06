@@ -75,18 +75,16 @@ pub fn initialize_module(handle: &FluxHandle) -> Result<String> {
             .to_string_lossy()
             .to_string();
         Err(FluxError::Logic(err_msg))
+    } else if args_str_ptr.is_null() {
+        Err(FluxError::Logic(
+            "The 'flux_module_initialize' function produced a NULL args string".to_string(),
+        ))
     } else {
-        if args_str_ptr.is_null() {
-            Err(FluxError::Logic(
-                "The 'flux_module_initialize' function produced a NULL args string".to_string(),
-            ))
-        } else {
-            let args_str = unsafe { CStr::from_ptr(args_str_ptr).to_string_lossy().to_string() };
-            unsafe {
-                libc::free(args_str_ptr as *mut c_void);
-            }
-            Ok(args_str)
+        let args_str = unsafe { CStr::from_ptr(args_str_ptr).to_string_lossy().to_string() };
+        unsafe {
+            libc::free(args_str_ptr as *mut c_void);
         }
+        Ok(args_str)
     }
 }
 

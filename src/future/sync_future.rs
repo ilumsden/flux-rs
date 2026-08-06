@@ -117,7 +117,21 @@ impl<'a> FluxFuture<'a> {
         }
     }
 
-    pub fn get_reactor(&self) -> Result<Reactor> {
+    /// Get the Reactor associated with this future.
+    ///
+    /// # Safety
+    /// The returned `Reactor` may share underlying C state
+    /// with the handle and reactor that created this future.
+    ///
+    /// In multi-threaded environments (e.g., Tokio/Smol async runtimes), invoking
+    /// methods on this reactor while an async driver is actively ticking the reactor
+    /// on another thread causes an un-synchronized C data race and undefined behavior.
+    ///
+    /// You must ensure that no other thread is concurrently ticking the reactor
+    /// or mutating the handle while using the returned `Reactor`.
+    ///
+    /// In single-threaded environments, this method is completely safe.
+    pub unsafe fn get_reactor(&self) -> Result<Reactor> {
         let ptr = unsafe { flux_future_get_reactor(self.c_future.as_mut_ptr()) };
         check_ptr(ptr)?;
         unsafe { Reactor::borrow_ptr(ptr) }
@@ -129,7 +143,21 @@ impl<'a> FluxFuture<'a> {
         }
     }
 
-    pub fn get_flux(&self) -> Result<FluxHandle> {
+    /// Get the FluxHandle associated with this future.
+    ///
+    /// # Safety
+    /// The returned `FluxHandle` may share underlying C state
+    /// with the handle and reactor that created this future.
+    ///
+    /// In multi-threaded environments (e.g., Tokio/Smol async runtimes), invoking
+    /// methods on this handle while an async driver is actively ticking the reactor
+    /// on another thread causes an un-synchronized C data race and undefined behavior.
+    ///
+    /// You must ensure that no other thread is concurrently ticking the reactor
+    /// or mutating the handle while using the returned `FluxHandle`.
+    ///
+    /// In single-threaded environments, this method is completely safe.
+    pub unsafe fn get_flux(&self) -> Result<FluxHandle> {
         let ptr = unsafe { flux_future_get_flux(self.c_future.as_mut_ptr()) };
         check_ptr(ptr)?;
         unsafe { FluxHandle::borrow_ptr(ptr) }
@@ -475,6 +503,9 @@ unsafe impl FromFluxPtr for FluxFuture<'static> {
         })
     }
 }
+
+unsafe impl Send for FluxFuture<'_> {}
+unsafe impl Sync for FluxFuture<'_> {}
 
 default_impl_as_flux_ptr!(FluxFuture<'static>, flux_future_t, c_future);
 

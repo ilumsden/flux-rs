@@ -210,7 +210,7 @@ fn set_reactor_and_get_reactor_succeeds() {
     let mut future = make_wait_all();
     let reactor = Reactor::new(ReactorFlags::NONE).unwrap();
     future.set_reactor(&reactor);
-    assert!(future.get_reactor().is_ok());
+    assert!(unsafe { future.get_reactor().is_ok() });
 }
 
 #[test]
@@ -218,7 +218,7 @@ fn get_reactor_after_set_produces_non_owning_reactor() {
     let mut future = make_wait_all();
     let reactor = Reactor::new(ReactorFlags::NONE).unwrap();
     future.set_reactor(&reactor);
-    let borrowed = future.get_reactor().unwrap();
+    let borrowed = unsafe { future.get_reactor().unwrap() };
     assert!(!borrowed.c_reactor.is_owned());
 }
 
@@ -227,7 +227,7 @@ fn get_reactor_after_set_is_usable() {
     let mut future = make_wait_all();
     let reactor = Reactor::new(ReactorFlags::NONE).unwrap();
     future.set_reactor(&reactor);
-    let borrowed = future.get_reactor().unwrap();
+    let borrowed = unsafe { future.get_reactor().unwrap() };
     assert!(borrowed.now().is_ok());
 }
 
@@ -240,7 +240,7 @@ fn set_flux_and_get_flux_succeeds() {
     with_handle(|h| {
         let mut future = make_wait_all();
         future.set_flux(h);
-        assert!(future.get_flux().is_ok());
+        assert!(unsafe { future.get_flux().is_ok() });
     });
 }
 
@@ -249,7 +249,7 @@ fn get_flux_after_set_produces_non_owning_handle() {
     with_handle(|h| {
         let mut future = make_wait_all();
         future.set_flux(h);
-        let borrowed = future.get_flux().unwrap();
+        let borrowed = unsafe { future.get_flux().unwrap() };
         assert!(!borrowed.h.is_owned());
     });
 }
@@ -259,7 +259,7 @@ fn get_flux_after_set_is_usable() {
     with_handle(|h| {
         let mut future = make_wait_all();
         future.set_flux(h);
-        let borrowed = future.get_flux().unwrap();
+        let borrowed = unsafe { future.get_flux().unwrap() };
         assert!(borrowed.get_rank().is_ok());
     });
 }
@@ -713,7 +713,7 @@ fn wait_for_zero_timeout_on_unfulfilled_child_returns_false() {
     // An empty wait_all with one unfulfilled child can never complete,
     // so wait_for(0.0) reliably times out.
     let mut future = make_wait_all_with_child("pending");
-    assert!(future.wait_for(0.0).unwrap());
+    assert!(!future.wait_for(0.0).unwrap());
 }
 
 #[test]

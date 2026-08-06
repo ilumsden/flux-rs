@@ -5,6 +5,17 @@ use crate::error::{FluxError, Result};
 use crate::handle::FluxHandle;
 use crate::reactor::FluxReactorThread;
 
+/// An async driver intended for actor architectures.
+///
+/// # Safety
+///
+/// This driver can easily cause data races and undefined behavior if
+/// other threads are using the same `Reactor` or if those threads are using
+/// the `FluxHandle` used to create/obtain the `Reactor`. This driver is
+/// mainly intended to be used in actor architectures where Flux events
+/// are handled by reactor callbacks (e.g., via `MessageHandler`), and those
+/// callbacks dispatch other, non-Flux related work to an async runtime
+/// via channels, message passing, etc.
 pub struct ThreadDriver {
     pub(crate) driver: Option<FluxReactorThread>,
 }
