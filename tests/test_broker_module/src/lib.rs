@@ -59,7 +59,7 @@ fn hello_world(handle: FluxHandle, _msg_handler: MsgHandler, msg: Message) {
 
 /// A simple broker module serving as an integration test
 #[derive(Parser, Debug)]
-#[command(version, about, long_about=None)]
+#[command(version, about, long_about=None, no_binary_name = true)]
 struct Args {
     /// Name of the service to spawn
     #[arg(short, long)]
@@ -71,11 +71,19 @@ struct Args {
 }
 
 fn module_main(handle: FluxHandle, args: Vec<String>) -> Result<()> {
-    let args = Args::parse_from(args);
-    if let Some(service_name) = args.service {
+    let parsed_args: Args = match Args::try_parse_from(args) {
+        Ok(a) => a,
+        Err(e) => {
+            return Err(FluxError::Logic(format!(
+                "Failed to parse module arguments:\n{}",
+                e
+            )));
+        }
+    };
+    if let Some(service_name) = parsed_args.service {
         register_service(&handle, &service_name)?;
     }
-    if args.init_failure {
+    if parsed_args.init_failure {
         return Err(FluxError::Logic(
             "Aborting during init per test request".to_string(),
         ));

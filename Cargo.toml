@@ -50,6 +50,6 @@ members = [
     "xtask",
     "tests/test_broker_module",
     # "tests/test_jobtap_plugin",
-    # "tests/test_rpc",
+    "tests/test_rpc",
 ]
 default-members = ["."]

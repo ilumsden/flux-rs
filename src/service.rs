@@ -14,7 +14,7 @@ pub fn register_service(handle: &FluxHandle, name: &str) -> Result<()> {
     let rpc_future = Rpc::from(unsafe { FluxFuture::from_ptr(ptr)? });
     match rpc_future.get() {
         Ok(_) => Ok(()),
-        Err(FluxError::System(io_error)) => match io_error.raw_os_error() {
+        Err(FluxError::System(c_func_name, io_error)) => match io_error.raw_os_error() {
             Some(errno) => {
                 if errno == ::libc::EINVAL {
                     Err(FluxError::Logic("Invalid service name".to_string()))
@@ -27,7 +27,7 @@ pub fn register_service(handle: &FluxHandle, name: &str) -> Result<()> {
                         "Unable to lookup route to requesting sender".to_string(),
                     ))
                 } else {
-                    Err(FluxError::System(io_error))
+                    Err(FluxError::System(c_func_name, io_error))
                 }
             }
             None => Err(FluxError::Logic(
@@ -44,7 +44,7 @@ pub fn unregister_service(handle: &FluxHandle, name: &str) -> Result<()> {
     let rpc_future = Rpc::from(unsafe { FluxFuture::from_ptr(ptr)? });
     match rpc_future.get() {
         Ok(_) => Ok(()),
-        Err(FluxError::System(io_error)) => match io_error.raw_os_error() {
+        Err(FluxError::System(c_func_name, io_error)) => match io_error.raw_os_error() {
             Some(errno) => {
                 if errno == ::libc::ENOENT {
                     Err(FluxError::Logic(format!(
@@ -55,7 +55,7 @@ pub fn unregister_service(handle: &FluxHandle, name: &str) -> Result<()> {
                         "Sender does not match current owner of service".to_string(),
                     ))
                 } else {
-                    Err(FluxError::System(io_error))
+                    Err(FluxError::System(c_func_name, io_error))
                 }
             }
             None => Err(FluxError::Logic(

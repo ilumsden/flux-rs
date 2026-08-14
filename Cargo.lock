@@ -478,6 +478,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "flux-core-rs-test-rpc"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "flux-core",
+]
+
+[[package]]
 name = "flux-sys"
 version = "0.3.0"
 source = "git+https://github.com/flux-framework/flux-sys-rs.git?branch=master#11d4ae2c1cba262dd07356027331f172f0e20a27"
