@@ -1,9 +1,9 @@
-use std::ffi::{CString, c_void};
+use std::ffi::{CStr, CString, c_char, c_void};
 
 use bitflags::bitflags;
 use flux_sys::core::{
-    FLUX_NODEID_ANY, FLUX_NODEID_UPSTREAM, FLUX_RPC_NORESPONSE, FLUX_RPC_STREAMING,
-    flux_rpc_get_matchtag, flux_rpc_get_nodeid, flux_rpc_get_raw, flux_rpc_message, flux_rpc_raw,
+    FLUX_NODEID_ANY, FLUX_NODEID_UPSTREAM, FLUX_RPC_NORESPONSE, FLUX_RPC_STREAMING, flux_rpc_get,
+    flux_rpc_get_matchtag, flux_rpc_get_nodeid, flux_rpc_message, flux_rpc_raw,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -56,10 +56,15 @@ impl<'a> Rpc<'a> {
         flags: RpcFlags,
     ) -> Result<Self> {
         let c_topic = CString::new(topic)?;
+        let data_ptr = if data.is_empty() {
+            std::ptr::null()
+        } else {
+            data.as_ptr()
+        };
         let future_ptr = flux_try!(flux_rpc_raw(
             handle.h.as_mut_ptr(),
             c_topic.as_ptr(),
-            data.as_ptr() as *const c_void,
+            data_ptr as *const c_void,
             data.len() as _,
             nodeid.as_c_nodeid(),
             flags.bits() as _,
@@ -110,27 +115,35 @@ impl<'a> Rpc<'a> {
         })
     }
 
-    pub fn get(&self) -> Result<&'a [u8]> {
-        let mut buf: *const c_void = std::ptr::null();
-        let mut size = 0;
-        flux_try!(flux_rpc_get_raw(
+    pub fn get(&self) -> Result<Option<&'a [u8]>> {
+        let mut buf: *const c_char = std::ptr::null();
+        flux_try!(flux_rpc_get(
             self.future.c_future.as_mut_ptr(),
-            &mut buf as *mut *const c_void,
-            &mut size,
+            &mut buf as *mut *const c_char,
         ))?;
-        Ok(unsafe { std::slice::from_raw_parts(buf as *const u8, size as _) })
+        if buf.is_null() {
+            Ok(None)
+        } else {
+            Ok(Some(unsafe { CStr::from_ptr(buf).to_bytes() }))
+        }
     }
 
-    pub fn get_json(&self) -> Result<Value> {
-        let mut raw_payload = self.get()?;
+    pub fn get_json(&self) -> Result<Option<Value>> {
+        let mut raw_payload = match self.get()? {
+            Some(p) => p,
+            None => return Ok(None),
+        };
         if raw_payload.last() == Some(&0) {
             raw_payload = &raw_payload[..raw_payload.len() - 1];
         }
         Ok(serde_json::from_slice(raw_payload)?)
     }
 
-    pub fn get_deserializable<D: Deserialize<'a>>(&self) -> Result<D> {
-        let mut raw_payload = self.get()?;
+    pub fn get_deserializable<D: Deserialize<'a>>(&self) -> Result<Option<D>> {
+        let mut raw_payload = match self.get()? {
+            Some(p) => p,
+            None => return Ok(None),
+        };
         if raw_payload.last() == Some(&0) {
             raw_payload = &raw_payload[..raw_payload.len() - 1];
         }
