@@ -22,7 +22,7 @@ use flux_sys::core::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::error::{FluxError, Result, check_ptr, check_rc};
+use crate::error::{FluxError, Result, flux_try};
 use crate::flux_ptr_management::{
     BorrowFluxPtr, FluxPtr, FromFluxPtr, FromFluxPtrNoArgs, default_impl_as_flux_ptr,
 };
@@ -152,16 +152,14 @@ pub struct Message {
 
 impl Message {
     pub fn new(msg_type: MessageType) -> Result<Self> {
-        let msg_ptr = unsafe { flux_msg_create(msg_type.bits() as _) };
-        check_ptr(msg_ptr)?;
+        let msg_ptr = flux_try!(flux_msg_create(msg_type.bits() as _))?;
         Ok(Self {
             c_msg: FluxPtr::create_owned(msg_ptr, flux_msg_destroy)?,
         })
     }
 
     pub fn try_clone(&self, copy_payload: bool) -> Result<Self> {
-        let new_msg_ptr = unsafe { flux_msg_copy(self.c_msg.as_mut_ptr(), copy_payload) };
-        check_ptr(new_msg_ptr)?;
+        let new_msg_ptr = flux_try!(flux_msg_copy(self.c_msg.as_mut_ptr(), copy_payload))?;
         Ok(Self {
             c_msg: FluxPtr::create_owned(new_msg_ptr, flux_msg_destroy)?,
         })
@@ -172,18 +170,15 @@ impl Message {
     }
 
     pub fn set_flag(&mut self, flag: MessageFlag) -> Result<()> {
-        let rc = unsafe { flux_msg_set_flag(self.c_msg.as_mut_ptr(), flag.bits() as _) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_msg_set_flag(self.c_msg.as_mut_ptr(), flag.bits() as _))
     }
 
     pub fn clear_flag(&mut self, flag: MessageFlag) -> Result<()> {
-        let rc = unsafe { flux_msg_clear_flag(self.c_msg.as_mut_ptr(), flag.bits() as _) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_msg_clear_flag(self.c_msg.as_mut_ptr(), flag.bits() as _))
     }
 
     pub fn set_private(&mut self) -> Result<()> {
-        let rc = unsafe { flux_msg_set_private(self.c_msg.as_mut_ptr()) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_msg_set_private(self.c_msg.as_mut_ptr()))
     }
 
     pub fn is_private(&self) -> bool {
@@ -191,8 +186,7 @@ impl Message {
     }
 
     pub fn set_streaming(&mut self) -> Result<()> {
-        let rc = unsafe { flux_msg_set_streaming(self.c_msg.as_mut_ptr()) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_msg_set_streaming(self.c_msg.as_mut_ptr()))
     }
 
     pub fn is_streaming(&self) -> bool {
@@ -200,8 +194,7 @@ impl Message {
     }
 
     pub fn set_noresponse(&mut self) -> Result<()> {
-        let rc = unsafe { flux_msg_set_noresponse(self.c_msg.as_mut_ptr()) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_msg_set_noresponse(self.c_msg.as_mut_ptr()))
     }
 
     pub fn is_noresponse(&self) -> bool {
@@ -214,21 +207,22 @@ impl Message {
 
     pub fn set_topic(&mut self, topic: &str) -> Result<()> {
         let c_topic = CString::new(topic)?;
-        let rc = unsafe { flux_msg_set_topic(self.c_msg.as_mut_ptr(), c_topic.as_ptr()) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_msg_set_topic(
+            self.c_msg.as_mut_ptr(),
+            c_topic.as_ptr()
+        ))
     }
 
     pub fn delete_topic(&mut self) -> Result<()> {
-        let rc = unsafe { flux_msg_set_topic(self.c_msg.as_mut_ptr(), std::ptr::null()) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_msg_set_topic(self.c_msg.as_mut_ptr(), std::ptr::null()))
     }
 
     pub fn get_topic(&self) -> Result<String> {
         let mut c_str: *const c_char = std::ptr::null();
-        let rc = unsafe {
-            flux_msg_get_topic(self.c_msg.as_mut_ptr(), &mut c_str as *mut *const c_char)
-        };
-        check_rc(rc)?;
+        flux_try!(flux_msg_get_topic(
+            self.c_msg.as_mut_ptr(),
+            &mut c_str as *mut *const c_char
+        ))?;
         Ok(unsafe { CStr::from_ptr(c_str).to_str()?.to_owned() })
     }
 
@@ -237,14 +231,13 @@ impl Message {
     }
 
     pub fn set_payload(&mut self, data: &[u8]) -> Result<()> {
-        let rc = unsafe {
+        flux_try!(empty_ok
             flux_msg_set_payload(
                 self.c_msg.as_mut_ptr(),
                 data.as_ptr() as *const c_void,
                 data.len() as _,
             )
-        };
-        check_rc(rc)
+        )
     }
 
     pub fn set_payload_json(&mut self, data: &Value) -> Result<()> {
@@ -260,14 +253,11 @@ impl Message {
     pub fn get_payload(&self) -> Result<&[u8]> {
         let mut buf: *const c_void = std::ptr::null();
         let mut size = 0;
-        let rc = unsafe {
-            flux_msg_get_payload(
-                self.c_msg.as_mut_ptr(),
-                &mut buf as *mut *const c_void,
-                &mut size,
-            )
-        };
-        check_rc(rc)?;
+        flux_try!(flux_msg_get_payload(
+            self.c_msg.as_mut_ptr(),
+            &mut buf as *mut *const c_void,
+            &mut size,
+        ))?;
         Ok(unsafe { std::slice::from_raw_parts(buf as *const u8, size as _) })
     }
 
@@ -289,31 +279,28 @@ impl Message {
 
     pub fn set_string(&mut self, val: &str) -> Result<()> {
         let c_val = CString::new(val)?;
-        let rc = unsafe { flux_msg_set_string(self.c_msg.as_mut_ptr(), c_val.as_ptr()) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_msg_set_string(self.c_msg.as_mut_ptr(), c_val.as_ptr()))
     }
 
     pub fn get_string(&self) -> Result<&str> {
         let mut c_str_ptr: *const c_char = std::ptr::null();
-        let rc = unsafe {
-            flux_msg_get_string(
-                self.c_msg.as_mut_ptr(),
-                &mut c_str_ptr as *mut *const c_char,
-            )
-        };
-        check_rc(rc)?;
+        flux_try!(flux_msg_get_string(
+            self.c_msg.as_mut_ptr(),
+            &mut c_str_ptr as *mut *const c_char,
+        ))?;
         Ok(unsafe { CStr::from_ptr(c_str_ptr).to_str()? })
     }
 
     pub fn set_nodeid(&mut self, nodeid: u32) -> Result<()> {
-        let rc = unsafe { flux_msg_set_nodeid(self.c_msg.as_mut_ptr(), nodeid) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_msg_set_nodeid(self.c_msg.as_mut_ptr(), nodeid))
     }
 
     pub fn get_nodeid(&self) -> Result<u32> {
         let mut nodeid: u32 = 0;
-        let rc = unsafe { flux_msg_get_nodeid(self.c_msg.as_mut_ptr(), &mut nodeid as *mut _) };
-        check_rc(rc)?;
+        flux_try!(flux_msg_get_nodeid(
+            self.c_msg.as_mut_ptr(),
+            &mut nodeid as *mut _
+        ))?;
         Ok(nodeid)
     }
 
@@ -322,15 +309,15 @@ impl Message {
             userid,
             rolemask: rolemask.bits() as _,
         };
-        let rc = unsafe { flux_msg_set_cred(self.c_msg.as_mut_ptr(), cred) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_msg_set_cred(self.c_msg.as_mut_ptr(), cred))
     }
 
     pub fn get_cred(&self) -> Result<(u32, MessageRolemask)> {
         let mut cred: flux_msg_cred = Default::default();
-        let rc =
-            unsafe { flux_msg_get_cred(self.c_msg.as_mut_ptr(), &mut cred as *mut flux_msg_cred) };
-        check_rc(rc)?;
+        flux_try!(flux_msg_get_cred(
+            self.c_msg.as_mut_ptr(),
+            &mut cred as *mut flux_msg_cred
+        ))?;
         Ok((
             cred.userid,
             MessageRolemask::from_bits_retain(cred.rolemask),
@@ -346,7 +333,7 @@ impl Message {
             {
                 return Ok(false);
             }
-            return Err(FluxError::System(last_errno));
+            return Err(FluxError::System("flux_msg_authorize", last_errno));
         }
         Ok(true)
     }
@@ -369,7 +356,7 @@ impl Message {
             {
                 return Ok(false);
             }
-            return Err(FluxError::System(last_errno));
+            return Err(FluxError::System("flux_msg_cred_authorize", last_errno));
         }
         Ok(true)
     }
@@ -382,26 +369,28 @@ impl Message {
     }
 
     pub fn set_error_raw(&mut self, raw_errno: i32) -> Result<()> {
-        let rc = unsafe { flux_msg_set_errnum(self.c_msg.as_mut_ptr(), raw_errno) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_msg_set_errnum(self.c_msg.as_mut_ptr(), raw_errno))
     }
 
     pub fn get_error(&self) -> Result<std::io::Error> {
         let mut errnum: i32 = 0;
-        let rc = unsafe { flux_msg_get_errnum(self.c_msg.as_mut_ptr(), &mut errnum as *mut _) };
-        check_rc(rc)?;
+        flux_try!(flux_msg_get_errnum(
+            self.c_msg.as_mut_ptr(),
+            &mut errnum as *mut _
+        ))?;
         Ok(std::io::Error::from_raw_os_error(errnum))
     }
 
     pub fn set_sequence(&mut self, seq: u32) -> Result<()> {
-        let rc = unsafe { flux_msg_set_seq(self.c_msg.as_mut_ptr(), seq) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_msg_set_seq(self.c_msg.as_mut_ptr(), seq))
     }
 
     pub fn get_sequence(&self) -> Result<u32> {
         let mut seq: u32 = 0;
-        let rc = unsafe { flux_msg_get_seq(self.c_msg.as_mut_ptr(), &mut seq as *mut _) };
-        check_rc(rc)?;
+        flux_try!(flux_msg_get_seq(
+            self.c_msg.as_mut_ptr(),
+            &mut seq as *mut _
+        ))?;
         Ok(seq)
     }
 
@@ -412,14 +401,15 @@ impl Message {
     }
 
     pub fn set_matchtag(&mut self, matchtag: u32) -> Result<()> {
-        let rc = unsafe { flux_msg_set_matchtag(self.c_msg.as_mut_ptr(), matchtag) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_msg_set_matchtag(self.c_msg.as_mut_ptr(), matchtag))
     }
 
     pub fn get_matchtag(&self) -> Result<u32> {
         let mut matchtag: u32 = 0;
-        let rc = unsafe { flux_msg_get_matchtag(self.c_msg.as_mut_ptr(), &mut matchtag as *mut _) };
-        check_rc(rc)?;
+        flux_try!(flux_msg_get_matchtag(
+            self.c_msg.as_mut_ptr(),
+            &mut matchtag as *mut _
+        ))?;
         Ok(matchtag)
     }
 
@@ -428,28 +418,22 @@ impl Message {
     // TODO add wrappers for functions related to routes
 
     pub fn encode(&self) -> Result<Vec<u8>> {
-        let buf_size = unsafe { flux_msg_encode_size(self.c_msg.as_mut_ptr()) };
-        if buf_size == -1 {
-            return Err(FluxError::System(std::io::Error::last_os_error()));
-        } else if buf_size == 0 {
+        let buf_size = flux_try!(flux_msg_encode_size(self.c_msg.as_mut_ptr()))?;
+        if buf_size == 0 {
             return Ok(Vec::new());
         }
         // Pre-allocate a byte buffer of 'buf_size' bytes
         let mut buffer = vec![0u8; buf_size as usize];
-        let rc = unsafe {
-            flux_msg_encode(
-                self.c_msg.as_mut_ptr(),
-                buffer.as_mut_ptr() as *mut c_void,
-                buf_size as _,
-            )
-        };
-        check_rc(rc)?;
+        flux_try!(flux_msg_encode(
+            self.c_msg.as_mut_ptr(),
+            buffer.as_mut_ptr() as *mut c_void,
+            buf_size as _,
+        ))?;
         Ok(buffer)
     }
 
     pub fn decode(data: &[u8]) -> Result<Self> {
-        let msg_ptr = unsafe { flux_msg_decode(data.as_ptr() as *mut c_void, data.len()) };
-        check_ptr(msg_ptr)?;
+        let msg_ptr = flux_try!(flux_msg_decode(data.as_ptr() as *mut c_void, data.len()))?;
         unsafe { Self::from_ptr(msg_ptr) }
     }
 }

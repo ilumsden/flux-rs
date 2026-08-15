@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::FromFluxPtrNoArgs;
-use crate::error::{Result, check_ptr, check_rc};
+use crate::error::{FluxReturnType, Result, flux_try};
 use crate::msg::Message;
 
 #[derive(Debug)]
@@ -33,14 +33,11 @@ pub struct Request {
 impl Request {
     pub fn encode(topic: &str, data: &[u8]) -> Result<Request> {
         let c_topic = CString::new(topic)?;
-        let msg_ptr = unsafe {
-            flux_request_encode_raw(
-                c_topic.as_ptr(),
-                data.as_ptr() as *const c_void,
-                data.len() as _,
-            )
-        };
-        check_ptr(msg_ptr)?;
+        let msg_ptr = flux_try!(flux_request_encode_raw(
+            c_topic.as_ptr(),
+            data.as_ptr() as *const c_void,
+            data.len() as _,
+        ))?;
         Ok(Request {
             msg: unsafe { Message::from_ptr(msg_ptr)? },
         })
@@ -60,16 +57,13 @@ impl Request {
         let mut topic_ptr: *const c_char = std::ptr::null_mut();
         let mut data_ptr: *const c_void = std::ptr::null_mut();
         let mut size = 0;
-        let rc = unsafe {
-            flux_request_decode_raw(
-                self.msg.c_msg.as_mut_ptr(),
-                &mut topic_ptr as *mut *const c_char,
-                &mut data_ptr as *mut *const c_void,
-                &mut size,
-            )
-        };
-        check_rc(rc)?;
-        check_ptr(topic_ptr as *mut c_char)?;
+        flux_try!(flux_request_decode_raw(
+            self.msg.c_msg.as_mut_ptr(),
+            &mut topic_ptr as *mut *const c_char,
+            &mut data_ptr as *mut *const c_void,
+            &mut size,
+        ))?;
+        FluxReturnType::check_flux_return(topic_ptr, "flux_request_decode_raw")?;
         let topic_str = unsafe { CStr::from_ptr(topic_ptr).to_str()? };
         let decoded_payload = if data_ptr.is_null() {
             None

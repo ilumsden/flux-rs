@@ -8,7 +8,7 @@ use flux_sys::core::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::error::{Result, check_ptr, check_rc};
+use crate::error::{Result, flux_try};
 use crate::flux_ptr_management::FromFluxPtrNoArgs;
 use crate::future::FluxFuture;
 use crate::handle::FluxHandle;
@@ -56,17 +56,14 @@ impl<'a> Rpc<'a> {
         flags: RpcFlags,
     ) -> Result<Self> {
         let c_topic = CString::new(topic)?;
-        let future_ptr = unsafe {
-            flux_rpc_raw(
-                handle.h.as_mut_ptr(),
-                c_topic.as_ptr(),
-                data.as_ptr() as *const c_void,
-                data.len() as _,
-                nodeid.as_c_nodeid(),
-                flags.bits() as _,
-            )
-        };
-        check_ptr(future_ptr)?;
+        let future_ptr = flux_try!(flux_rpc_raw(
+            handle.h.as_mut_ptr(),
+            c_topic.as_ptr(),
+            data.as_ptr() as *const c_void,
+            data.len() as _,
+            nodeid.as_c_nodeid(),
+            flags.bits() as _,
+        ))?;
         Ok(Self {
             handle,
             future: unsafe { FluxFuture::from_ptr(future_ptr)? },
@@ -101,15 +98,12 @@ impl<'a> Rpc<'a> {
         nodeid: RpcNodeId,
         flags: RpcFlags,
     ) -> Result<Self> {
-        let future_ptr = unsafe {
-            flux_rpc_message(
-                handle.h.as_mut_ptr(),
-                msg.c_msg.as_mut_ptr(),
-                nodeid.as_c_nodeid(),
-                flags.bits() as _,
-            )
-        };
-        check_ptr(future_ptr)?;
+        let future_ptr = flux_try!(flux_rpc_message(
+            handle.h.as_mut_ptr(),
+            msg.c_msg.as_mut_ptr(),
+            nodeid.as_c_nodeid(),
+            flags.bits() as _,
+        ))?;
         Ok(Self {
             handle,
             future: unsafe { FluxFuture::from_ptr(future_ptr)? },
@@ -119,14 +113,11 @@ impl<'a> Rpc<'a> {
     pub fn get(&self) -> Result<&'a [u8]> {
         let mut buf: *const c_void = std::ptr::null();
         let mut size = 0;
-        let rc = unsafe {
-            flux_rpc_get_raw(
-                self.future.c_future.as_mut_ptr(),
-                &mut buf as *mut *const c_void,
-                &mut size,
-            )
-        };
-        check_rc(rc)?;
+        flux_try!(flux_rpc_get_raw(
+            self.future.c_future.as_mut_ptr(),
+            &mut buf as *mut *const c_void,
+            &mut size,
+        ))?;
         Ok(unsafe { std::slice::from_raw_parts(buf as *const u8, size as _) })
     }
 

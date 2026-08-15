@@ -14,7 +14,7 @@ use flux_sys::core::{
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::error::{FluxError, Result, check_ptr, check_rc};
+use crate::error::{FluxError, FluxReturnType, Result, flux_try};
 use crate::flux_ptr_management::{
     BorrowFluxPtr, BorrowFluxPtrNoArgs, FluxPtr, FromFluxPtr, FromFluxPtrNoArgs,
     default_impl_as_flux_ptr,
@@ -223,23 +223,20 @@ impl FluxHandle {
     ///
     /// This is primarily meant to be used by the `set_comms_error_handler` method.
     pub fn reconnect(&mut self) -> Result<()> {
-        let rc = unsafe { flux_reconnect(self.h.as_mut_ptr()) };
-        check_rc(rc)
+        flux_try!(flux_reconnect(self.h.as_mut_ptr())).map(|_| ())
     }
 
     /// Get the rank of the connected Flux broker in the Flux instance.
     pub fn get_rank(&self) -> Result<u32> {
         let mut rank: u32 = 0;
-        let rc = unsafe { flux_get_rank(self.h.as_mut_ptr(), &mut rank as *mut _) };
-        check_rc(rc)?;
+        flux_try!(flux_get_rank(self.h.as_mut_ptr(), &mut rank as *mut _))?;
         Ok(rank)
     }
 
     /// Get the number of brokers in the Flux instance.
     pub fn get_size(&self) -> Result<usize> {
         let mut size: u32 = 0;
-        let rc = unsafe { flux_get_size(self.h.as_mut_ptr(), &mut size as *mut _) };
-        check_rc(rc)?;
+        flux_try!(flux_get_size(self.h.as_mut_ptr(), &mut size as *mut _))?;
         Ok(size as usize)
     }
 
@@ -247,8 +244,7 @@ impl FluxHandle {
     pub fn get_attr(&self, name: &str) -> Result<String> {
         let c_name = CString::new(name)?;
         let attr_ptr: *const c_char =
-            unsafe { flux_attr_get(self.h.as_mut_ptr(), c_name.as_ptr()) };
-        check_ptr(attr_ptr as *mut c_char)?;
+            flux_try!(flux_attr_get(self.h.as_mut_ptr(), c_name.as_ptr()))?;
         let c_attr_str = unsafe { CStr::from_ptr(attr_ptr) };
         let rust_attr_str = c_attr_str.to_str().map(|s| s.to_owned());
         let rust_attr = rust_attr_str?;
@@ -259,15 +255,17 @@ impl FluxHandle {
     pub fn set_attr(&mut self, name: &str, val: &str) -> Result<()> {
         let c_name = CString::new(name)?;
         let c_val = CString::new(val)?;
-        let rc = unsafe { flux_attr_set(self.h.as_mut_ptr(), c_name.as_ptr(), c_val.as_ptr()) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_attr_set(
+            self.h.as_mut_ptr(),
+            c_name.as_ptr(),
+            c_val.as_ptr()
+        ))
     }
 
     /// Unset the Flux broker attribute for the provided name.
     pub fn unset_attr(&mut self, name: &str) -> Result<()> {
         let c_name = CString::new(name)?;
-        let rc = unsafe { flux_attr_set(self.h.as_mut_ptr(), c_name.as_ptr(), std::ptr::null()) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_attr_set(self.h.as_mut_ptr(), c_name.as_ptr(), std::ptr::null()))
     }
 
     /// Attach application-specific data to the Flux handle under the provided name.
@@ -302,7 +300,10 @@ impl FluxHandle {
         // Handle failure
         if rc == -1 {
             let _ = unsafe { Box::from_raw(raw_data_ptr as *mut AuxThinPtrWrapper) };
-            return Err(FluxError::System(std::io::Error::last_os_error()));
+            return Err(FluxError::System(
+                "flux_aux_set",
+                std::io::Error::last_os_error(),
+            ));
         }
         Ok(())
     }
@@ -331,8 +332,7 @@ impl FluxHandle {
     /// language (e.g., C). If the data was set by Rust, use `get_aux` instead.
     pub fn get_aux_raw(&self, name: &str) -> Result<*mut c_void> {
         let c_name = CString::new(name)?;
-        let raw_ptr = unsafe { flux_aux_get(self.h.as_mut_ptr(), c_name.as_ptr()) };
-        check_ptr(raw_ptr)
+        flux_try!(flux_aux_get(self.h.as_mut_ptr(), c_name.as_ptr()))
     }
 
     /// Configure a callback to be run internally by `libflux_core` if an error
@@ -389,8 +389,7 @@ impl FluxHandle {
     /// The underlying C pointer stored in the Reactor object is either owned by the handle
     /// or by the Reactor that was previously passed to `set_reactor`.
     pub fn get_reactor(&self) -> Result<Reactor> {
-        let reactor_ptr = unsafe { flux_get_reactor(self.h.as_mut_ptr()) };
-        check_ptr(reactor_ptr)?;
+        let reactor_ptr = flux_try!(flux_get_reactor(self.h.as_mut_ptr()))?;
         unsafe { Reactor::borrow_ptr(reactor_ptr) }
     }
 
@@ -399,8 +398,7 @@ impl FluxHandle {
     /// This method does not assume any ownership over the Reactor. The reactor will only
     /// be valid in the handle for the lifetime of the `reactor` argument.
     pub fn set_reactor(&mut self, reactor: &Reactor) -> Result<()> {
-        let rc = unsafe { flux_set_reactor(self.h.as_mut_ptr(), reactor.c_reactor.as_mut_ptr()) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_set_reactor(self.h.as_mut_ptr(), reactor.c_reactor.as_mut_ptr()))
     }
 
     /// Send the provided message with the Flux broker associated with the handle.
@@ -420,27 +418,25 @@ impl FluxHandle {
         if rc == 0 {
             let _ = msg.c_msg.into_raw();
         }
-        check_rc(rc)
+        FluxReturnType::check_flux_return(rc, "flux_send_new").map(|_| ())
     }
 
     /// Receive a message using the Flux broker associated with the handle.
     pub fn recv(&self, msg_match: MessageMatch, flags: HandleFlags) -> Result<Message> {
         let c_match: flux_match = (&msg_match).into();
-        let msg_ptr = unsafe { flux_recv(self.h.as_mut_ptr(), c_match, flags.bits() as _) };
-        check_ptr(msg_ptr)?;
+        let msg_ptr = flux_try!(flux_recv(self.h.as_mut_ptr(), c_match, flags.bits() as _))?;
         unsafe { Message::from_ptr(msg_ptr) }
     }
 
     /// Requeue the provided Message using the handle.
     pub fn requeue(&self, msg: Message, flags: HandleFlags) -> Result<()> {
-        let rc = unsafe {
+        flux_try!(empty_ok
             flux_requeue(
                 self.h.as_mut_ptr(),
                 msg.c_msg.as_mut_ptr(),
                 flags.bits() as _,
             )
-        };
-        check_rc(rc)
+        )
     }
 
     /// Get a C-style file descriptor that becomes readable when the Flux handle needs attention.
@@ -452,9 +448,7 @@ impl FluxHandle {
     /// The file descriptor is created on the first call to `get_pollfd` or `get_pollevents`. It is
     /// used for signalling only, and it must not be read, written, or closed.
     pub fn get_pollfd(&self) -> Result<i32> {
-        let fd = unsafe { flux_pollfd(self.h.as_mut_ptr()) };
-        check_rc(fd)?;
-        Ok(fd)
+        flux_try!(flux_pollfd(self.h.as_mut_ptr()))
     }
 
     /// Get a bitmask of poll events for the Flux handle.
@@ -462,8 +456,7 @@ impl FluxHandle {
     /// This method is normally called after a `POLLIN` event on `get_pollfd`. If there is any
     /// pending `POLLIN` event, this method clears that event.
     pub fn get_pollevents(&self) -> Result<PollEvents> {
-        let bitmask = unsafe { flux_pollevents(self.h.as_mut_ptr()) };
-        check_rc(bitmask)?;
+        let bitmask = flux_try!(flux_pollevents(self.h.as_mut_ptr()))?;
         Ok(PollEvents::from_bits_retain(bitmask as _))
     }
 
@@ -495,15 +488,14 @@ impl FluxHandle {
     pub fn log(&self, level: LogLevel, msg: &str) -> Result<()> {
         let c_fmt_str = c"%s";
         let c_msg = CString::new(msg)?;
-        let rc = unsafe {
+        flux_try!(empty_ok
             flux_log(
                 self.h.as_mut_ptr(),
                 level as _,
                 c_fmt_str.as_ptr(),
                 c_msg.as_ptr(),
             )
-        };
-        check_rc(rc)
+        )
     }
 
     /// Send an RPC request message with an arbitrary binary payload using the Flux handle.
@@ -567,15 +559,14 @@ impl FluxHandle {
             Some(data_slice) => (data_slice.as_ptr(), data_slice.len()),
             None => (std::ptr::null(), 0),
         };
-        let rc = unsafe {
+        flux_try!(empty_ok
             flux_respond_raw(
                 self.h.as_mut_ptr(),
                 request.msg.c_msg.as_mut_ptr(),
                 data_ptr as *const c_void,
                 data_len as _,
             )
-        };
-        check_rc(rc)
+        )
     }
 
     /// Respond to the provided Request with an optional data payload consisting of `serde`-serialized JSON data.
@@ -602,14 +593,13 @@ impl FluxHandle {
     pub fn respond_string(&self, request: &Request, data: Option<&str>) -> Result<()> {
         let c_data = data.map(CString::new).transpose()?;
         let c_data_ptr = c_data.as_ref().map(|cs| cs.as_ptr());
-        let rc = unsafe {
+        flux_try!(empty_ok
             flux_respond(
                 self.h.as_mut_ptr(),
                 request.msg.c_msg.as_mut_ptr(),
                 c_data_ptr.unwrap_or(std::ptr::null()),
             )
-        };
-        check_rc(rc)
+        )
     }
 
     /// Respond to the provided Request with an error code and optional error message.
@@ -640,15 +630,14 @@ impl FluxHandle {
     ) -> Result<()> {
         let c_errmsg = errmsg.map(CString::new).transpose()?;
         let c_errmsg_ptr = c_errmsg.as_ref().map(|cs| cs.as_ptr());
-        let rc = unsafe {
+        flux_try!(empty_ok
             flux_respond_error(
                 self.h.as_mut_ptr(),
                 request.msg.c_msg.as_mut_ptr(),
                 errnum,
                 c_errmsg_ptr.unwrap_or(std::ptr::null()),
             )
-        };
-        check_rc(rc)
+        )
     }
 }
 
@@ -681,8 +670,7 @@ impl TryFrom<&FluxHandle> for FluxHandle {
     /// If you want to get a new handle by simply incrementing the reference count, use
     /// `FluxHandle`'s implementation of `Clone` instead.
     fn try_from(value: &FluxHandle) -> Result<FluxHandle> {
-        let cloned_flux_handle = unsafe { flux_clone(value.h.as_mut_ptr()) };
-        check_ptr(cloned_flux_handle)?;
+        let cloned_flux_handle = flux_try!(flux_clone(value.h.as_mut_ptr()))?;
         Ok(FluxHandle {
             h: FluxPtr::create_owned(cloned_flux_handle, flux_close)?,
             comm_error_handler_cb: None,

@@ -11,7 +11,7 @@ use flux_sys::hostlist::{
 use serde::de::{self, Deserialize, Deserializer, Visitor};
 use serde::ser::{self, Serialize, Serializer};
 
-use crate::error::{FluxError, Result, check_ptr, check_rc};
+use crate::error::{FluxError, Result, flux_try};
 use crate::flux_ptr_management::{BorrowFluxPtr, FluxPtr, FromFluxPtr, default_impl_as_flux_ptr};
 
 /// A struct representing a Flux Idset.
@@ -23,8 +23,7 @@ pub struct Hostlist {
 
 impl Hostlist {
     pub fn new() -> Result<Self> {
-        let ptr = unsafe { hostlist_create() };
-        check_ptr(ptr)?;
+        let ptr = flux_try!(hostlist_create())?;
         Ok(Self {
             c_hostlist: FluxPtr::create_owned(ptr, hostlist_destroy)?,
         })
@@ -35,8 +34,7 @@ impl Hostlist {
     }
 
     pub fn encode(&self) -> Result<String> {
-        let ptr = unsafe { hostlist_encode(self.c_hostlist.as_mut_ptr()) };
-        check_ptr(ptr)?;
+        let ptr = flux_try!(hostlist_encode(self.c_hostlist.as_mut_ptr()))?;
         let encoded_hostlist = unsafe { CStr::from_ptr(ptr).to_str().map(|s| s.to_owned()) };
         unsafe { ::libc::free(ptr as *mut c_void) };
         Ok(encoded_hostlist?)
@@ -44,16 +42,15 @@ impl Hostlist {
 
     pub fn push(&mut self, new_host: &str) -> Result<()> {
         let c_new_host = CString::new(new_host)?;
-        let rc = unsafe { hostlist_append(self.c_hostlist.as_mut_ptr(), c_new_host.as_ptr()) };
-        check_rc(rc)
+        flux_try!(empty_ok hostlist_append(self.c_hostlist.as_mut_ptr(), c_new_host.as_ptr()))
     }
 
     pub fn append(&mut self, other: &Hostlist) -> Result<usize> {
-        let rc = unsafe {
-            hostlist_append_list(self.c_hostlist.as_mut_ptr(), other.c_hostlist.as_mut_ptr())
-        };
-        check_rc(rc)?;
-        Ok(rc as usize)
+        flux_try!(hostlist_append_list(
+            self.c_hostlist.as_mut_ptr(),
+            other.c_hostlist.as_mut_ptr()
+        ))
+        .map(|i| i as usize)
     }
 
     pub fn len(&self) -> usize {
@@ -135,8 +132,7 @@ impl std::str::FromStr for Hostlist {
 
     fn from_str(s: &str) -> Result<Self> {
         let c_str = CString::new(s)?;
-        let ptr = unsafe { hostlist_decode(c_str.as_ptr()) };
-        check_ptr(ptr)?;
+        let ptr = flux_try!(hostlist_decode(c_str.as_ptr()))?;
         Ok(Self {
             c_hostlist: FluxPtr::create_owned(ptr, hostlist_destroy)?,
         })
@@ -157,8 +153,7 @@ impl TryFrom<&Hostlist> for Hostlist {
     type Error = FluxError;
 
     fn try_from(value: &Hostlist) -> Result<Self> {
-        let new_ptr = unsafe { hostlist_copy(value.c_hostlist.as_mut_ptr()) };
-        check_ptr(new_ptr)?;
+        let new_ptr = flux_try!(hostlist_copy(value.c_hostlist.as_mut_ptr()))?;
         Ok(Self {
             c_hostlist: FluxPtr::create_owned(new_ptr, hostlist_destroy)?,
         })

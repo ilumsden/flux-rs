@@ -11,7 +11,7 @@ use flux_sys::core::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Result, check_ptr, check_rc};
+use crate::error::{Result, flux_try};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum JobStateFormat {
@@ -63,9 +63,10 @@ impl JobState {
     pub fn encode(&self, fmt: JobStateFormat) -> Result<String> {
         let fmt_c_str = fmt.as_c_str();
         // Note: do not free this string since flux_job_statetostr just returns a string literal
-        let c_str =
-            unsafe { flux_job_statetostr(self.bits() as flux_job_state_t, fmt_c_str.as_ptr()) };
-        check_ptr(c_str as *mut i8)?;
+        let c_str = flux_try!(flux_job_statetostr(
+            self.bits() as flux_job_state_t,
+            fmt_c_str.as_ptr()
+        ))?;
         let mut owned_str = unsafe { CStr::from_ptr(c_str).to_str()?.to_owned() };
         if matches!(fmt, JobStateFormat::Emoji) {
             owned_str = match owned_str.as_str() {
@@ -85,13 +86,10 @@ impl JobState {
     pub fn decode(encoded_state: &str) -> Result<Self> {
         let c_encoded_state = CString::new(encoded_state)?;
         let mut c_state: flux_job_state_t = 0;
-        let rc = unsafe {
-            flux_job_strtostate(
-                c_encoded_state.as_ptr(),
-                &mut c_state as *mut flux_job_state_t,
-            )
-        };
-        check_rc(rc)?;
+        flux_try!(flux_job_strtostate(
+            c_encoded_state.as_ptr(),
+            &mut c_state as *mut flux_job_state_t,
+        ))?;
         Ok(Self::from_bits_retain(c_state))
     }
 }

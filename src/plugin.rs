@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::map::Entry;
 use serde_json::{Map, Value};
 
-use crate::error::{FluxError, Result, check_ptr, check_rc, to_flux_rc};
+use crate::error::{FluxError, Result, flux_try, to_flux_rc};
 use crate::flux_ptr_management::{
     BorrowFluxPtr, BorrowFluxPtrNoArgs, FluxPtr, FromFluxPtr, default_impl_as_flux_ptr,
 };
@@ -51,8 +51,7 @@ pub struct PluginArgs {
 
 impl PluginArgs {
     pub fn new() -> Result<Self> {
-        let c_args = unsafe { flux_plugin_arg_create() };
-        check_ptr(c_args)?;
+        let c_args = flux_try!(flux_plugin_arg_create())?;
         Ok(Self {
             c_args: FluxPtr::create_owned(c_args, flux_plugin_arg_destroy)?,
             in_args: Map::new(),
@@ -175,7 +174,10 @@ unsafe impl BorrowFluxPtr for PluginArgs {
         if rc == -1 {
             let plugin_arg_strerror_ptr = unsafe { flux_plugin_arg_strerror(ptr) };
             if plugin_arg_strerror_ptr.is_null() {
-                return Err(FluxError::System(std::io::Error::last_os_error()));
+                return Err(FluxError::System(
+                    "flux_plugin_arg_get",
+                    std::io::Error::last_os_error(),
+                ));
             }
             return Err(FluxError::Logic(unsafe {
                 CStr::from_ptr(plugin_arg_strerror_ptr)
@@ -208,7 +210,10 @@ unsafe impl BorrowFluxPtr for PluginArgs {
         if rc == -1 {
             let plugin_arg_strerror_ptr = unsafe { flux_plugin_arg_strerror(ptr) };
             if plugin_arg_strerror_ptr.is_null() {
-                return Err(FluxError::System(std::io::Error::last_os_error()));
+                return Err(FluxError::System(
+                    "flux_plugin_arg_get",
+                    std::io::Error::last_os_error(),
+                ));
             }
             return Err(FluxError::Logic(unsafe {
                 CStr::from_ptr(plugin_arg_strerror_ptr)
@@ -257,7 +262,10 @@ unsafe impl FromFluxPtr for PluginArgs {
         if rc == -1 {
             let plugin_arg_strerror_ptr = unsafe { flux_plugin_arg_strerror(ptr) };
             if plugin_arg_strerror_ptr.is_null() {
-                return Err(FluxError::System(std::io::Error::last_os_error()));
+                return Err(FluxError::System(
+                    "flux_plugin_arg_get",
+                    std::io::Error::last_os_error(),
+                ));
             }
             return Err(FluxError::Logic(unsafe {
                 CStr::from_ptr(plugin_arg_strerror_ptr)
@@ -290,7 +298,10 @@ unsafe impl FromFluxPtr for PluginArgs {
         if rc == -1 {
             let plugin_arg_strerror_ptr = unsafe { flux_plugin_arg_strerror(ptr) };
             if plugin_arg_strerror_ptr.is_null() {
-                return Err(FluxError::System(std::io::Error::last_os_error()));
+                return Err(FluxError::System(
+                    "flux_plugin_arg_get",
+                    std::io::Error::last_os_error(),
+                ));
             }
             return Err(FluxError::Logic(unsafe {
                 CStr::from_ptr(plugin_arg_strerror_ptr)
@@ -327,7 +338,10 @@ macro_rules! check_plugin_strerror {
         let check_plugin_strerror_raw_ptr =
             unsafe { ::flux_sys::core::flux_plugin_strerror($plugin_ptr) };
         if check_plugin_strerror_raw_ptr.is_null() {
-            $crate::error::check_ptr(check_plugin_strerror_raw_ptr as *mut ::std::ffi::c_char)
+            $crate::error::FluxReturnType::check_flux_return(
+                check_plugin_strerror_raw_ptr as *mut ::std::ffi::c_char,
+                "flux_plugin_strerror",
+            )
         } else {
             let check_plugin_strerror_str = unsafe {
                 ::std::ffi::CStr::from_ptr(check_plugin_strerror_raw_ptr)
@@ -348,8 +362,7 @@ pub struct Plugin {
 
 impl Plugin {
     pub fn new() -> Result<Self> {
-        let plugin_ptr = unsafe { flux_plugin_create() };
-        check_ptr(plugin_ptr)?;
+        let plugin_ptr = flux_try!(flux_plugin_create())?;
         Ok(Self {
             c_plugin: FluxPtr::create_owned(plugin_ptr, flux_plugin_destroy)?,
             _cb_boxes: IndexMap::new(),
@@ -385,8 +398,7 @@ impl Plugin {
     }
 
     pub fn get_name(&self) -> Result<String> {
-        let plugin_name_ptr = unsafe { flux_plugin_get_name(self.c_plugin.as_mut_ptr()) };
-        check_ptr(plugin_name_ptr as *mut c_char)?;
+        let plugin_name_ptr = flux_try!(flux_plugin_get_name(self.c_plugin.as_mut_ptr()))?;
         let plugin_name = unsafe {
             CStr::from_ptr(plugin_name_ptr)
                 .to_string_lossy()
@@ -396,15 +408,13 @@ impl Plugin {
     }
 
     pub fn get_uuid(&self) -> Result<String> {
-        let uuid_name_ptr = unsafe { flux_plugin_get_uuid(self.c_plugin.as_mut_ptr()) };
-        check_ptr(uuid_name_ptr as *mut c_char)?;
+        let uuid_name_ptr = flux_try!(flux_plugin_get_uuid(self.c_plugin.as_mut_ptr()))?;
         let uuid = unsafe { CStr::from_ptr(uuid_name_ptr).to_string_lossy().to_string() };
         Ok(uuid)
     }
 
     pub fn get_path(&self) -> Result<String> {
-        let path_name_ptr = unsafe { flux_plugin_get_path(self.c_plugin.as_mut_ptr()) };
-        check_ptr(path_name_ptr as *mut c_char)?;
+        let path_name_ptr = flux_try!(flux_plugin_get_path(self.c_plugin.as_mut_ptr()))?;
         let path = unsafe { CStr::from_ptr(path_name_ptr).to_string_lossy().to_string() };
         Ok(path)
     }
@@ -435,7 +445,10 @@ impl Plugin {
 
         if rc == -1 {
             let _ = unsafe { Box::from_raw(raw_data_ptr as *mut AuxThinPtrWrapper) };
-            Err(FluxError::System(std::io::Error::last_os_error()))
+            Err(FluxError::System(
+                "flux_plugin_aux_set",
+                std::io::Error::last_os_error(),
+            ))
         } else {
             Ok(())
         }
@@ -454,9 +467,10 @@ impl Plugin {
 
     pub fn get_aux_raw(&self, key: &str) -> Result<*mut c_void> {
         let c_key = CString::new(key)?;
-        let raw_ptr = unsafe { flux_plugin_aux_get(self.c_plugin.as_mut_ptr(), c_key.as_ptr()) };
-        check_ptr(raw_ptr)?;
-        Ok(raw_ptr)
+        flux_try!(flux_plugin_aux_get(
+            self.c_plugin.as_mut_ptr(),
+            c_key.as_ptr()
+        ))
     }
 
     #[inline]
@@ -514,15 +528,12 @@ impl Plugin {
         }
         let c_topic = CString::new(topic)?;
         let (arg_ptr, c_callback) = self.create_handler_callback(&mut callback);
-        let rc = unsafe {
-            flux_plugin_add_handler(
-                self.c_plugin.as_mut_ptr(),
-                c_topic.as_ptr(),
-                Some(c_callback),
-                arg_ptr,
-            )
-        };
-        check_rc(rc)?;
+        flux_try!(flux_plugin_add_handler(
+            self.c_plugin.as_mut_ptr(),
+            c_topic.as_ptr(),
+            Some(c_callback),
+            arg_ptr,
+        ))?;
         self._cb_boxes.insert(topic.to_string(), callback);
         Ok(())
     }
@@ -547,9 +558,10 @@ impl Plugin {
 
     pub fn remove_handler(&mut self, topic: &str) -> Result<()> {
         let c_topic = CString::new(topic)?;
-        let rc =
-            unsafe { flux_plugin_remove_handler(self.c_plugin.as_mut_ptr(), c_topic.as_ptr()) };
-        check_rc(rc)?;
+        flux_try!(flux_plugin_remove_handler(
+            self.c_plugin.as_mut_ptr(),
+            c_topic.as_ptr()
+        ))?;
         // Do not handle the Option<> returned by shift_remove because it will only be None
         // when the topic was not previously recorded. That is not an error.
         self._cb_boxes.shift_remove(topic);

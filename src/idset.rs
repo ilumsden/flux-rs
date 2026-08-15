@@ -15,7 +15,7 @@ use flux_sys::idset::{
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{FluxError, Result, check_ptr, check_rc};
+use crate::error::{FluxError, Result, flux_try};
 use crate::flux_ptr_management::{BorrowFluxPtr, FluxPtr, FromFluxPtr, default_impl_as_flux_ptr};
 use crate::utils::impl_serde_repr_str;
 
@@ -43,8 +43,7 @@ pub struct Idset {
 impl Idset {
     /// Create a new Idset with the specified size and flags.
     pub fn new(size: usize, flags: IdsetFlags) -> Result<Self> {
-        let idset_ptr = unsafe { idset_create(size, flags.bits() as _) };
-        check_ptr(idset_ptr)?;
+        let idset_ptr = flux_try!(idset_create(size, flags.bits() as _))?;
         Ok(Self {
             c_idset: FluxPtr::create_owned(idset_ptr, idset_destroy)?,
         })
@@ -62,8 +61,7 @@ impl Idset {
 
     /// Create a string encoding of the Idset using the specified flags.
     pub fn encode(&self, flags: IdsetFlags) -> Result<String> {
-        let encoded_ptr = unsafe { idset_encode(self.c_idset.as_mut_ptr(), flags.bits() as _) };
-        check_ptr(encoded_ptr)?;
+        let encoded_ptr = flux_try!(idset_encode(self.c_idset.as_mut_ptr(), flags.bits() as _))?;
         let owned_str = unsafe { CStr::from_ptr(encoded_ptr).to_str()?.to_owned() };
         unsafe { libc::free(encoded_ptr as *mut c_void) };
         Ok(owned_str)
@@ -86,8 +84,7 @@ impl Idset {
 
     /// Add an id into the Idset.
     pub fn insert(&self, value: u32) -> Result<()> {
-        let rc = unsafe { idset_set(self.c_idset.as_mut_ptr(), value) };
-        check_rc(rc)
+        flux_try!(empty_ok idset_set(self.c_idset.as_mut_ptr(), value))
     }
 
     /// Insert a range of ids into the Idset.
@@ -99,8 +96,7 @@ impl Idset {
         if range_end == range_start {
             return self.insert(range_start);
         }
-        let rc = unsafe { idset_range_set(self.c_idset.as_mut_ptr(), range_start, range_end) };
-        check_rc(rc)
+        flux_try!(empty_ok idset_range_set(self.c_idset.as_mut_ptr(), range_start, range_end))
     }
 
     /// Get the first id in the Idset.
@@ -122,27 +118,30 @@ impl Idset {
     }
 
     pub fn union(&self, other: &Self) -> Result<Self> {
-        let union_ptr =
-            unsafe { idset_union(self.c_idset.as_mut_ptr(), other.c_idset.as_mut_ptr()) };
-        check_ptr(union_ptr)?;
+        let union_ptr = flux_try!(idset_union(
+            self.c_idset.as_mut_ptr(),
+            other.c_idset.as_mut_ptr()
+        ))?;
         Ok(Self {
             c_idset: FluxPtr::create_owned(union_ptr, idset_destroy)?,
         })
     }
 
     pub fn intersection(&self, other: &Self) -> Result<Self> {
-        let intersection_ptr =
-            unsafe { idset_intersect(self.c_idset.as_mut_ptr(), other.c_idset.as_mut_ptr()) };
-        check_ptr(intersection_ptr)?;
+        let intersection_ptr = flux_try!(idset_intersect(
+            self.c_idset.as_mut_ptr(),
+            other.c_idset.as_mut_ptr()
+        ))?;
         Ok(Self {
             c_idset: FluxPtr::create_owned(intersection_ptr, idset_destroy)?,
         })
     }
 
     pub fn difference(&self, other: &Self) -> Result<Self> {
-        let difference_ptr =
-            unsafe { idset_difference(self.c_idset.as_mut_ptr(), other.c_idset.as_mut_ptr()) };
-        check_ptr(difference_ptr)?;
+        let difference_ptr = flux_try!(idset_difference(
+            self.c_idset.as_mut_ptr(),
+            other.c_idset.as_mut_ptr()
+        ))?;
         Ok(Self {
             c_idset: FluxPtr::create_owned(difference_ptr, idset_destroy)?,
         })
@@ -176,8 +175,7 @@ impl std::str::FromStr for Idset {
     /// Decode a string representation into an Idset object.
     fn from_str(s: &str) -> Result<Self> {
         let c_str = CString::new(s)?;
-        let ptr = unsafe { idset_decode(c_str.as_ptr()) };
-        check_ptr(ptr)?;
+        let ptr = flux_try!(idset_decode(c_str.as_ptr()))?;
         Ok(Self {
             c_idset: FluxPtr::create_owned(ptr, idset_destroy)?,
         })
@@ -202,8 +200,7 @@ impl TryFrom<&Idset> for Idset {
     /// This function is used to create a copy of an Idset because the underlying
     /// `idset_copy` function may fail.
     fn try_from(value: &Idset) -> Result<Self> {
-        let new_ptr = unsafe { idset_copy(value.c_idset.as_mut_ptr()) };
-        check_ptr(new_ptr)?;
+        let new_ptr = flux_try!(idset_copy(value.c_idset.as_mut_ptr()))?;
         Ok(Self {
             c_idset: FluxPtr::create_owned(new_ptr, idset_destroy)?,
         })

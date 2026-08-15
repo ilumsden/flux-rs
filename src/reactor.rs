@@ -11,7 +11,7 @@ use flux_sys::core::{
 #[cfg(flux_core_has_reactor_ref_count)]
 use flux_sys::core::flux_reactor_incref;
 
-use crate::error::{Result, check_ptr, check_rc};
+use crate::error::{Result, flux_try};
 use crate::flux_ptr_management::{BorrowFluxPtr, FluxPtr, FromFluxPtr, default_impl_as_flux_ptr};
 
 bitflags! {
@@ -37,16 +37,17 @@ impl Reactor {
         } else {
             0
         };
-        let reactor_ptr = unsafe { flux_reactor_create(c_flags as _) };
-        check_ptr(reactor_ptr)?;
+        let reactor_ptr = flux_try!(flux_reactor_create(c_flags as _))?;
         Ok(Self {
             c_reactor: FluxPtr::create_owned(reactor_ptr, flux_reactor_destroy)?,
         })
     }
 
     pub fn run(&mut self, flags: ReactorFlags) -> Result<()> {
-        let rc = unsafe { flux_reactor_run(self.c_reactor.as_mut_ptr(), flags.bits() as _) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_reactor_run(
+            self.c_reactor.as_mut_ptr(),
+            flags.bits() as _
+        ))
     }
 
     pub fn stop(&mut self, error_code: Option<std::io::Error>) -> Result<()> {

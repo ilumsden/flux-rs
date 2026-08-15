@@ -11,7 +11,7 @@ use flux_sys::core::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::error::{FluxError, Result, check_ptr, check_rc};
+use crate::error::{FluxError, Result, flux_try};
 use crate::future::FluxFuture;
 use crate::job::{JobId, JobInfo, JobStateFormat};
 use crate::utils::impl_async_future_wrapper;
@@ -31,8 +31,7 @@ impl JobResultCode {
     pub fn encode(&self, fmt: JobStateFormat) -> Result<String> {
         let c_fmt = fmt.as_c_str();
         // Note: do not free this string since flux_job_resulttostr just returns a string literal
-        let encoded_ptr = unsafe { flux_job_resulttostr(self.bits(), c_fmt.as_ptr()) };
-        check_ptr(encoded_ptr as *mut i8)?;
+        let encoded_ptr = flux_try!(flux_job_resulttostr(self.bits(), c_fmt.as_ptr()))?;
         let mut owned_str = unsafe { CStr::from_ptr(encoded_ptr).to_str()?.to_owned() };
         if matches!(fmt, JobStateFormat::Emoji) {
             owned_str = match owned_str.as_str() {
@@ -49,13 +48,10 @@ impl JobResultCode {
     pub fn decode(enocded_result: &str) -> Result<Self> {
         let c_encoded_result = CString::new(enocded_result)?;
         let mut result: flux_job_result_t = 0;
-        let rc = unsafe {
-            flux_job_strtoresult(
-                c_encoded_result.as_ptr(),
-                &mut result as *mut flux_job_result_t,
-            )
-        };
-        check_rc(rc)?;
+        flux_try!(flux_job_strtoresult(
+            c_encoded_result.as_ptr(),
+            &mut result as *mut flux_job_result_t,
+        ))?;
         Ok(Self::from_bits_retain(result))
     }
 }
@@ -83,13 +79,10 @@ pub struct JobResult {
 impl JobResult {
     pub fn get_info_map(&self) -> Result<Map<String, Value>> {
         let mut json_str: *const c_char = std::ptr::null();
-        let rc = unsafe {
-            flux_job_result_get(
-                self.future.c_future.as_mut_ptr(),
-                &mut json_str as *mut *const c_char,
-            )
-        };
-        check_rc(rc)?;
+        flux_try!(flux_job_result_get(
+            self.future.c_future.as_mut_ptr(),
+            &mut json_str as *mut *const c_char,
+        ))?;
         let rust_json_str = unsafe { CStr::from_ptr(json_str).to_str()? };
         let unpacked_info: Map<String, Value> = serde_json::from_str(rust_json_str)?;
         Ok(unpacked_info)

@@ -322,7 +322,7 @@ fn derive_raw_error_with_errnum_produces_error_on_decode() {
     let resp = Response::derive_raw_error(&req, Some(libc::ENOENT)).unwrap();
     assert!(matches!(
         resp.decode(),
-        Err(FluxError::RequestResponseError(_, _)) | Err(FluxError::System(_))
+        Err(FluxError::RequestResponseError(_, _)) | Err(FluxError::System(_, _))
     ));
 }
 

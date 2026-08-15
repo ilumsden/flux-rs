@@ -12,7 +12,7 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use flux_sys::core::{flux_module_debug_test, flux_module_set_running};
 
 #[allow(unused_imports)]
-use crate::error::{FluxError, Result, check_rc};
+use crate::error::{FluxError, Result, flux_try};
 use crate::handle::FluxHandle;
 
 pub struct PanickingAllocator;
@@ -52,8 +52,7 @@ pub fn test_module_debug_bit(handle: &FluxHandle, flag: i32, clear: bool) -> boo
 }
 
 pub fn set_module_running(handle: &FluxHandle) -> Result<()> {
-    let rc = unsafe { flux_module_set_running(handle.h.as_mut_ptr()) };
-    check_rc(rc)
+    flux_try!(empty_ok flux_module_set_running(handle.h.as_mut_ptr()))
 }
 
 #[cfg(flux_core_has_module_loader_helpers)]

@@ -7,7 +7,7 @@ use flux_sys::core::{
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::error::{FluxError, Result, check_ptr, check_rc};
+use crate::error::{FluxError, Result, flux_try};
 use crate::flux_ptr_management::{BorrowFluxPtr, FluxPtr, FromFluxPtr, default_impl_as_flux_ptr};
 use crate::kvs::flags::KvsFlags;
 
@@ -18,8 +18,7 @@ pub struct KvsTransaction {
 
 impl KvsTransaction {
     pub fn new() -> Result<Self> {
-        let txn = unsafe { flux_kvs_txn_create() };
-        check_ptr(txn)?;
+        let txn = flux_try!(flux_kvs_txn_create())?;
         Ok(Self {
             c_txn: FluxPtr::create_owned(txn, flux_kvs_txn_destroy)?,
             base_path: None,
@@ -39,7 +38,7 @@ impl KvsTransaction {
             key.to_string()
         };
         let c_key = CString::new(full_key)?;
-        let rc = unsafe {
+        flux_try!(empty_ok
             // TODO figure out why flux-sys has the length field be an int (i.e., i32) instead of size_t (i.e., usize)
             flux_kvs_txn_put_raw(
                 self.c_txn.as_mut_ptr(),
@@ -48,8 +47,7 @@ impl KvsTransaction {
                 data.as_ptr() as *const _,
                 data.len() as _,
             )
-        };
-        check_rc(rc)
+        )
     }
 
     pub fn put_json(&mut self, key: &str, value: &Value, flags: KvsFlags) -> Result<()> {
@@ -74,10 +72,9 @@ impl KvsTransaction {
             key.to_string()
         };
         let c_key = CString::new(full_key)?;
-        let rc = unsafe {
+        flux_try!(empty_ok
             flux_kvs_txn_mkdir(self.c_txn.as_mut_ptr(), flags.bits() as _, c_key.as_ptr())
-        };
-        check_rc(rc)
+        )
     }
 
     pub fn unlink(&mut self, key: &str, flags: KvsFlags) -> Result<()> {
@@ -87,10 +84,11 @@ impl KvsTransaction {
             key.to_string()
         };
         let c_key = CString::new(full_key)?;
-        let rc = unsafe {
-            flux_kvs_txn_unlink(self.c_txn.as_mut_ptr(), flags.bits() as _, c_key.as_ptr())
-        };
-        check_rc(rc)
+        flux_try!(empty_ok flux_kvs_txn_unlink(
+            self.c_txn.as_mut_ptr(),
+            flags.bits() as _,
+            c_key.as_ptr()
+        ))
     }
 
     pub fn symlink(
@@ -120,7 +118,7 @@ impl KvsTransaction {
         // Call flux_kvs_txn_symlink.
         // Note that c_namespace is converted to either the C String pointer or a NULL pointer depending
         // on whether the Option is "Some" or "None".
-        let rc = unsafe {
+        flux_try!(empty_ok
             flux_kvs_txn_symlink(
                 self.c_txn.as_mut_ptr(),
                 flags.bits() as _,
@@ -130,8 +128,7 @@ impl KvsTransaction {
                     .map_or(std::ptr::null(), |cstr_ns| cstr_ns.as_ptr()),
                 c_target.as_ptr(),
             )
-        };
-        check_rc(rc)
+        )
     }
 
     // TODO add wrapper for put_treeobj, if possible

@@ -51,7 +51,10 @@ impl AsyncFluxFuture {
         if rc == -1 {
             // If `then` fails, we must reclaim the Arc to avoid a memory leak
             let _ = unsafe { Arc::from_raw(arg as *const Mutex<SharedState>) };
-            return Err(FluxError::System(std::io::Error::last_os_error()));
+            return Err(FluxError::System(
+                "flux_future_then",
+                std::io::Error::last_os_error(),
+            ));
         }
 
         Ok(Self {

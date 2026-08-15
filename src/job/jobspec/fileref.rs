@@ -204,17 +204,16 @@ impl Fileref {
     ) -> Result<Self> {
         match Self::create_from_text_file(fileref_path.as_ref(), fs_path.as_ref()) {
             Ok(fileref) => Ok(fileref),
-            Err(e) => {
-                if let FluxError::System(sys_err) = e {
+            Err(e) => match e {
+                FluxError::System(_, ref sys_err) | FluxError::Io(ref sys_err) => {
                     if let ErrorKind::InvalidData = sys_err.kind() {
                         Self::create_from_binary_file(fileref_path.as_ref(), fs_path.as_ref())
                     } else {
-                        Err(FluxError::System(sys_err))
+                        Err(e)
                     }
-                } else {
-                    Err(e)
                 }
-            }
+                _ => Err(e),
+            },
         }
     }
 }

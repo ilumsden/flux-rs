@@ -7,7 +7,7 @@ use flux_sys::core::{
 
 use bitflags::bitflags;
 
-use crate::error::{Result, check_ptr};
+use crate::error::{Result, flux_try};
 use crate::flux_ptr_management::FromFluxPtrNoArgs;
 use crate::future::FluxFuture;
 use crate::handle::FluxHandle;
@@ -35,15 +35,12 @@ pub fn submit_async(
     let c_serialized_jobspec = CString::new(serialized_jobspec)?;
     let c_urgency: i32 = urgency.unwrap_or(JobUrgency::DEFAULT).into();
     let c_flags: i32 = flags.map(|f| f.bits() as _).unwrap_or(0);
-    let future_ptr = unsafe {
-        flux_job_submit(
-            handle.h.as_mut_ptr(),
-            c_serialized_jobspec.as_ptr(),
-            c_urgency,
-            c_flags,
-        )
-    };
-    check_ptr(future_ptr)?;
+    let future_ptr = flux_try!(flux_job_submit(
+        handle.h.as_mut_ptr(),
+        c_serialized_jobspec.as_ptr(),
+        c_urgency,
+        c_flags,
+    ))?;
     unsafe { FluxFuture::from_ptr(future_ptr) }
 }
 

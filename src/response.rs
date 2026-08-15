@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::FromFluxPtrNoArgs;
-use crate::error::{FluxError, Result, check_ptr};
+use crate::error::{FluxError, FluxReturnType, Result, flux_try};
 use crate::msg::Message;
 use crate::request::{
     DeserializedDecodedRequestResponse, JsonDecodedRequestResponse, RawDecodedRequestResponse,
@@ -43,7 +43,7 @@ impl Response {
                 )
             };
             if rc == -1 || errmsg_ptr.is_null() {
-                return Err(FluxError::System(last_os_error));
+                return Err(FluxError::System("flux_response_decode_raw", last_os_error));
             } else {
                 return Err(FluxError::RequestResponseError(last_os_error, unsafe {
                     CStr::from_ptr(errmsg_ptr as *const c_char)
@@ -52,7 +52,7 @@ impl Response {
                 }));
             }
         }
-        check_ptr(topic as *mut c_char)?;
+        FluxReturnType::check_flux_return(topic, "flux_response_decode_raw")?;
         let topic_str = unsafe { CStr::from_ptr(topic).to_str()? };
         let decoded_payload = if data.is_null() {
             None
@@ -107,14 +107,11 @@ impl Response {
 
     pub fn encode(topic: &str, data: &[u8]) -> Result<Response> {
         let c_topic = CString::new(topic)?;
-        let msg_ptr = unsafe {
-            flux_response_encode_raw(
-                c_topic.as_ptr(),
-                data.as_ptr() as *const c_void,
-                data.len() as _,
-            )
-        };
-        check_ptr(msg_ptr)?;
+        let msg_ptr = flux_try!(flux_response_encode_raw(
+            c_topic.as_ptr(),
+            data.as_ptr() as *const c_void,
+            data.len() as _,
+        ))?;
         Ok(Response {
             msg: unsafe { Message::from_ptr(msg_ptr)? },
         })
@@ -139,9 +136,11 @@ impl Response {
     pub fn encode_raw_error(topic: &str, errnum: i32, errmsg: &str) -> Result<Response> {
         let c_topic = CString::new(topic)?;
         let c_errmsg = CString::new(errmsg)?;
-        let msg_ptr =
-            unsafe { flux_response_encode_error(c_topic.as_ptr(), errnum, c_errmsg.as_ptr()) };
-        check_ptr(msg_ptr)?;
+        let msg_ptr = flux_try!(flux_response_encode_error(
+            c_topic.as_ptr(),
+            errnum,
+            c_errmsg.as_ptr()
+        ))?;
         Ok(Response {
             msg: unsafe { Message::from_ptr(msg_ptr)? },
         })
@@ -155,9 +154,10 @@ impl Response {
     }
 
     pub fn derive_raw_error(request: &Request, errnum: Option<i32>) -> Result<Response> {
-        let msg_ptr =
-            unsafe { flux_response_derive(request.msg.c_msg.as_mut_ptr(), errnum.unwrap_or(0)) };
-        check_ptr(msg_ptr)?;
+        let msg_ptr = flux_try!(flux_response_derive(
+            request.msg.c_msg.as_mut_ptr(),
+            errnum.unwrap_or(0)
+        ))?;
         Ok(Response {
             msg: unsafe { Message::from_ptr(msg_ptr)? },
         })

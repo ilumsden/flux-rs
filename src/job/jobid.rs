@@ -7,7 +7,7 @@ use flux_sys::core::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::error::{FluxError, Result, check_rc};
+use crate::error::{FluxError, Result, flux_try};
 use crate::future::FluxFuture;
 
 pub enum JobIdEncodingType {
@@ -56,9 +56,10 @@ impl JobId {
     pub fn parse(str_repr: &str) -> Result<Self> {
         let mut raw_jobid: flux_jobid_t = 0;
         let c_str_repr = CString::new(str_repr)?;
-        let rc =
-            unsafe { flux_job_id_parse(c_str_repr.as_ptr(), &mut raw_jobid as *mut flux_jobid_t) };
-        check_rc(rc)?;
+        flux_try!(flux_job_id_parse(
+            c_str_repr.as_ptr(),
+            &mut raw_jobid as *mut flux_jobid_t
+        ))?;
         Ok(Self(raw_jobid))
     }
 
@@ -117,7 +118,7 @@ impl JobId {
                 }
                 continue;
             }
-            return Err(FluxError::System(err));
+            return Err(FluxError::System("flux_job_id_encode", err));
         }
     }
 
@@ -189,13 +190,10 @@ impl TryFrom<FluxFuture<'_>> for JobId {
 
     fn try_from(value: FluxFuture) -> Result<Self> {
         let mut c_jobid: flux_jobid_t = 0;
-        let rc = unsafe {
-            flux_job_submit_get_id(
-                value.c_future.as_mut_ptr(),
-                &mut c_jobid as *mut flux_jobid_t,
-            )
-        };
-        check_rc(rc)?;
+        flux_try!(flux_job_submit_get_id(
+            value.c_future.as_mut_ptr(),
+            &mut c_jobid as *mut flux_jobid_t,
+        ))?;
         Ok(Self::from(c_jobid))
     }
 }

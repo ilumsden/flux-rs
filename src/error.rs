@@ -9,8 +9,15 @@ use crate::handle::FluxHandle;
 pub enum FluxError {
     /// Represents an error returned by the underlying C API via errno.
     /// `std::io::Error` is the standard way to represent OS/errno values in Rust.
-    #[error("Flux system error: {0}")]
-    System(#[from] io::Error),
+    #[error("Flux system error in '{0}': {1}")]
+    System(&'static str, io::Error),
+
+    /// Represents errors associated with I/O.
+    ///
+    /// This variant should not be used for errors coming from arbitrary C code (e.g.,
+    /// libflux_core). For those errors, use the `System` variant instead.
+    #[error("I/O error: {0}")]
+    Io(#[from] io::Error),
 
     /// Error when a Rust string contains a null byte, making it invalid for C.
     #[error("String contains null byte: {0}")]
@@ -57,7 +64,8 @@ impl FluxError {
     /// Get an `errno` value for the FluxError object.
     pub fn to_errno(&self) -> i32 {
         match self {
-            Self::System(err) => err.raw_os_error().unwrap_or(libc::EINVAL),
+            Self::System(_, err) => err.raw_os_error().unwrap_or(libc::EINVAL),
+            Self::Io(err) => err.raw_os_error().unwrap_or(libc::EINVAL),
             Self::NixError(err) => *err as i32,
             Self::RequestResponseError(err, _) => err.raw_os_error().unwrap_or(libc::EINVAL),
             _ => libc::EINVAL,
@@ -96,25 +104,80 @@ pub fn to_flux_rc(result: Result<()>, log_handle: Option<&FluxHandle>) -> i32 {
     }
 }
 
-/// A helper function to evaluate Flux C API integer return codes.
-/// Flux typically returns 0 on success and -1 on failure, setting errno.
-#[inline]
-pub(crate) fn check_rc(rc: std::os::raw::c_int) -> Result<()> {
-    if rc == -1 {
-        // Captures the current `errno` and wraps it in std::io::Error
-        Err(FluxError::System(io::Error::last_os_error()))
-    } else {
-        Ok(())
+pub(crate) trait FluxReturnType {
+    type Output;
+
+    fn check_flux_return(self, func_name: &'static str) -> Result<Self::Output>;
+}
+
+impl FluxReturnType for std::ffi::c_int {
+    type Output = std::ffi::c_int;
+
+    #[inline]
+    fn check_flux_return(self, func_name: &'static str) -> Result<Self::Output> {
+        if self == -1 {
+            // Captures the current `errno` and wraps it in std::io::Error
+            Err(FluxError::System(func_name, io::Error::last_os_error()))
+        } else {
+            Ok(self)
+        }
     }
 }
 
-/// A helper function for pointers returned by Flux.
-/// Flux typically returns NULL on failure, setting errno.
-#[inline]
-pub(crate) fn check_ptr<T>(ptr: *mut T) -> Result<*mut T> {
-    if ptr.is_null() {
-        Err(FluxError::System(io::Error::last_os_error()))
-    } else {
-        Ok(ptr)
+impl FluxReturnType for isize {
+    type Output = isize;
+
+    #[inline]
+    fn check_flux_return(self, func_name: &'static str) -> Result<Self::Output> {
+        if self == -1 {
+            // Captures the current `errno` and wraps it in std::io::Error
+            Err(FluxError::System(func_name, io::Error::last_os_error()))
+        } else {
+            Ok(self)
+        }
     }
 }
+
+impl<T> FluxReturnType for *mut T {
+    type Output = *mut T;
+
+    #[inline]
+    fn check_flux_return(self, func_name: &'static str) -> Result<Self::Output> {
+        if self.is_null() {
+            Err(FluxError::System(func_name, io::Error::last_os_error()))
+        } else {
+            Ok(self)
+        }
+    }
+}
+
+impl<T> FluxReturnType for *const T {
+    type Output = *const T;
+
+    #[inline]
+    fn check_flux_return(self, func_name: &'static str) -> Result<Self::Output> {
+        if self.is_null() {
+            Err(FluxError::System(func_name, io::Error::last_os_error()))
+        } else {
+            Ok(self)
+        }
+    }
+}
+
+/// A helper macro to evaluate Flux C API integer return codes or pointers.
+/// For return codes, flux typically returns 0 on success and -1 on failure, setting errno.
+/// For pointers, Flux typically returns non-NULL on success and NULL on failure, setting errno.
+macro_rules! flux_try {
+    ($func:ident ( $($arg:expr),* $(,)? ) ) => {{
+        let func_name = stringify!($func);
+        let result = unsafe {
+            $func($($arg),*)
+        };
+        $crate::error::FluxReturnType::check_flux_return(result, func_name)
+    }};
+    (empty_ok $func:ident ( $($arg:expr),* $(,)? ) ) => {
+        $crate::error::flux_try!($func($($arg),*)).map(|_| ())
+    }
+}
+
+pub(crate) use flux_try;

@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 
 use flux_sys::core::{flux_job_wait_get_id, flux_job_wait_get_status, flux_jobid_t};
 
-use crate::error::{FluxError, Result, check_rc};
+use crate::error::{FluxError, Result, flux_try};
 use crate::future::FluxFuture;
 use crate::job::jobid::JobId;
 use crate::utils::impl_async_future_wrapper;
@@ -23,21 +23,15 @@ impl JobStatus {
         let mut errstr_ptr: *const c_char = std::ptr::null();
         let mut success = false;
         let mut raw_jobid: flux_jobid_t = 0;
-        let mut rc = unsafe {
-            flux_job_wait_get_status(
-                self.future.c_future.as_mut_ptr(),
-                &mut success as *mut _,
-                &mut errstr_ptr as *mut *const c_char,
-            )
-        };
-        check_rc(rc)?;
-        rc = unsafe {
-            flux_job_wait_get_id(
-                self.future.c_future.as_mut_ptr(),
-                &mut raw_jobid as *mut flux_jobid_t,
-            )
-        };
-        check_rc(rc)?;
+        flux_try!(flux_job_wait_get_status(
+            self.future.c_future.as_mut_ptr(),
+            &mut success as *mut _,
+            &mut errstr_ptr as *mut *const c_char,
+        ))?;
+        flux_try!(flux_job_wait_get_id(
+            self.future.c_future.as_mut_ptr(),
+            &mut raw_jobid as *mut flux_jobid_t,
+        ))?;
         self.id = Some(JobId::from(raw_jobid));
         self.success = Some(success);
         self.errstr = Some(unsafe { CStr::from_ptr(errstr_ptr).to_str()?.to_string() });

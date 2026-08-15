@@ -13,7 +13,7 @@ use flux_sys::core::{
 };
 use indexmap::IndexMap;
 
-use crate::error::{FluxError, Result, check_ptr, check_rc};
+use crate::error::{FluxError, FluxReturnType, Result, flux_try};
 use crate::flux_ptr_management::{AsFluxPtr, BorrowFluxPtr, FromFluxPtr, FromFluxPtrNoArgs};
 use crate::handle::{AuxThinPtrWrapper, FluxHandle};
 use crate::job::{JobEventSeverity, JobId, JobResultCode};
@@ -36,9 +36,7 @@ impl JobtapPlugin {
 
     pub fn get_flux(&self) -> Result<FluxHandle> {
         // Get the raw flux_t pointer for the plugin
-        let flux_ptr = unsafe { flux_jobtap_get_flux(self.plugin.as_mut_ptr()) };
-        // Check the pointer's value and error out if needed
-        check_ptr(flux_ptr)?;
+        let flux_ptr = flux_try!(flux_jobtap_get_flux(self.plugin.as_mut_ptr()))?;
         // Increment the reference count of flux_ptr so that FluxHandle::drop cannot fully free
         // the unowned flux_t pointer
         let flux_ptr_for_rust = unsafe { flux_incref(flux_ptr) };
@@ -54,83 +52,71 @@ impl JobtapPlugin {
     ) -> Result<()> {
         let c_method = CString::new(method)?;
         let arg_ptr = &mut callback as *mut MsgHandlerCallback as *mut c_void;
-        let rc = if let Some(rmask) = rolemask {
-            unsafe {
-                flux_jobtap_service_register_ex(
-                    self.plugin.as_mut_ptr(),
-                    c_method.as_ptr(),
-                    rmask.bits(),
-                    Some(MsgHandler::msg_handler_trampoline),
-                    arg_ptr,
-                )
-            }
+        if let Some(rmask) = rolemask {
+            flux_try!(flux_jobtap_service_register_ex(
+                self.plugin.as_mut_ptr(),
+                c_method.as_ptr(),
+                rmask.bits(),
+                Some(MsgHandler::msg_handler_trampoline),
+                arg_ptr,
+            ))?;
         } else {
-            unsafe {
-                flux_jobtap_service_register(
-                    self.plugin.as_mut_ptr(),
-                    c_method.as_ptr(),
-                    Some(MsgHandler::msg_handler_trampoline),
-                    arg_ptr,
-                )
-            }
+            flux_try!(flux_jobtap_service_register(
+                self.plugin.as_mut_ptr(),
+                c_method.as_ptr(),
+                Some(MsgHandler::msg_handler_trampoline),
+                arg_ptr,
+            ))?;
         };
-        check_rc(rc)?;
         self._cb_boxes.insert(method.to_string(), callback);
         Ok(())
     }
 
     pub fn reprioritize_all(&self) -> Result<()> {
-        let rc = unsafe { flux_jobtap_reprioritize_all(self.plugin.as_mut_ptr()) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_jobtap_reprioritize_all(self.plugin.as_mut_ptr()))
     }
 
     pub fn reprioritize_job(&self, jobid: JobId, priority: u32) -> Result<()> {
-        let rc =
-            unsafe { flux_jobtap_reprioritize_job(self.plugin.as_mut_ptr(), jobid.0, priority) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_jobtap_reprioritize_job(self.plugin.as_mut_ptr(), jobid.0, priority))
     }
 
     pub fn mark_priority_unavail(&self, args: &PluginArgs) -> Result<()> {
-        let rc =
-            unsafe { flux_jobtap_priority_unavail(self.plugin.as_mut_ptr(), args.as_mut_ptr()) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_jobtap_priority_unavail(self.plugin.as_mut_ptr(), args.as_mut_ptr()))
     }
 
     pub fn return_error(&self, args: &PluginArgs, msg: &str) -> Result<()> {
         let c_msg = CString::new(msg)?;
-        let rc = unsafe {
+        flux_try!(empty_ok
             flux_jobtap_error(
                 self.plugin.as_mut_ptr(),
                 args.as_mut_ptr(),
                 c"%s".as_ptr(),
                 c_msg.as_ptr(),
             )
-        };
-        check_rc(rc)
+        )
     }
 
     pub fn reject_job(&self, args: &PluginArgs, msg: Option<&str>) -> Result<()> {
         let fmt_opt = msg.map(|m| (c"%s", CString::new(m)));
-        let rc = if let Some((fmt, c_msg_res)) = fmt_opt {
+        if let Some((fmt, c_msg_res)) = fmt_opt {
             let c_msg = c_msg_res?;
-            unsafe {
+            flux_try!(empty_ok
                 flux_jobtap_reject_job(
                     self.plugin.as_mut_ptr(),
                     args.as_mut_ptr(),
                     fmt.as_ptr(),
                     c_msg.as_ptr(),
                 )
-            }
+            )
         } else {
-            unsafe {
+            flux_try!(empty_ok
                 flux_jobtap_reject_job(
                     self.plugin.as_mut_ptr(),
                     args.as_mut_ptr(),
                     std::ptr::null(),
                 )
-            }
-        };
-        check_rc(rc)
+            )
+        }
     }
 
     pub fn add_dependency(&self, id: JobId, description: &str) -> Result<()> {
@@ -155,8 +141,7 @@ impl JobtapPlugin {
                 }
             }
         }
-        // Handle all other errors with check_rc
-        check_rc(rc)
+        FluxReturnType::check_flux_return(rc, "flux_jobtap_dependency_add").map(|_| ())
     }
 
     pub fn remove_dependency(&self, id: JobId, description: &str) -> Result<()> {
@@ -177,8 +162,7 @@ impl JobtapPlugin {
                 return Err(FluxError::Logic("Provided job ID not found".to_string()));
             }
         }
-        // Handle all other errors with check_rc
-        check_rc(rc)
+        FluxReturnType::check_flux_return(rc, "flux_jobtap_dependency_remove").map(|_| ())
     }
 
     pub fn set_job_aux<T: Send + Sync + 'static>(
@@ -212,7 +196,10 @@ impl JobtapPlugin {
         };
         if rc == -1 {
             let _ = unsafe { Box::from_raw(raw_data_ptr as *mut AuxThinPtrWrapper) };
-            Err(FluxError::System(std::io::Error::last_os_error()))
+            Err(FluxError::System(
+                "flux_jobtap_job_aux_set",
+                std::io::Error::last_os_error(),
+            ))
         } else {
             Ok(())
         }
@@ -232,15 +219,16 @@ impl JobtapPlugin {
 
     pub fn get_job_aux_raw(&self, id: JobId, key: &str) -> Result<*mut c_void> {
         let c_key = CString::new(key)?;
-        let raw_ptr =
-            unsafe { flux_jobtap_job_aux_get(self.plugin.as_mut_ptr(), id.0, c_key.as_ptr()) };
-        check_ptr(raw_ptr)?;
-        Ok(raw_ptr)
+        flux_try!(flux_jobtap_job_aux_get(
+            self.plugin.as_mut_ptr(),
+            id.0,
+            c_key.as_ptr()
+        ))
     }
 
     pub fn delete_job_aux(&self, id: JobId, name: &str) -> Result<()> {
         let c_name = CString::new(name)?;
-        let rc = unsafe {
+        flux_try!(empty_ok
             flux_jobtap_job_aux_set(
                 self.plugin.as_mut_ptr(),
                 id.0,
@@ -248,15 +236,12 @@ impl JobtapPlugin {
                 std::ptr::null_mut(),
                 None,
             )
-        };
-        check_rc(rc)
+        )
     }
 
     pub fn set_job_flag(&self, id: JobId, flag: &str) -> Result<()> {
         let c_flag = CString::new(flag)?;
-        let rc =
-            unsafe { flux_jobtap_job_set_flag(self.plugin.as_mut_ptr(), id.0, c_flag.as_ptr()) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_jobtap_job_set_flag(self.plugin.as_mut_ptr(), id.0, c_flag.as_ptr()))
     }
 
     pub fn raise_job_execption(
@@ -268,9 +253,9 @@ impl JobtapPlugin {
     ) -> Result<()> {
         let c_type = CString::new(exception_type)?;
         let msg_tup = message.map(|m| (c"%s", CString::new(m)));
-        let rc = if let Some((fmt, c_msg_res)) = msg_tup {
+        if let Some((fmt, c_msg_res)) = msg_tup {
             let c_msg = c_msg_res?;
-            unsafe {
+            flux_try!(empty_ok
                 flux_jobtap_raise_exception(
                     self.plugin.as_mut_ptr(),
                     id.0,
@@ -279,9 +264,9 @@ impl JobtapPlugin {
                     fmt.as_ptr(),
                     c_msg.as_ptr(),
                 )
-            }
+            )
         } else {
-            unsafe {
+            flux_try!(empty_ok
                 flux_jobtap_raise_exception(
                     self.plugin.as_mut_ptr(),
                     id.0,
@@ -289,9 +274,8 @@ impl JobtapPlugin {
                     *severity as _,
                     std::ptr::null(),
                 )
-            }
-        };
-        check_rc(rc)
+            )
+        }
     }
 
     // TODO implement these once one of the following changes are made:
@@ -339,35 +323,32 @@ impl JobtapPlugin {
                 return Err(FluxError::Logic("Provided job ID not found".to_string()));
             }
         }
-        check_ptr(plugin_arg_ptr)?;
+        FluxReturnType::check_flux_return(plugin_arg_ptr, "flux_jobtap_job_lookup")?;
         unsafe { PluginArgs::from_ptr(plugin_arg_ptr) }
     }
 
     pub fn get_job_result(&self, id: JobId) -> Result<JobResultCode> {
         let mut job_result: flux_job_result_t = JobResultCode::NONE.bits();
-        let rc = unsafe {
-            flux_jobtap_get_job_result(
-                self.plugin.as_mut_ptr(),
-                id.0,
-                &mut job_result as *mut flux_job_result_t,
-            )
-        };
-        check_rc(rc)?;
+        flux_try!(flux_jobtap_get_job_result(
+            self.plugin.as_mut_ptr(),
+            id.0,
+            &mut job_result as *mut flux_job_result_t,
+        ))?;
         Ok(JobResultCode::from(job_result))
     }
 
     pub fn check_for_posted_event(&self, id: JobId, event_name: &str) -> Result<bool> {
         let c_event_name = CString::new(event_name)?;
-        let rc = unsafe {
-            flux_jobtap_job_event_posted(self.plugin.as_mut_ptr(), id.0, c_event_name.as_ptr())
-        };
-        check_rc(rc)?;
+        let rc = flux_try!(flux_jobtap_job_event_posted(
+            self.plugin.as_mut_ptr(),
+            id.0,
+            c_event_name.as_ptr()
+        ))?;
         Ok(rc == 1)
     }
 
     pub fn subscribe_to_job_events(&self, id: JobId) -> Result<()> {
-        let rc = unsafe { flux_jobtap_job_subscribe(self.plugin.as_mut_ptr(), id.0) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_jobtap_job_subscribe(self.plugin.as_mut_ptr(), id.0))
     }
 
     pub fn unsubscribe_from_job_events(&self, id: JobId) {
@@ -378,30 +359,26 @@ impl JobtapPlugin {
 
     pub fn start_prolog(&self, description: &str) -> Result<()> {
         let c_desc = CString::new(description)?;
-        let rc = unsafe { flux_jobtap_prolog_start(self.plugin.as_mut_ptr(), c_desc.as_ptr()) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_jobtap_prolog_start(self.plugin.as_mut_ptr(), c_desc.as_ptr()))
     }
 
     pub fn finish_prolog(&self, id: JobId, description: &str, status: i32) -> Result<()> {
         let c_desc = CString::new(description)?;
-        let rc = unsafe {
+        flux_try!(empty_ok
             flux_jobtap_prolog_finish(self.plugin.as_mut_ptr(), id.0, c_desc.as_ptr(), status)
-        };
-        check_rc(rc)
+        )
     }
 
     pub fn start_epilog(&self, description: &str) -> Result<()> {
         let c_desc = CString::new(description)?;
-        let rc = unsafe { flux_jobtap_epilog_start(self.plugin.as_mut_ptr(), c_desc.as_ptr()) };
-        check_rc(rc)
+        flux_try!(empty_ok flux_jobtap_epilog_start(self.plugin.as_mut_ptr(), c_desc.as_ptr()))
     }
 
     pub fn finish_epilog(&self, id: JobId, description: &str, status: i32) -> Result<()> {
         let c_desc = CString::new(description)?;
-        let rc = unsafe {
+        flux_try!(empty_ok
             flux_jobtap_epilog_finish(self.plugin.as_mut_ptr(), id.0, c_desc.as_ptr(), status)
-        };
-        check_rc(rc)
+        )
     }
 
     // TODO consider whether to add a wrapper to flux_jobtap_call

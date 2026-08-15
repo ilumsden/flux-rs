@@ -15,7 +15,7 @@ use flux_sys::core::{
     flux_future_wait_for,
 };
 
-use crate::error::{FluxError, Result, check_ptr, check_rc};
+use crate::error::{FluxError, Result, flux_try};
 use crate::flux_ptr_management::{
     BorrowFluxPtr, BorrowFluxPtrNoArgs, FluxPtr, FromFluxPtr, FromFluxPtrNoArgs,
     default_impl_as_flux_ptr,
@@ -55,8 +55,7 @@ impl<'a> FluxFuture<'a> {
             cb(&mut future);
         }
 
-        let ptr = unsafe { flux_future_create(Some(trampoline::<F>), raw_arg) };
-        check_ptr(ptr)?;
+        let ptr = flux_try!(flux_future_create(Some(trampoline::<F>), raw_arg))?;
         Ok(FluxFuture {
             c_future: FluxPtr::create_owned(ptr, flux_future_destroy)?,
             _phantom: PhantomData,
@@ -89,7 +88,10 @@ impl<'a> FluxFuture<'a> {
         };
         if rc == -1 {
             let _ = unsafe { Box::from_raw(raw_data_ptr as *mut AuxThinPtrWrapper) };
-            return Err(FluxError::System(std::io::Error::last_os_error()));
+            return Err(FluxError::System(
+                "flux_future_aux_set",
+                std::io::Error::last_os_error(),
+            ));
         }
         Ok(())
     }
@@ -107,8 +109,10 @@ impl<'a> FluxFuture<'a> {
 
     pub fn get_aux_raw(&self, name: &str) -> Result<*mut c_void> {
         let c_name = CString::new(name)?;
-        let raw_ptr = unsafe { flux_future_aux_get(self.c_future.as_mut_ptr(), c_name.as_ptr()) };
-        check_ptr(raw_ptr)
+        flux_try!(flux_future_aux_get(
+            self.c_future.as_mut_ptr(),
+            c_name.as_ptr()
+        ))
     }
 
     pub fn set_reactor(&mut self, reactor: &Reactor) {
@@ -132,8 +136,7 @@ impl<'a> FluxFuture<'a> {
     ///
     /// In single-threaded environments, this method is completely safe.
     pub unsafe fn get_reactor(&self) -> Result<Reactor> {
-        let ptr = unsafe { flux_future_get_reactor(self.c_future.as_mut_ptr()) };
-        check_ptr(ptr)?;
+        let ptr = flux_try!(flux_future_get_reactor(self.c_future.as_mut_ptr()))?;
         unsafe { Reactor::borrow_ptr(ptr) }
     }
 
@@ -158,8 +161,7 @@ impl<'a> FluxFuture<'a> {
     ///
     /// In single-threaded environments, this method is completely safe.
     pub unsafe fn get_flux(&self) -> Result<FluxHandle> {
-        let ptr = unsafe { flux_future_get_flux(self.c_future.as_mut_ptr()) };
-        check_ptr(ptr)?;
+        let ptr = flux_try!(flux_future_get_flux(self.c_future.as_mut_ptr()))?;
         unsafe { FluxHandle::borrow_ptr(ptr) }
     }
 
@@ -263,7 +265,10 @@ impl<'a> FluxFuture<'a> {
         if rc == -1 {
             let _ = unsafe { Box::from_raw(raw_ptr_cb as *mut F) };
             unsafe { flux_future_destroy(self.c_future.as_mut_ptr()) };
-            return Err(FluxError::System(std::io::Error::last_os_error()));
+            return Err(FluxError::System(
+                "flux_future_then",
+                std::io::Error::last_os_error(),
+            ));
         }
         Ok(())
     }
@@ -281,7 +286,10 @@ impl<'a> FluxFuture<'a> {
         if new_future.is_null() {
             let _ = unsafe { Box::from_raw(raw_ptr_cb as *mut F) };
             unsafe { flux_future_destroy(self.c_future.as_mut_ptr()) };
-            return Err(FluxError::System(std::io::Error::last_os_error()));
+            return Err(FluxError::System(
+                "flux_future_and_then",
+                std::io::Error::last_os_error(),
+            ));
         }
         unsafe { FluxFuture::from_ptr(new_future) }
     }
@@ -299,19 +307,21 @@ impl<'a> FluxFuture<'a> {
         if new_future.is_null() {
             let _ = unsafe { Box::from_raw(raw_ptr_cb as *mut F) };
             unsafe { flux_future_destroy(self.c_future.as_mut_ptr()) };
-            return Err(FluxError::System(std::io::Error::last_os_error()));
+            return Err(FluxError::System(
+                "flux_future_or_then",
+                std::io::Error::last_os_error(),
+            ));
         }
         unsafe { FluxFuture::from_ptr(new_future) }
     }
 
     pub fn continue_with_future(&mut self, result_future: &FluxFuture) -> Result<()> {
-        let rc = unsafe {
+        flux_try!(empty_ok
             flux_future_continue(
                 self.c_future.as_mut_ptr(),
                 result_future.c_future.as_mut_ptr(),
             )
-        };
-        check_rc(rc)
+        )
     }
 
     pub fn continue_with_error(&mut self, errnum: i32, errstr: Option<&str>) -> Result<()> {
@@ -356,7 +366,7 @@ impl<'a> FluxFuture<'a> {
             {
                 return Ok(false);
             }
-            return Err(FluxError::System(last_os_error));
+            return Err(FluxError::System("flux_future_fulfill_next", last_os_error));
         }
         Ok(true)
     }
@@ -426,7 +436,7 @@ impl<'a> FluxFuture<'a> {
             {
                 return Ok(false);
             }
-            return Err(FluxError::System(last_os_error));
+            return Err(FluxError::System("flux_future_wait_for", last_os_error));
         }
         Ok(true)
     }
@@ -461,8 +471,7 @@ impl<'a> FluxFuture<'a> {
 
     pub fn get(&mut self) -> Result<*const c_void> {
         let mut result_ptr: *const c_void = std::ptr::null();
-        let rc = unsafe { flux_future_get(self.c_future.as_mut_ptr(), &mut result_ptr) };
-        check_rc(rc)?;
+        flux_try!(flux_future_get(self.c_future.as_mut_ptr(), &mut result_ptr))?;
         Ok(result_ptr)
     }
 }
@@ -518,24 +527,17 @@ fn push_to_collective_future(
     // Increment the ref count of the future since it will be auto-decremented by drop at the
     // end of this function.
     unsafe { flux_future_incref(child_future.c_future.as_mut_ptr()) };
-    let rc = unsafe {
+    flux_try!(empty_ok
         flux_future_push(
             coll_future.c_future.as_mut_ptr(),
             c_name.as_ptr(),
             child_future.c_future.as_mut_ptr(),
         )
-    };
-    if rc == -1 {
-        return Err(FluxError::System(std::io::Error::last_os_error()));
-    }
-    Ok(())
+    )
 }
 
 pub fn create_wait_all_future(futures: HashMap<String, FluxFuture>) -> Result<FluxFuture> {
-    let raw_coll_future = unsafe { flux_future_wait_all_create() };
-    if raw_coll_future.is_null() {
-        return Err(FluxError::System(std::io::Error::last_os_error()));
-    }
+    let raw_coll_future = flux_try!(flux_future_wait_all_create())?;
     let mut coll_future = unsafe { FluxFuture::from_ptr(raw_coll_future)? };
     for (name, child_future) in futures.into_iter() {
         push_to_collective_future(&mut coll_future, &name, child_future)?;
@@ -544,10 +546,7 @@ pub fn create_wait_all_future(futures: HashMap<String, FluxFuture>) -> Result<Fl
 }
 
 pub fn create_wait_any_future(futures: HashMap<String, FluxFuture>) -> Result<FluxFuture> {
-    let raw_coll_future = unsafe { flux_future_wait_any_create() };
-    if raw_coll_future.is_null() {
-        return Err(FluxError::System(std::io::Error::last_os_error()));
-    }
+    let raw_coll_future = flux_try!(flux_future_wait_any_create())?;
     let mut coll_future = unsafe { FluxFuture::from_ptr(raw_coll_future)? };
     for (name, child_future) in futures.into_iter() {
         push_to_collective_future(&mut coll_future, &name, child_future)?;

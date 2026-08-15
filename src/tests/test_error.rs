@@ -1,13 +1,13 @@
 use std::io;
 
-use crate::error::{FluxError, Result, check_ptr, check_rc, to_flux_rc};
+use crate::error::{FluxError, FluxReturnType, Result, to_flux_rc};
 use crate::tests::common::with_handle;
 
 #[test]
-fn from_io_error_yields_system_variant() {
+fn from_io_error_yields_io_variant() {
     let io_err = io::Error::from_raw_os_error(libc::ENOENT);
     let flux_err = FluxError::from(io_err);
-    assert!(matches!(flux_err, FluxError::System(_)));
+    assert!(matches!(flux_err, FluxError::Io(_)));
 }
 
 #[test]
@@ -99,14 +99,14 @@ fn request_response_error_display_contains_both_parts() {
 
 #[test]
 fn to_errno_system_with_raw_os_error_returns_that_errno() {
-    let flux_err = FluxError::System(io::Error::from_raw_os_error(libc::ENOENT));
+    let flux_err = FluxError::System("test", io::Error::from_raw_os_error(libc::ENOENT));
     assert_eq!(flux_err.to_errno(), libc::ENOENT);
 }
 
 #[test]
 fn to_errno_system_without_raw_os_error_returns_einval() {
     // io::Error::new does not carry a raw OS code.
-    let flux_err = FluxError::System(io::Error::other("custom"));
+    let flux_err = FluxError::System("test", io::Error::other("custom"));
     assert_eq!(flux_err.to_errno(), libc::EINVAL);
 }
 
@@ -152,7 +152,7 @@ fn to_errno_non_system_variants_return_einval() {
 #[test]
 fn to_errno_with_flux_log_returns_same_value_as_to_errno() {
     with_handle(|handle| {
-        let flux_err = FluxError::System(io::Error::from_raw_os_error(libc::ENOENT));
+        let flux_err = FluxError::System("test", io::Error::from_raw_os_error(libc::ENOENT));
         let with_log = flux_err.to_errno_with_flux_log(handle);
         let without_log = flux_err.to_errno();
         assert_eq!(with_log, without_log);
@@ -168,7 +168,7 @@ fn to_errno_with_flux_log_returns_same_value_as_to_errno() {
 
 #[test]
 fn set_errno_none_sets_correct_value() {
-    let flux_err = FluxError::System(io::Error::from_raw_os_error(libc::ENOENT));
+    let flux_err = FluxError::System("test", io::Error::from_raw_os_error(libc::ENOENT));
     flux_err.set_errno(None);
     let actual = unsafe { *libc::__errno_location() };
     assert_eq!(actual, libc::ENOENT);
@@ -177,7 +177,7 @@ fn set_errno_none_sets_correct_value() {
 #[test]
 fn set_errno_with_handle_sets_correct_value() {
     with_handle(|handle| {
-        let flux_err = FluxError::System(io::Error::from_raw_os_error(libc::EACCES));
+        let flux_err = FluxError::System("test", io::Error::from_raw_os_error(libc::EACCES));
         flux_err.set_errno(Some(handle));
         let actual = unsafe { *libc::__errno_location() };
         assert_eq!(actual, libc::EACCES);
@@ -204,9 +204,10 @@ fn to_flux_rc_ok_returns_zero() {
 
 #[test]
 fn to_flux_rc_err_returns_minus_one_and_sets_errno() {
-    let result: Result<()> = Err(FluxError::System(io::Error::from_raw_os_error(
-        libc::ENOENT,
-    )));
+    let result: Result<()> = Err(FluxError::System(
+        "test",
+        io::Error::from_raw_os_error(libc::ENOENT),
+    ));
     let rc = to_flux_rc(result, None);
     let actual_errno = unsafe { *libc::__errno_location() };
     assert_eq!(rc, -1);
@@ -216,7 +217,10 @@ fn to_flux_rc_err_returns_minus_one_and_sets_errno() {
 #[test]
 fn to_flux_rc_err_with_handle_returns_minus_one_and_sets_errno() {
     with_handle(|handle| {
-        let result: Result<()> = Err(FluxError::System(io::Error::from_raw_os_error(libc::EPERM)));
+        let result: Result<()> = Err(FluxError::System(
+            "test",
+            io::Error::from_raw_os_error(libc::EPERM),
+        ));
         let rc = to_flux_rc(result, Some(handle));
         let actual_errno = unsafe { *libc::__errno_location() };
         assert_eq!(rc, -1);
@@ -230,28 +234,29 @@ fn to_flux_rc_err_with_handle_returns_minus_one_and_sets_errno() {
 
 #[test]
 fn check_rc_zero_is_ok() {
-    assert!(check_rc(0).is_ok());
+    assert!(FluxReturnType::check_flux_return(0, "test").is_ok());
 }
 
 #[test]
 fn check_rc_positive_is_ok() {
-    assert!(check_rc(1).is_ok());
-    assert!(check_rc(42).is_ok());
+    assert!(FluxReturnType::check_flux_return(1, "test").is_ok());
+    assert!(FluxReturnType::check_flux_return(42, "test").is_ok());
 }
 
 #[test]
 fn check_rc_minus_one_captures_errno() {
     // Set a known errno value before calling so the assertion is reliable.
     unsafe { *libc::__errno_location() = libc::ENOENT };
-    let result = check_rc(-1);
+    let result = FluxReturnType::check_flux_return(-1, "test");
     assert!(result.is_err());
     match result {
-        Err(FluxError::System(ref io_err)) => {
+        Err(FluxError::System(func_name, ref io_err)) => {
             assert_eq!(
                 io_err.raw_os_error(),
                 Some(libc::ENOENT),
                 "check_rc should capture the current errno"
             );
+            assert_eq!(func_name, "test");
         }
         other => panic!("Expected FluxError::System, got: {other:?}"),
     }
@@ -265,7 +270,7 @@ fn check_rc_minus_one_captures_errno() {
 fn check_ptr_non_null_returns_same_pointer() {
     let mut value: i32 = 42;
     let ptr = &mut value as *mut i32;
-    let result = check_ptr(ptr);
+    let result = FluxReturnType::check_flux_return(ptr, "test");
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), ptr);
 }
@@ -273,15 +278,16 @@ fn check_ptr_non_null_returns_same_pointer() {
 #[test]
 fn check_ptr_null_captures_errno() {
     unsafe { *libc::__errno_location() = libc::ENOMEM };
-    let result = check_ptr(std::ptr::null_mut::<i32>());
+    let result = FluxReturnType::check_flux_return(std::ptr::null_mut::<i32>(), "test");
     assert!(result.is_err());
     match result {
-        Err(FluxError::System(ref io_err)) => {
+        Err(FluxError::System(func_name, ref io_err)) => {
             assert_eq!(
                 io_err.raw_os_error(),
                 Some(libc::ENOMEM),
                 "check_ptr should capture the current errno on null"
             );
+            assert_eq!(func_name, "test");
         }
         other => panic!("Expected FluxError::System, got: {other:?}"),
     }

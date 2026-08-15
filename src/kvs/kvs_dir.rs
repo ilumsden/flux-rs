@@ -9,7 +9,7 @@ use flux_sys::core::{
     flux_kvsitr_t,
 };
 
-use crate::error::{FluxError, Result, check_ptr, check_rc};
+use crate::error::{FluxError, Result, flux_try};
 use crate::flux_ptr_management::{BorrowFluxPtr, FluxPtr, FromFluxPtr, default_impl_as_flux_ptr};
 use crate::handle::FluxHandle;
 use crate::kvs::{Kvs, KvsFlags, KvsTransaction};
@@ -33,8 +33,7 @@ impl KvsDir {
     }
 
     pub fn len(&self) -> Result<usize> {
-        let len_val = unsafe { flux_kvsdir_get_size(self.c_kvsdir.as_mut_ptr()) };
-        check_rc(len_val)?;
+        let len_val = flux_try!(flux_kvsdir_get_size(self.c_kvsdir.as_mut_ptr()))?;
         Ok(len_val as usize)
     }
 
@@ -59,9 +58,10 @@ impl KvsDir {
 
     pub fn get_key_at(&self, subkey: &str) -> Result<String> {
         let c_key = CString::new(subkey)?;
-        let qualified_ptr =
-            unsafe { flux_kvsdir_key_at(self.c_kvsdir.as_mut_ptr(), c_key.as_ptr()) };
-        check_ptr(qualified_ptr)?;
+        let qualified_ptr = flux_try!(flux_kvsdir_key_at(
+            self.c_kvsdir.as_mut_ptr(),
+            c_key.as_ptr()
+        ))?;
         let owned_str = unsafe { CStr::from_ptr(qualified_ptr).to_str()?.to_string() };
         unsafe {
             libc::free(qualified_ptr as *mut c_void);
@@ -70,8 +70,7 @@ impl KvsDir {
     }
 
     pub fn cursor(&self) -> Result<KvsDirCursor<'_>> {
-        let iter_ptr = unsafe { flux_kvsitr_create(self.c_kvsdir.as_mut_ptr()) };
-        check_ptr(iter_ptr)?;
+        let iter_ptr = flux_try!(flux_kvsitr_create(self.c_kvsdir.as_mut_ptr()))?;
         Ok(KvsDirCursor {
             _dir: self,
             iter: FluxPtr::create_owned(iter_ptr, flux_kvsitr_destroy)?,
@@ -116,8 +115,7 @@ impl TryFrom<&KvsDir> for KvsDir {
     type Error = FluxError;
 
     fn try_from(value: &KvsDir) -> Result<Self> {
-        let cloned_handle = unsafe { flux_kvsdir_copy(value.c_kvsdir.as_mut_ptr()) };
-        check_ptr(cloned_handle)?;
+        let cloned_handle = flux_try!(flux_kvsdir_copy(value.c_kvsdir.as_mut_ptr()))?;
         Ok(Self {
             c_kvsdir: FluxPtr::create_owned(cloned_handle, flux_kvsdir_destroy)?,
             txn: value.txn.clone(),

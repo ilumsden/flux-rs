@@ -6,7 +6,7 @@ use flux_sys::core::{
     flux_msg_handler_stop, flux_msg_handler_t, flux_msg_incref, flux_msg_t, flux_t,
 };
 
-use crate::error::{Result, check_ptr};
+use crate::error::{Result, flux_try};
 use crate::flux_log_error;
 use crate::flux_ptr_management::{
     BorrowFluxPtr, FluxPtr, FromFluxPtr, FromFluxPtrNoArgs, default_impl_as_flux_ptr,
@@ -83,15 +83,12 @@ impl MsgHandler {
 
         let c_match: flux_match = (&matcher).into();
 
-        let handler_ptr = unsafe {
-            flux_msg_handler_create(
-                handle.h.as_mut_ptr(),
-                c_match,
-                Some(Self::msg_handler_trampoline),
-                arg_ptr,
-            )
-        };
-        check_ptr(handler_ptr)?;
+        let handler_ptr = flux_try!(flux_msg_handler_create(
+            handle.h.as_mut_ptr(),
+            c_match,
+            Some(Self::msg_handler_trampoline),
+            arg_ptr,
+        ))?;
 
         Ok(Self {
             c_handler: FluxPtr::create_owned(handler_ptr, flux_msg_handler_destroy)?,

@@ -7,7 +7,7 @@ use flux_sys::core::{
 };
 
 use crate::SignalCode;
-use crate::error::{FluxError, Result, check_ptr};
+use crate::error::{FluxError, Result, flux_try};
 use crate::flux_ptr_management::FromFluxPtrNoArgs;
 use crate::future::FluxFuture;
 use crate::handle::FluxHandle;
@@ -68,16 +68,14 @@ impl<'a> Job<'a> {
     }
 
     pub fn wait(&self) -> Result<JobStatus> {
-        let future_ptr = unsafe { flux_job_wait(self.handle.h.as_mut_ptr(), *self.id) };
-        check_ptr(future_ptr)?;
+        let future_ptr = flux_try!(flux_job_wait(self.handle.h.as_mut_ptr(), *self.id))?;
         Ok(JobStatus::from(unsafe {
             FluxFuture::from_ptr(future_ptr)?
         }))
     }
 
     pub fn result(&self) -> Result<JobResult> {
-        let future_ptr = unsafe { flux_job_result(self.handle.h.as_mut_ptr(), *self.id, 0) };
-        check_ptr(future_ptr)?;
+        let future_ptr = flux_try!(flux_job_result(self.handle.h.as_mut_ptr(), *self.id, 0))?;
         Ok(JobResult::from(unsafe {
             FluxFuture::from_ptr(future_ptr)?
         }))
@@ -94,46 +92,43 @@ impl<'a> Job<'a> {
         let sev = severity.unwrap_or(JobEventSeverity::FATAL);
         let c_msg = message.map(CString::new).transpose()?;
         let c_exc_type = CString::new(exception_type.unwrap_or("cancel"))?;
-        let future_ptr = unsafe {
-            flux_job_raise(
-                self.handle.h.as_mut_ptr(),
-                *self.id,
-                c_exc_type.as_ptr(),
-                sev.as_raw() as _,
-                c_msg.map(|cm| cm.as_ptr()).unwrap_or(std::ptr::null()),
-            )
-        };
-        check_ptr(future_ptr)?;
+        let future_ptr = flux_try!(flux_job_raise(
+            self.handle.h.as_mut_ptr(),
+            *self.id,
+            c_exc_type.as_ptr(),
+            sev.as_raw() as _,
+            c_msg.map(|cm| cm.as_ptr()).unwrap_or(std::ptr::null()),
+        ))?;
         unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
     pub fn cancel(&self, reason: Option<&str>) -> Result<FluxFuture<'static>> {
         let c_reason = reason.map(CString::new).transpose()?;
-        let future_ptr = unsafe {
-            flux_job_cancel(
-                self.handle.h.as_mut_ptr(),
-                *self.id,
-                c_reason
-                    .map(|cstr| cstr.as_ptr())
-                    .unwrap_or(std::ptr::null()),
-            )
-        };
-        check_ptr(future_ptr)?;
+        let future_ptr = flux_try!(flux_job_cancel(
+            self.handle.h.as_mut_ptr(),
+            *self.id,
+            c_reason
+                .map(|cstr| cstr.as_ptr())
+                .unwrap_or(std::ptr::null()),
+        ))?;
         unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
     pub fn kill(&self, signal: SignalCode) -> Result<FluxFuture<'static>> {
-        let future_ptr =
-            unsafe { flux_job_kill(self.handle.h.as_mut_ptr(), *self.id, signal.as_raw()) };
-        check_ptr(future_ptr)?;
+        let future_ptr = flux_try!(flux_job_kill(
+            self.handle.h.as_mut_ptr(),
+            *self.id,
+            signal.as_raw()
+        ))?;
         unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
     pub fn set_urgency(&mut self, urgency: JobUrgency) -> Result<FluxFuture<'static>> {
-        let future_ptr = unsafe {
-            flux_job_set_urgency(self.handle.h.as_mut_ptr(), *self.id, urgency.as_u8() as _)
-        };
-        check_ptr(future_ptr)?;
+        let future_ptr = flux_try!(flux_job_set_urgency(
+            self.handle.h.as_mut_ptr(),
+            *self.id,
+            urgency.as_u8() as _
+        ))?;
         unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
@@ -178,7 +173,7 @@ impl<'a> Job<'a> {
                 }
                 continue;
             }
-            return Err(FluxError::System(err));
+            return Err(FluxError::System("flux_job_kvs_key", err));
         }
     }
 
@@ -227,7 +222,7 @@ impl<'a> Job<'a> {
                 }
                 continue;
             }
-            return Err(FluxError::System(err));
+            return Err(FluxError::System("flux_job_kvs_guest_key", err));
         }
     }
 
@@ -256,7 +251,7 @@ impl<'a> Job<'a> {
                 }
                 continue;
             }
-            return Err(FluxError::System(err));
+            return Err(FluxError::System("flux_job_kvs_namespace", err));
         }
     }
 }
