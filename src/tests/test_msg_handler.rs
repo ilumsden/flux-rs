@@ -1,6 +1,4 @@
-use flux_sys::core::flux_msg_handler_destroy;
-
-use crate::flux_ptr_management::{AsFluxPtr, BorrowFluxPtrNoArgs, FromFluxPtrNoArgs, IntoFluxPtr};
+use crate::flux_ptr_management::{AsFluxPtr, BorrowFluxPtrNoArgs, FromFluxPtrNoArgs};
 use crate::handle::FluxHandle;
 use crate::msg::{MessageMatch, MessageRolemask, MessageType};
 use crate::msg_handler::{MsgHandler, MsgHandlerSpec, add_handler_vec};
@@ -73,7 +71,7 @@ fn new_stores_callback_in_cb_box() {
 fn start_on_new_handler_succeeds() {
     with_handle(|h| {
         let handler = make_handler(h);
-        assert!(handler.start().is_ok());
+        handler.start();
     });
 }
 
@@ -81,8 +79,8 @@ fn start_on_new_handler_succeeds() {
 fn stop_after_start_succeeds() {
     with_handle(|h| {
         let handler = make_handler(h);
-        handler.start().unwrap();
-        assert!(handler.stop().is_ok());
+        handler.start();
+        handler.stop();
     });
 }
 
@@ -91,7 +89,7 @@ fn stop_without_prior_start_succeeds() {
     // flux_msg_handler_stop on an unstarted handler is a safe no-op.
     with_handle(|h| {
         let handler = make_handler(h);
-        assert!(handler.stop().is_ok());
+        handler.stop();
     });
 }
 
@@ -99,9 +97,9 @@ fn stop_without_prior_start_succeeds() {
 fn start_stop_start_cycle_succeeds() {
     with_handle(|h| {
         let handler = make_handler(h);
-        handler.start().unwrap();
-        handler.stop().unwrap();
-        assert!(handler.start().is_ok());
+        handler.start();
+        handler.stop();
+        handler.start();
     });
 }
 
@@ -110,8 +108,8 @@ fn double_start_is_idempotent() {
     // flux_msg_handler_start is idempotent; calling it twice should not error.
     with_handle(|h| {
         let handler = make_handler(h);
-        handler.start().unwrap();
-        assert!(handler.start().is_ok());
+        handler.start();
+        handler.start();
     });
 }
 
@@ -119,9 +117,9 @@ fn double_start_is_idempotent() {
 fn double_stop_is_idempotent() {
     with_handle(|h| {
         let handler = make_handler(h);
-        handler.start().unwrap();
-        handler.stop().unwrap();
-        assert!(handler.stop().is_ok());
+        handler.start();
+        handler.stop();
+        handler.stop();
     });
 }
 
@@ -133,7 +131,7 @@ fn double_stop_is_idempotent() {
 fn allow_rolemask_owner_succeeds() {
     with_handle(|h| {
         let mut handler = make_handler(h);
-        assert!(handler.allow_rolemask(MessageRolemask::OWNER).is_ok());
+        handler.allow_rolemask(MessageRolemask::OWNER);
     });
 }
 
@@ -141,7 +139,7 @@ fn allow_rolemask_owner_succeeds() {
 fn allow_rolemask_all_succeeds() {
     with_handle(|h| {
         let mut handler = make_handler(h);
-        assert!(handler.allow_rolemask(MessageRolemask::ALL).is_ok());
+        handler.allow_rolemask(MessageRolemask::ALL);
     });
 }
 
@@ -149,7 +147,7 @@ fn allow_rolemask_all_succeeds() {
 fn allow_rolemask_none_succeeds() {
     with_handle(|h| {
         let mut handler = make_handler(h);
-        assert!(handler.allow_rolemask(MessageRolemask::NONE).is_ok());
+        handler.allow_rolemask(MessageRolemask::NONE);
     });
 }
 
@@ -157,7 +155,7 @@ fn allow_rolemask_none_succeeds() {
 fn deny_rolemask_user_succeeds() {
     with_handle(|h| {
         let mut handler = make_handler(h);
-        assert!(handler.deny_rolemask(MessageRolemask::USER).is_ok());
+        handler.deny_rolemask(MessageRolemask::USER);
     });
 }
 
@@ -165,7 +163,7 @@ fn deny_rolemask_user_succeeds() {
 fn deny_rolemask_owner_succeeds() {
     with_handle(|h| {
         let mut handler = make_handler(h);
-        assert!(handler.deny_rolemask(MessageRolemask::OWNER).is_ok());
+        handler.deny_rolemask(MessageRolemask::OWNER);
     });
 }
 
@@ -173,8 +171,8 @@ fn deny_rolemask_owner_succeeds() {
 fn allow_then_deny_same_rolemask_succeeds() {
     with_handle(|h| {
         let mut handler = make_handler(h);
-        handler.allow_rolemask(MessageRolemask::USER).unwrap();
-        assert!(handler.deny_rolemask(MessageRolemask::USER).is_ok());
+        handler.allow_rolemask(MessageRolemask::USER);
+        handler.deny_rolemask(MessageRolemask::USER);
     });
 }
 
@@ -210,41 +208,13 @@ fn borrow_ptr_has_no_cb_box() {
 }
 
 #[test]
-fn from_ptr_produces_owning_handler() {
-    with_handle(|h| {
-        let handler = make_handler(h);
-        let ptr = handler.into_raw();
-        let owned = unsafe { MsgHandler::from_ptr(ptr) }.unwrap();
-        assert!(
-            owned.c_handler.is_owned(),
-            "from_ptr should produce an owning MsgHandler"
-        );
-    });
-}
-
-#[test]
-fn from_ptr_has_no_cb_box() {
-    // The callback is not transferred through the raw pointer — _cb_box
-    // is a Rust-side concern and is always None when constructing via from_ptr.
-    with_handle(|h| {
-        let handler = make_handler(h);
-        let ptr = handler.into_raw();
-        let owned = unsafe { MsgHandler::from_ptr(ptr) }.unwrap();
-        assert!(
-            owned._cb_box.is_none(),
-            "from_ptr should produce a MsgHandler with no _cb_box"
-        );
-    });
-}
-
-#[test]
 fn borrowed_handler_can_start_and_stop() {
     with_handle(|h| {
         let handler = make_handler(h);
         let ptr = handler.as_mut_ptr();
         let borrowed = unsafe { MsgHandler::borrow_ptr(ptr) }.unwrap();
-        assert!(borrowed.start().is_ok());
-        assert!(borrowed.stop().is_ok());
+        borrowed.start();
+        borrowed.stop();
     });
 }
 
@@ -279,17 +249,6 @@ fn as_mut_ptr_is_stable_across_calls() {
         let ptr1 = handler.as_mut_ptr();
         let ptr2 = handler.as_mut_ptr();
         assert_eq!(ptr1, ptr2);
-    });
-}
-
-#[test]
-fn into_raw_returns_non_null_and_suppresses_destructor() {
-    with_handle(|h| {
-        let handler = make_handler(h);
-        let ptr = handler.into_raw();
-        assert!(!ptr.is_null());
-        // Manually clean up to avoid leaking the C allocation.
-        unsafe { flux_msg_handler_destroy(ptr) };
     });
 }
 
@@ -377,7 +336,7 @@ fn add_handler_vec_handlers_are_started() {
             MessageRolemask::OWNER,
         )];
         let handlers = add_handler_vec(h, specs).unwrap();
-        assert!(handlers[0].stop().is_ok());
+        handlers[0].stop();
     });
 }
 

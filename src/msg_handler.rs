@@ -10,8 +10,7 @@ use crate::error::{Result, flux_try};
 use crate::flux_log_error;
 use crate::flux_ptr_management::{
     AsFluxPtr, BorrowFluxPtr, BorrowFluxPtrNoArgs, Borrowed, FluxPtr, FromFluxPtr,
-    FromFluxPtrNoArgs, IntoFluxPtr, Owned, PossiblyDroppablePtr, define_as_flux_ptr_body,
-    define_into_flux_ptr_body,
+    FromFluxPtrNoArgs, Owned, PossiblyDroppablePtr, define_as_flux_ptr_body,
 };
 use crate::handle::{FluxHandle, OwnedFluxHandle};
 use crate::msg::{Message, MessageMatch, MessageRolemask, MessageType};
@@ -110,32 +109,34 @@ impl OwnedMsgHandler {
 }
 
 impl<State: PossiblyDroppablePtr<flux_msg_handler_t>> MsgHandler<State> {
-    pub fn start(&self) -> Result<()> {
+    pub fn start(&self) {
         unsafe {
             flux_msg_handler_start(self.c_handler.as_mut_ptr());
         }
-        Ok(())
     }
 
-    pub fn stop(&self) -> Result<()> {
+    pub fn stop(&self) {
         unsafe {
             flux_msg_handler_stop(self.c_handler.as_mut_ptr());
         }
-        Ok(())
     }
 
-    pub fn allow_rolemask(&mut self, rolemask: MessageRolemask) -> Result<()> {
+    pub fn allow_rolemask(&mut self, rolemask: MessageRolemask) {
         unsafe {
             flux_msg_handler_allow_rolemask(self.c_handler.as_mut_ptr(), rolemask.bits());
         }
-        Ok(())
     }
 
-    pub fn deny_rolemask(&mut self, rolemask: MessageRolemask) -> Result<()> {
+    pub fn deny_rolemask(&mut self, rolemask: MessageRolemask) {
         unsafe {
             flux_msg_handler_deny_rolemask(self.c_handler.as_mut_ptr(), rolemask.bits());
         }
-        Ok(())
+    }
+}
+
+impl<State: PossiblyDroppablePtr<flux_msg_handler_t>> Drop for MsgHandler<State> {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
@@ -165,10 +166,6 @@ unsafe impl FromFluxPtr for OwnedMsgHandler {
 
 unsafe impl<State: PossiblyDroppablePtr<flux_msg_handler_t>> AsFluxPtr for MsgHandler<State> {
     define_as_flux_ptr_body!(flux_msg_handler_t, c_handler);
-}
-
-unsafe impl IntoFluxPtr for OwnedMsgHandler {
-    define_into_flux_ptr_body!(c_handler);
 }
 
 pub struct MsgHandlerSpec {
@@ -217,8 +214,8 @@ where
         .map(|spec| {
             let matcher = spec.as_msg_match()?;
             let mut handler = MsgHandler::new(handle, matcher, spec.cb)?;
-            handler.allow_rolemask(spec.rolemask)?;
-            handler.start()?;
+            handler.allow_rolemask(spec.rolemask);
+            handler.start();
             Ok(handler)
         })
         .collect()
