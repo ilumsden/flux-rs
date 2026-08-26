@@ -8,15 +8,21 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::error::{FluxError, Result, flux_try};
-use crate::flux_ptr_management::{BorrowFluxPtr, FluxPtr, FromFluxPtr, default_impl_as_flux_ptr};
+use crate::flux_ptr_management::{
+    AsFluxPtr, BorrowFluxPtr, Borrowed, FluxPtr, FromFluxPtr, IntoFluxPtr, Owned,
+    PossiblyDroppablePtr, define_as_flux_ptr_body, define_into_flux_ptr_body,
+};
 use crate::kvs::flags::KvsFlags;
 
-pub struct KvsTransaction {
-    pub(crate) c_txn: FluxPtr<flux_kvs_txn_t>,
+pub struct KvsTransaction<State: PossiblyDroppablePtr<flux_kvs_txn_t> = Owned<flux_kvs_txn_t>> {
+    pub(crate) c_txn: FluxPtr<flux_kvs_txn_t, State>,
     pub(crate) base_path: Option<String>,
 }
 
-impl KvsTransaction {
+pub type OwnedKvsTransaction = KvsTransaction<Owned<flux_kvs_txn_t>>;
+pub type BorrowedKvsTransaction<'a> = KvsTransaction<Borrowed<'a, flux_kvs_txn_t>>;
+
+impl OwnedKvsTransaction {
     pub fn new() -> Result<Self> {
         let txn = flux_try!(flux_kvs_txn_create())?;
         Ok(Self {
@@ -30,7 +36,9 @@ impl KvsTransaction {
         txn.base_path = Some(path.to_string());
         Ok(txn)
     }
+}
 
+impl<State: PossiblyDroppablePtr<flux_kvs_txn_t>> KvsTransaction<State> {
     pub fn put(&mut self, key: &str, data: &[u8], flags: KvsFlags) -> Result<()> {
         let full_key = if let Some(base) = &self.base_path {
             format!("{base}.{key}")
@@ -134,19 +142,22 @@ impl KvsTransaction {
     // TODO add wrapper for put_treeobj, if possible
 }
 
-unsafe impl BorrowFluxPtr for KvsTransaction {
+unsafe impl<'a> BorrowFluxPtr for BorrowedKvsTransaction<'a> {
     type CType = flux_kvs_txn_t;
     type FromRawArgs = ();
 
     unsafe fn borrow_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
         Ok(Self {
-            c_txn: FluxPtr::create_borrowed(ptr, flux_kvs_txn_destroy)?,
+            c_txn: FluxPtr::create_borrowed(ptr)?,
             base_path: None,
         })
     }
 }
 
-unsafe impl FromFluxPtr for KvsTransaction {
+unsafe impl FromFluxPtr for OwnedKvsTransaction {
+    type CType = flux_kvs_txn_t;
+    type FromRawArgs = ();
+
     unsafe fn from_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
         Ok(Self {
             c_txn: FluxPtr::create_owned(ptr, flux_kvs_txn_destroy)?,
@@ -155,4 +166,10 @@ unsafe impl FromFluxPtr for KvsTransaction {
     }
 }
 
-default_impl_as_flux_ptr!(KvsTransaction, flux_kvs_txn_t, c_txn);
+unsafe impl<State: PossiblyDroppablePtr<flux_kvs_txn_t>> AsFluxPtr for KvsTransaction<State> {
+    define_as_flux_ptr_body!(flux_kvs_txn_t, c_txn);
+}
+
+unsafe impl IntoFluxPtr for OwnedKvsTransaction {
+    define_into_flux_ptr_body!(c_txn);
+}

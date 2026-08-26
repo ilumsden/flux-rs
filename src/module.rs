@@ -9,10 +9,11 @@ use std::mem::MaybeUninit;
 
 use std::alloc::{GlobalAlloc, Layout, System};
 
-use flux_sys::core::{flux_module_debug_test, flux_module_set_running};
+use flux_sys::core::{flux_module_debug_test, flux_module_set_running, flux_t};
 
 #[allow(unused_imports)]
 use crate::error::{FluxError, Result, flux_try};
+use crate::flux_ptr_management::PossiblyDroppablePtr;
 use crate::handle::FluxHandle;
 
 pub struct PanickingAllocator;
@@ -47,16 +48,24 @@ unsafe impl GlobalAlloc for PanickingAllocator {
     }
 }
 
-pub fn test_module_debug_bit(handle: &FluxHandle, flag: i32, clear: bool) -> bool {
+pub fn test_module_debug_bit<State: PossiblyDroppablePtr<flux_t>>(
+    handle: &FluxHandle<State>,
+    flag: i32,
+    clear: bool,
+) -> bool {
     unsafe { flux_module_debug_test(handle.h.as_mut_ptr(), flag, clear) }
 }
 
-pub fn set_module_running(handle: &FluxHandle) -> Result<()> {
+pub fn set_module_running<State: PossiblyDroppablePtr<flux_t>>(
+    handle: &FluxHandle<State>,
+) -> Result<()> {
     flux_try!(empty_ok flux_module_set_running(handle.h.as_mut_ptr()))
 }
 
 #[cfg(flux_core_has_module_loader_helpers)]
-pub fn initialize_module(handle: &FluxHandle) -> Result<String> {
+pub fn initialize_module<State: PossiblyDroppablePtr<flux_t>>(
+    handle: &FluxHandle<State>,
+) -> Result<String> {
     let mut args_str_ptr: *mut c_char = std::ptr::null_mut();
     let mut err_buf: flux_error_t = unsafe { MaybeUninit::zeroed().assume_init() };
     let rc = unsafe {
@@ -88,7 +97,9 @@ pub fn initialize_module(handle: &FluxHandle) -> Result<String> {
 }
 
 #[cfg(flux_core_has_module_loader_helpers)]
-pub fn register_default_handlers(handle: &FluxHandle) -> Result<()> {
+pub fn register_default_handlers<State: PossiblyDroppablePtr<flux_t>>(
+    handle: &FluxHandle<State>,
+) -> Result<()> {
     let mut err_buf: flux_error_t = unsafe { MaybeUninit::zeroed().assume_init() };
     let rc = unsafe {
         flux_module_register_handlers(handle.h.as_mut_ptr(), &mut err_buf as *mut flux_error_t)
@@ -107,7 +118,10 @@ pub fn register_default_handlers(handle: &FluxHandle) -> Result<()> {
 }
 
 #[cfg(flux_core_has_module_loader_helpers)]
-pub fn finalize_module(handle: &FluxHandle, error: Option<std::io::Error>) -> Result<()> {
+pub fn finalize_module<State: PossiblyDroppablePtr<flux_t>>(
+    handle: &FluxHandle<State>,
+    error: Option<std::io::Error>,
+) -> Result<()> {
     let errnum = if let Some(err) = error {
         err.raw_os_error().unwrap_or(0)
     } else {
@@ -184,7 +198,7 @@ macro_rules! __create_module_entrypoint_macro {
                 $crate::flux_sys::core::flux_incref(h);
             }
             let rust_handle = match unsafe {
-                <$crate::handle::FluxHandle as $crate::FromFluxPtrNoArgs>::from_ptr(h)
+                <$crate::handle::OwnedFluxHandle as $crate::flux_ptr_management::FromFluxPtrNoArgs>::from_ptr(h)
             } {
                 Ok(rh) => rh,
                 Err(e) => {

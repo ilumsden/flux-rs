@@ -7,7 +7,7 @@ use crate::async_driver::base::{
 use crate::error::{FluxError, Result};
 use crate::handle::FluxHandle;
 use crate::handle::HandleFlags;
-use crate::reactor::{FluxReactorThread, Reactor, ReactorFlags};
+use crate::reactor::{FluxReactorThread, Reactor};
 
 // =========================================================================
 // Helpers
@@ -257,20 +257,20 @@ fn spawn_async_driver_propagates_try_from_error() {
 
 #[test]
 fn spawn_reactor_thread_calls_spawn() {
-    let reactor = Reactor::new(ReactorFlags::NONE).unwrap();
+    let reactor = Reactor::new().unwrap();
     let driver = MockDriver::spawn_reactor_thread(reactor).unwrap();
     assert!(driver.spawned, "spawn_reactor_thread must call spawn()");
 }
 
 #[test]
 fn spawn_reactor_thread_succeeds_with_valid_reactor() {
-    let reactor = Reactor::new(ReactorFlags::NONE).unwrap();
+    let reactor = Reactor::new().unwrap();
     assert!(MockDriver::spawn_reactor_thread(reactor).is_ok());
 }
 
 #[test]
 fn spawn_reactor_thread_propagates_spawn_error() {
-    let reactor = Reactor::new(ReactorFlags::NONE).unwrap();
+    let reactor = Reactor::new().unwrap();
     assert!(matches!(
         FailingMockDriver::spawn_reactor_thread(reactor),
         Err(FluxError::Logic(_))
@@ -279,7 +279,7 @@ fn spawn_reactor_thread_propagates_spawn_error() {
 
 #[test]
 fn spawn_reactor_thread_propagates_try_from_error() {
-    let reactor = Reactor::new(ReactorFlags::NONE).unwrap();
+    let reactor = Reactor::new().unwrap();
     assert!(matches!(
         FailingFromHandleMockDriver::spawn_reactor_thread(reactor),
         Err(FluxError::Logic(_))

@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::async_driver::AsyncDriver;
 use crate::error::{FluxError, Result};
-use crate::handle::FluxHandle;
+use crate::handle::OwnedFluxHandle;
 use crate::reactor::FluxReactorThread;
 
 /// An async driver intended for actor architectures.
@@ -30,10 +30,10 @@ impl TryFrom<FluxReactorThread> for ThreadDriver {
     }
 }
 
-impl TryFrom<Arc<Mutex<FluxHandle>>> for ThreadDriver {
+impl TryFrom<Arc<Mutex<OwnedFluxHandle>>> for ThreadDriver {
     type Error = FluxError;
 
-    fn try_from(_: Arc<Mutex<FluxHandle>>) -> Result<Self> {
+    fn try_from(_: Arc<Mutex<OwnedFluxHandle>>) -> Result<Self> {
         Err(FluxError::Logic(String::from(
             "ThreadDriver does not use file descriptor polling",
         )))

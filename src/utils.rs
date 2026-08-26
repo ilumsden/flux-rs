@@ -49,6 +49,92 @@ pub(crate) fn parse_fsd(fsd_string: &str) -> Result<f64> {
 }
 
 macro_rules! impl_serde_repr_str {
+    ($obj_type:ident<'static>) => {
+        impl ::std::fmt::Debug for $obj_type<'static> {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                let type_string = stringify!($obj_type);
+                match serde_json::to_string(self) {
+                    Ok(s) => write!(f, "{}({})", type_string, s),
+                    Err(e) => write!(f, "\"Invalid repr for {}: {}\"", type_string, e),
+                }
+            }
+        }
+
+        impl ::std::fmt::Display for $obj_type<'static> {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                let type_string = stringify!($obj_type);
+                match serde_json::to_string(self) {
+                    Ok(s) => write!(f, "{}", s),
+                    Err(e) => write!(f, "\"Invalid repr for {}: {}\"", type_string, e),
+                }
+            }
+        }
+    };
+    (no_debug $obj_type:ident<'static>) => {
+        impl<'static> ::std::fmt::Display for $obj_type<'static> {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                let type_string = stringify!($obj_type);
+                match serde_json::to_string(self) {
+                    Ok(s) => write!(f, "{}", s),
+                    Err(e) => write!(f, "\"Invalid repr for {}: {}\"", type_string, e),
+                }
+            }
+        }
+    };
+    (no_display $obj_type:ident<'static>) => {
+        impl ::std::fmt::Debug for $obj_type<'static> {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                let type_string = stringify!($obj_type);
+                match serde_json::to_string(self) {
+                    Ok(s) => write!(f, "{}({})", type_string, s),
+                    Err(e) => write!(f, "\"Invalid repr for {}: {}\"", type_string, e),
+                }
+            }
+        }
+    };
+    ($obj_type:ident<$lt:lifetime>) => {
+        impl<$lt> ::std::fmt::Debug for $obj_type<$lt> {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                let type_string = stringify!($obj_type);
+                match serde_json::to_string(self) {
+                    Ok(s) => write!(f, "{}({})", type_string, s),
+                    Err(e) => write!(f, "\"Invalid repr for {}: {}\"", type_string, e),
+                }
+            }
+        }
+
+        impl<$lt> ::std::fmt::Display for $obj_type<$lt> {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                let type_string = stringify!($obj_type);
+                match serde_json::to_string(self) {
+                    Ok(s) => write!(f, "{}", s),
+                    Err(e) => write!(f, "\"Invalid repr for {}: {}\"", type_string, e),
+                }
+            }
+        }
+    };
+    (no_debug $obj_type:ident<$lt:lifetime>) => {
+        impl<$lt> ::std::fmt::Display for $obj_type<$lt> {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                let type_string = stringify!($obj_type);
+                match serde_json::to_string(self) {
+                    Ok(s) => write!(f, "{}", s),
+                    Err(e) => write!(f, "\"Invalid repr for {}: {}\"", type_string, e),
+                }
+            }
+        }
+    };
+    (no_display $obj_type:ident<$lt:lifetime>) => {
+        impl<$lt> ::std::fmt::Debug for $obj_type<$lt> {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                let type_string = stringify!($obj_type);
+                match serde_json::to_string(self) {
+                    Ok(s) => write!(f, "{}({})", type_string, s),
+                    Err(e) => write!(f, "\"Invalid repr for {}: {}\"", type_string, e),
+                }
+            }
+        }
+    };
     ($obj_type:ty) => {
         impl ::std::fmt::Debug for $obj_type {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -106,7 +192,7 @@ macro_rules! impl_async_future_wrapper {
     };
     (
         #[from_sync($sync_type:ident $( < $($sync_lt:lifetime),+ > )?)]
-        $async_vis:vis struct $async_struct_type:ident $( < $($async_lt:lifetime),+ > )? {
+        $async_vis:vis struct $async_struct_type:ident $( < $($async_lt:lifetime $(: $lt_bound:lifetime)?),+ > )? {
             #[from_sync($sync_future_field_name:ident)] $async_future_field_name:ident: AsyncFluxFuture,
             $(
                 #[from_sync($sync_field_name:ident)]
@@ -116,7 +202,7 @@ macro_rules! impl_async_future_wrapper {
             ),*$(,)?
         }
     ) => {
-        $async_vis struct $async_struct_type $( < $($async_lt),+ > )? {
+        $async_vis struct $async_struct_type $( < $($async_lt $(: $lt_bound)?),+ > )? {
             $async_future_field_name: $crate::future::AsyncFluxFuture,
             $( $field_name: $field_type ),*
         }

@@ -16,7 +16,10 @@ use serde::de::{self, Visitor};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{FluxError, Result, flux_try};
-use crate::flux_ptr_management::{BorrowFluxPtr, FluxPtr, FromFluxPtr, default_impl_as_flux_ptr};
+use crate::flux_ptr_management::{
+    AsFluxPtr, BorrowFluxPtr, Borrowed, FluxPtr, FromFluxPtr, IntoFluxPtr, Owned,
+    PossiblyDroppablePtr, define_as_flux_ptr_body, define_into_flux_ptr_body,
+};
 use crate::utils::impl_serde_repr_str;
 
 pub(crate) const IDSET_INVALID_ID: u32 = u32::MAX - 1;
@@ -36,11 +39,14 @@ bitflags! {
 /// A struct representing a Flux Idset.
 ///
 /// The API for this struct is inspired by Rust's `BTreeSet`.
-pub struct Idset {
-    c_idset: FluxPtr<idset>,
+pub struct Idset<State: PossiblyDroppablePtr<idset> = Owned<idset>> {
+    c_idset: FluxPtr<idset, State>,
 }
 
-impl Idset {
+pub type OwnedIdset = Idset<Owned<idset>>;
+pub type BorrowedIdset<'a> = Idset<Borrowed<'a, idset>>;
+
+impl OwnedIdset {
     /// Create a new Idset with the specified size and flags.
     pub fn new(size: usize, flags: IdsetFlags) -> Result<Self> {
         let idset_ptr = flux_try!(idset_create(size, flags.bits() as _))?;
@@ -48,15 +54,17 @@ impl Idset {
             c_idset: FluxPtr::create_owned(idset_ptr, idset_destroy)?,
         })
     }
+}
 
+impl<State: PossiblyDroppablePtr<idset>> Idset<State> {
     /// Copy the Idset.
     ///
     /// If an error occurs in the underlying `idset_copy` function, this method returns
     /// an error.
     ///
     /// This method is the same as calling Idset::try_from.
-    pub fn try_clone(&self) -> Result<Self> {
-        Self::try_from(self)
+    pub fn try_clone(&self) -> Result<OwnedIdset> {
+        Idset::try_from(self)
     }
 
     /// Create a string encoding of the Idset using the specified flags.
@@ -117,32 +125,32 @@ impl Idset {
         Some(last_id)
     }
 
-    pub fn union(&self, other: &Self) -> Result<Self> {
+    pub fn union(&self, other: &Self) -> Result<OwnedIdset> {
         let union_ptr = flux_try!(idset_union(
             self.c_idset.as_mut_ptr(),
             other.c_idset.as_mut_ptr()
         ))?;
-        Ok(Self {
+        Ok(Idset {
             c_idset: FluxPtr::create_owned(union_ptr, idset_destroy)?,
         })
     }
 
-    pub fn intersection(&self, other: &Self) -> Result<Self> {
+    pub fn intersection(&self, other: &Self) -> Result<OwnedIdset> {
         let intersection_ptr = flux_try!(idset_intersect(
             self.c_idset.as_mut_ptr(),
             other.c_idset.as_mut_ptr()
         ))?;
-        Ok(Self {
+        Ok(Idset {
             c_idset: FluxPtr::create_owned(intersection_ptr, idset_destroy)?,
         })
     }
 
-    pub fn difference(&self, other: &Self) -> Result<Self> {
+    pub fn difference(&self, other: &Self) -> Result<OwnedIdset> {
         let difference_ptr = flux_try!(idset_difference(
             self.c_idset.as_mut_ptr(),
             other.c_idset.as_mut_ptr()
         ))?;
-        Ok(Self {
+        Ok(Idset {
             c_idset: FluxPtr::create_owned(difference_ptr, idset_destroy)?,
         })
     }
@@ -155,7 +163,7 @@ impl Idset {
     ///
     /// This method is used to create an iterator for a reference to Idset.
     /// If you want to create an Iterator that assumes ownership, use into_iter instead.
-    pub fn iter(&self) -> Iter<'_> {
+    pub fn iter(&self) -> Iter<'_, State> {
         Iter {
             idset: self,
             current: self.first().unwrap_or(IDSET_INVALID_ID),
@@ -163,13 +171,13 @@ impl Idset {
     }
 }
 
-impl PartialEq for Idset {
+impl<State: PossiblyDroppablePtr<idset>> PartialEq for Idset<State> {
     fn eq(&self, other: &Self) -> bool {
         unsafe { idset_equal(self.c_idset.as_mut_ptr(), other.c_idset.as_mut_ptr()) }
     }
 }
 
-impl std::str::FromStr for Idset {
+impl std::str::FromStr for OwnedIdset {
     type Err = FluxError;
 
     /// Decode a string representation into an Idset object.
@@ -182,7 +190,7 @@ impl std::str::FromStr for Idset {
     }
 }
 
-impl Display for Idset {
+impl<State: PossiblyDroppablePtr<idset>> Display for Idset<State> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let encoded_idset = match self.encode(IdsetFlags::RANGE | IdsetFlags::BRACKETS) {
             Ok(s) => s,
@@ -192,14 +200,14 @@ impl Display for Idset {
     }
 }
 
-impl TryFrom<&Idset> for Idset {
+impl<State: PossiblyDroppablePtr<idset>> TryFrom<&Idset<State>> for OwnedIdset {
     type Error = FluxError;
 
     /// Copy an Idset.
     ///
     /// This function is used to create a copy of an Idset because the underlying
     /// `idset_copy` function may fail.
-    fn try_from(value: &Idset) -> Result<Self> {
+    fn try_from(value: &Idset<State>) -> Result<Self> {
         let new_ptr = flux_try!(idset_copy(value.c_idset.as_mut_ptr()))?;
         Ok(Self {
             c_idset: FluxPtr::create_owned(new_ptr, idset_destroy)?,
@@ -207,18 +215,21 @@ impl TryFrom<&Idset> for Idset {
     }
 }
 
-unsafe impl BorrowFluxPtr for Idset {
+unsafe impl<'a> BorrowFluxPtr for BorrowedIdset<'a> {
     type CType = idset;
     type FromRawArgs = ();
 
     unsafe fn borrow_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
         Ok(Self {
-            c_idset: FluxPtr::create_borrowed(ptr, idset_destroy)?,
+            c_idset: FluxPtr::create_borrowed(ptr)?,
         })
     }
 }
 
-unsafe impl FromFluxPtr for Idset {
+unsafe impl FromFluxPtr for OwnedIdset {
+    type CType = idset;
+    type FromRawArgs = ();
+
     unsafe fn from_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
         Ok(Self {
             c_idset: FluxPtr::create_owned(ptr, idset_destroy)?,
@@ -226,9 +237,15 @@ unsafe impl FromFluxPtr for Idset {
     }
 }
 
-default_impl_as_flux_ptr!(Idset, idset, c_idset);
+unsafe impl<State: PossiblyDroppablePtr<idset>> AsFluxPtr for Idset<State> {
+    define_as_flux_ptr_body!(idset, c_idset);
+}
 
-impl Serialize for Idset {
+unsafe impl IntoFluxPtr for OwnedIdset {
+    define_into_flux_ptr_body!(c_idset);
+}
+
+impl<State: PossiblyDroppablePtr<idset>> Serialize for Idset<State> {
     fn serialize<S>(&self, serializer: S) -> std::prelude::v1::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -237,7 +254,7 @@ impl Serialize for Idset {
     }
 }
 
-impl<'de> Deserialize<'de> for Idset {
+impl<'de> Deserialize<'de> for OwnedIdset {
     fn deserialize<D>(deserializer: D) -> std::prelude::v1::Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
@@ -245,7 +262,7 @@ impl<'de> Deserialize<'de> for Idset {
         struct IdsetVisitor;
 
         impl<'de> Visitor<'de> for IdsetVisitor {
-            type Value = Idset;
+            type Value = OwnedIdset;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                 formatter.write_str("a Flux idset string (e.g., '1-3,5-6,42')")
@@ -263,14 +280,15 @@ impl<'de> Deserialize<'de> for Idset {
     }
 }
 
-impl_serde_repr_str!(no_display Idset);
+impl_serde_repr_str!(no_display BorrowedIdset<'a>);
+impl_serde_repr_str!(no_display OwnedIdset);
 
-pub struct Iter<'a> {
-    idset: &'a Idset,
+pub struct Iter<'r, State: PossiblyDroppablePtr<idset>> {
+    idset: &'r Idset<State>,
     current: u32,
 }
 
-impl<'a> Iterator for Iter<'a> {
+impl<'r, State: PossiblyDroppablePtr<idset>> Iterator for Iter<'r, State> {
     type Item = u32;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -283,17 +301,8 @@ impl<'a> Iterator for Iter<'a> {
     }
 }
 
-impl<'a> IntoIterator for &'a Idset {
-    type Item = u32;
-    type IntoIter = Iter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
-    }
-}
-
 pub struct IntoIter {
-    idset: Idset,
+    idset: OwnedIdset,
     current: u32,
 }
 
@@ -310,7 +319,7 @@ impl Iterator for IntoIter {
     }
 }
 
-impl IntoIterator for Idset {
+impl IntoIterator for OwnedIdset {
     type Item = u32;
     type IntoIter = IntoIter;
 

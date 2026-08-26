@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
+use std::sync::Arc;
 
 use bitflags::bitflags;
 use flux_sys::core::{
@@ -8,19 +9,20 @@ use flux_sys::core::{
     flux_aux_get, flux_aux_set, flux_clone, flux_close, flux_comms_error_set, flux_get_rank,
     flux_get_reactor, flux_get_size, flux_incref, flux_log, flux_log_set_appname,
     flux_log_set_procid, flux_match, flux_msg_t, flux_open, flux_pollevents, flux_pollfd,
-    flux_reconnect, flux_recv, flux_requeue, flux_respond, flux_respond_error, flux_respond_raw,
-    flux_send_new, flux_set_reactor, flux_t,
+    flux_reactor_t, flux_reconnect, flux_recv, flux_requeue, flux_respond, flux_respond_error,
+    flux_respond_raw, flux_send_new, flux_set_reactor, flux_t,
 };
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::error::{FluxError, FluxReturnType, Result, flux_try};
 use crate::flux_ptr_management::{
-    BorrowFluxPtr, BorrowFluxPtrNoArgs, FluxPtr, FromFluxPtr, FromFluxPtrNoArgs,
-    default_impl_as_flux_ptr,
+    AsFluxPtr, BorrowFluxPtr, BorrowFluxPtrNoArgs, Borrowed, FluxPtr, FromFluxPtr,
+    FromFluxPtrNoArgs, IntoFluxPtr, Owned, PossiblyDroppablePtr, define_as_flux_ptr_body,
+    define_into_flux_ptr_body,
 };
 use crate::msg::{Message, MessageMatch};
-use crate::reactor::Reactor;
+use crate::reactor::{BorrowedReactor, OwnedReactor, Reactor};
 use crate::request::Request;
 use crate::rpc::{Rpc, RpcFlags, RpcNodeId};
 use crate::uri::BaseUri;
@@ -176,18 +178,22 @@ pub(crate) struct AuxThinPtrWrapper {
     pub(crate) inner: Box<dyn Any + Send + Sync>,
 }
 
+pub(crate) type CommErrHandler = Box<dyn Fn(OwnedFluxHandle) -> i32 + Send + Sync>;
+
 /// A handle to a Flux message broker.
-pub struct FluxHandle {
+pub struct FluxHandle<State: PossiblyDroppablePtr<flux_t> = Owned<flux_t>> {
     /// The underlying `flux_t` C pointer.
-    pub(crate) h: FluxPtr<flux_t>,
+    pub(crate) h: FluxPtr<flux_t, State>,
     /// A field to store the user provided comm error handler to make sure it
     /// does not get deallocated too early.
-    comm_error_handler_cb: Option<Box<dyn FnMut(FluxHandle) -> i32>>,
+    comm_error_handler_cb: Option<Arc<CommErrHandler>>,
+    curr_set_reactor: Option<OwnedReactor>,
 }
 
-impl FluxHandle {
-    // TODO remaining methods: flux_opt_set, flux_opt_get, flux_get_conf, flux_set_conf_new, flux_flags*
+pub type OwnedFluxHandle = FluxHandle<Owned<flux_t>>;
+pub type BorrowedFluxHandle<'a> = FluxHandle<Borrowed<'a, flux_t>>;
 
+impl OwnedFluxHandle {
     /// Create a handle for the Flux broker described by the URI object
     pub fn new(uri: &BaseUri, flags: HandleFlags) -> Result<Self> {
         Self::new_from_str_uri(uri.uri.as_str(), flags)
@@ -206,8 +212,13 @@ impl FluxHandle {
         Ok(Self {
             h: flux_handle_rs,
             comm_error_handler_cb: None,
+            curr_set_reactor: None,
         })
     }
+}
+
+impl<State: PossiblyDroppablePtr<flux_t>> FluxHandle<State> {
+    // TODO remaining methods: flux_opt_set, flux_opt_get, flux_get_conf, flux_set_conf_new, flux_flags*
 
     /// Clone the Flux handle.
     ///
@@ -215,8 +226,25 @@ impl FluxHandle {
     /// This method is equivalent to FluxHandle's implementation of `TryFrom<&FluxHandle>`.
     /// If you want to get a new handle by simply incrementing the reference count, use
     /// `FluxHandle`'s implementation of `Clone` instead.
-    pub fn try_clone(&self) -> Result<Self> {
-        Self::try_from(self)
+    pub fn try_clone(&self) -> Result<FluxHandle<Owned<flux_t>>> {
+        FluxHandle::try_from(self)
+    }
+
+    /// Clone the Flux handle.
+    ///
+    /// Under the hood, this method simply increments the reference count on the current
+    /// FluxHandle's `flux_t` pointer. It then creates a new `FluxHandle` object using the
+    /// same `flux_t` pointer. If you want to get a new handle using `flux_clone`, use
+    /// the `try_clone` method or the implementation of `TryFrom<&FluxHandle>` instead.
+    pub fn to_owned(&self) -> Result<OwnedFluxHandle> {
+        unsafe {
+            flux_incref(self.h.as_mut_ptr());
+        }
+        Ok(FluxHandle {
+            h: FluxPtr::create_owned(self.h.as_mut_ptr(), flux_close)?,
+            comm_error_handler_cb: self.comm_error_handler_cb.clone(),
+            curr_set_reactor: self.curr_set_reactor.clone(),
+        })
     }
 
     /// Reconnect to the Flux broker.
@@ -339,25 +367,20 @@ impl FluxHandle {
     /// occurs when sending or receiving messages on this handle.
     pub fn set_comms_error_handler<F>(&mut self, handler: F) -> Result<()>
     where
-        F: FnMut(FluxHandle) -> i32 + Send + 'static,
+        F: Fn(FluxHandle) -> i32 + Send + Sync + 'static,
     {
-        // Store the handler on the heap in FluxHandle to ensure it doesn't get deallocated
-        self.comm_error_handler_cb = Some(Box::new(handler));
-        // Get a mutable reference to the Box itself. By getting a reference to the Box instead of the closure,
-        // we ensure we can get a thin pointer to pass to C.
-        let box_ref = self
-            .comm_error_handler_cb
-            .as_mut()
-            .ok_or(FluxError::Logic(String::from(
-                "Cannot unpack the callback for interacting with Flux's C API",
-            )))?;
+        let cb: CommErrHandler = Box::new(handler);
+        let wrapped_handler = Arc::new(cb);
+
+        self.comm_error_handler_cb = Some(wrapped_handler.clone());
+
         // Get a thin pointer to the closure.
-        let arg_ptr = box_ref as *mut Box<dyn FnMut(FluxHandle) -> i32> as *mut c_void;
+        let arg_ptr = Arc::as_ptr(&wrapped_handler) as *mut c_void;
 
         // Actual C callback function
         extern "C" fn trampoline(h: *mut flux_t, arg: *mut c_void) -> c_int {
             // Cast arg back to the real Rust callback
-            let closure = unsafe { &mut *(arg as *mut Box<dyn FnMut(FluxHandle) -> i32>) };
+            let closure = unsafe { &*(arg as *const CommErrHandler) };
             // Create a FluxHandle that will not call flux_close on drop to pass to the closure
             // We call flux_incref here so that the destructor of FluxHandle does not reduce the
             // reference count to 0.
@@ -372,7 +395,25 @@ impl FluxHandle {
                 }
             };
             // Inovke the user closure
-            closure(handle)
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| closure(handle.clone())))
+            {
+                Ok(rc) => rc,
+                Err(e) => {
+                    let panic_msg = if let Some(s) = e.downcast_ref::<&str>() {
+                        *s
+                    } else if let Some(s) = e.downcast_ref::<String>() {
+                        s.as_str()
+                    } else {
+                        "UNKNOWN PANIC"
+                    };
+                    flux_log_error!(
+                        handle,
+                        "Panic occured in the comms error handler: {}",
+                        panic_msg
+                    );
+                    -1
+                }
+            }
         }
 
         // Set the error handler
@@ -388,7 +429,7 @@ impl FluxHandle {
     /// If a Reactor was never set on this handle previously, this method will create a Reactor.
     /// The underlying C pointer stored in the Reactor object is either owned by the handle
     /// or by the Reactor that was previously passed to `set_reactor`.
-    pub fn get_reactor(&self) -> Result<Reactor> {
+    pub fn get_reactor<'r>(&'r self) -> Result<BorrowedReactor<'r>> {
         let reactor_ptr = flux_try!(flux_get_reactor(self.h.as_mut_ptr()))?;
         unsafe { Reactor::borrow_ptr(reactor_ptr) }
     }
@@ -397,8 +438,13 @@ impl FluxHandle {
     ///
     /// This method does not assume any ownership over the Reactor. The reactor will only
     /// be valid in the handle for the lifetime of the `reactor` argument.
-    pub fn set_reactor(&mut self, reactor: &Reactor) -> Result<()> {
-        flux_try!(empty_ok flux_set_reactor(self.h.as_mut_ptr(), reactor.c_reactor.as_mut_ptr()))
+    pub fn set_reactor<ReactState: PossiblyDroppablePtr<flux_reactor_t>>(
+        &mut self,
+        reactor: &Reactor<ReactState>,
+    ) -> Result<()> {
+        flux_try!(empty_ok flux_set_reactor(self.h.as_mut_ptr(), reactor.c_reactor.as_mut_ptr()))?;
+        self.curr_set_reactor = Some(reactor.to_owned()?);
+        Ok(())
     }
 
     /// Send the provided message with the Flux broker associated with the handle.
@@ -502,13 +548,13 @@ impl FluxHandle {
     ///
     /// This method sends the request to the Flux service identified by the provided topic string
     /// and node ID.
-    pub fn send_rpc(
-        &self,
+    pub fn send_rpc<'a>(
+        &'a self,
         topic: &str,
         data: &[u8],
         nodeid: RpcNodeId,
         flags: RpcFlags,
-    ) -> Result<Rpc<'_>> {
+    ) -> Result<Rpc<'a, State>> {
         Rpc::create(self, topic, data, nodeid, flags)
     }
 
@@ -516,13 +562,13 @@ impl FluxHandle {
     ///
     /// This method sends the request to the Flux service identified by the provided topic string
     /// and node ID.
-    pub fn send_rpc_json(
-        &self,
+    pub fn send_rpc_json<'a>(
+        &'a self,
         topic: &str,
         data: &Value,
         nodeid: RpcNodeId,
         flags: RpcFlags,
-    ) -> Result<Rpc<'_>> {
+    ) -> Result<Rpc<'a, State>> {
         Rpc::create_json(self, topic, data, nodeid, flags)
     }
 
@@ -530,13 +576,13 @@ impl FluxHandle {
     ///
     /// This method sends the request to the Flux service identified by the provided topic string
     /// and node ID.
-    pub fn send_rpc_serializable<T: Serialize>(
-        &self,
+    pub fn send_rpc_serializable<'a, T: Serialize>(
+        &'a self,
         topic: &str,
         data: &T,
         nodeid: RpcNodeId,
         flags: RpcFlags,
-    ) -> Result<Rpc<'_>> {
+    ) -> Result<Rpc<'a, State>> {
         Rpc::create_serializable(self, topic, data, nodeid, flags)
     }
 
@@ -544,12 +590,12 @@ impl FluxHandle {
     ///
     /// This method sends the request to the Flux service identified by the provided topic string
     /// and node ID.
-    pub fn send_rpc_message(
-        &self,
+    pub fn send_rpc_message<'a>(
+        &'a self,
         msg: &Message,
         nodeid: RpcNodeId,
         flags: RpcFlags,
-    ) -> Result<Rpc<'_>> {
+    ) -> Result<Rpc<'a, State>> {
         Rpc::create_message(self, msg, nodeid, flags)
     }
 
@@ -641,7 +687,7 @@ impl FluxHandle {
     }
 }
 
-impl Clone for FluxHandle {
+impl Clone for OwnedFluxHandle {
     /// Clone the Flux handle.
     ///
     /// Under the hood, this method simply increments the reference count on the current
@@ -649,18 +695,12 @@ impl Clone for FluxHandle {
     /// same `flux_t` pointer. If you want to get a new handle using `flux_clone`, use
     /// the `try_clone` method or the implementation of `TryFrom<&FluxHandle>` instead.
     fn clone(&self) -> Self {
-        unsafe {
-            flux_incref(self.h.as_mut_ptr());
-        }
-        Self {
-            h: FluxPtr::create_owned(self.h.as_mut_ptr(), flux_close)
-                .expect("flux_incref should never result in the flux_t pointer becoming NULL"),
-            comm_error_handler_cb: None,
-        }
+        self.to_owned()
+            .expect("flux_incref should never result in the flux_t pointer becoming NULL")
     }
 }
 
-impl TryFrom<&FluxHandle> for FluxHandle {
+impl<State: PossiblyDroppablePtr<flux_t>> TryFrom<&FluxHandle<State>> for OwnedFluxHandle {
     type Error = FluxError;
 
     /// Clone the Flux handle.
@@ -669,36 +709,48 @@ impl TryFrom<&FluxHandle> for FluxHandle {
     /// This method is equivalent to FluxHandle's `try_clone` method.
     /// If you want to get a new handle by simply incrementing the reference count, use
     /// `FluxHandle`'s implementation of `Clone` instead.
-    fn try_from(value: &FluxHandle) -> Result<FluxHandle> {
+    fn try_from(value: &FluxHandle<State>) -> Result<OwnedFluxHandle> {
         let cloned_flux_handle = flux_try!(flux_clone(value.h.as_mut_ptr()))?;
         Ok(FluxHandle {
             h: FluxPtr::create_owned(cloned_flux_handle, flux_close)?,
-            comm_error_handler_cb: None,
+            comm_error_handler_cb: value.comm_error_handler_cb.clone(),
+            curr_set_reactor: None,
         })
     }
 }
 
-unsafe impl BorrowFluxPtr for FluxHandle {
+unsafe impl<'a> BorrowFluxPtr for BorrowedFluxHandle<'a> {
     type CType = flux_t;
     type FromRawArgs = ();
 
     unsafe fn borrow_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
         Ok(Self {
-            h: FluxPtr::create_borrowed(ptr, flux_close)?,
+            h: FluxPtr::create_borrowed(ptr)?,
             comm_error_handler_cb: None,
+            curr_set_reactor: None,
         })
     }
 }
 
-unsafe impl FromFluxPtr for FluxHandle {
+unsafe impl FromFluxPtr for OwnedFluxHandle {
+    type CType = flux_t;
+    type FromRawArgs = ();
+
     unsafe fn from_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
         Ok(Self {
             h: FluxPtr::create_owned(ptr, flux_close)?,
             comm_error_handler_cb: None,
+            curr_set_reactor: None,
         })
     }
 }
 
-default_impl_as_flux_ptr!(FluxHandle, flux_t, h);
+unsafe impl<State: PossiblyDroppablePtr<flux_t>> AsFluxPtr for FluxHandle<State> {
+    define_as_flux_ptr_body!(flux_t, h);
+}
 
-unsafe impl Send for FluxHandle {}
+unsafe impl IntoFluxPtr for OwnedFluxHandle {
+    define_into_flux_ptr_body!(h);
+}
+
+unsafe impl<State: PossiblyDroppablePtr<flux_t>> Send for FluxHandle<State> {}

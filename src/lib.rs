@@ -3,7 +3,7 @@
 pub mod async_driver;
 pub mod duration;
 pub mod error;
-pub(crate) mod flux_ptr_management;
+pub mod flux_ptr_management;
 pub mod future;
 pub mod handle;
 pub mod hostlist;
@@ -32,9 +32,5 @@ pub(crate) mod tests;
 // downstream crates (e.g., via the flux_core::module::create_module_entrypoint macro)
 #[doc(hidden)]
 pub use flux_sys;
-
-pub use crate::flux_ptr_management::{
-    AsFluxPtr, BorrowFluxPtr, BorrowFluxPtrNoArgs, FromFluxPtr, FromFluxPtrNoArgs, IntoFluxPtr,
-};
 
 pub use crate::utils::SignalCode;

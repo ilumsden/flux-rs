@@ -24,7 +24,8 @@ use serde_json::Value;
 
 use crate::error::{FluxError, Result, flux_try};
 use crate::flux_ptr_management::{
-    BorrowFluxPtr, FluxPtr, FromFluxPtr, FromFluxPtrNoArgs, default_impl_as_flux_ptr,
+    AsFluxPtr, BorrowFluxPtr, Borrowed, FluxPtr, FromFluxPtr, FromFluxPtrNoArgs, IntoFluxPtr,
+    Owned, PossiblyDroppablePtr, define_as_flux_ptr_body, define_into_flux_ptr_body,
 };
 
 bitflags! {
@@ -146,11 +147,14 @@ impl From<&MessageMatch> for flux_match {
     }
 }
 
-pub struct Message {
-    pub(crate) c_msg: FluxPtr<flux_msg_t>,
+pub struct Message<State: PossiblyDroppablePtr<flux_msg_t> = Owned<flux_msg_t>> {
+    pub(crate) c_msg: FluxPtr<flux_msg_t, State>,
 }
 
-impl Message {
+pub type OwnedMessage = Message<Owned<flux_msg_t>>;
+pub type BorrowedMessage<'a> = Message<Borrowed<'a, flux_msg_t>>;
+
+impl OwnedMessage {
     pub fn new(msg_type: MessageType) -> Result<Self> {
         let msg_ptr = flux_try!(flux_msg_create(msg_type.bits() as _))?;
         Ok(Self {
@@ -158,11 +162,23 @@ impl Message {
         })
     }
 
-    pub fn try_clone(&self, copy_payload: bool) -> Result<Self> {
+    pub fn decode(data: &[u8]) -> Result<Self> {
+        let msg_ptr = flux_try!(flux_msg_decode(data.as_ptr() as *mut c_void, data.len()))?;
+        unsafe { Self::from_ptr(msg_ptr) }
+    }
+}
+
+impl<State: PossiblyDroppablePtr<flux_msg_t>> Message<State> {
+    pub fn try_clone(&self, copy_payload: bool) -> Result<OwnedMessage> {
         let new_msg_ptr = flux_try!(flux_msg_copy(self.c_msg.as_mut_ptr(), copy_payload))?;
-        Ok(Self {
+        Ok(Message {
             c_msg: FluxPtr::create_owned(new_msg_ptr, flux_msg_destroy)?,
         })
+    }
+
+    pub fn to_owned(&self) -> OwnedMessage {
+        let new_ptr = unsafe { flux_msg_incref(self.c_msg.as_mut_ptr()) };
+        Message { c_msg: FluxPtr::create_owned(new_ptr as *mut flux_msg_t, flux_msg_destroy).expect("The 'flux_msg_incref' function returned NULL, which indicates that the Message being cloned has memory corruption") }
     }
 
     pub fn has_flag(&self, flag: MessageFlag) -> bool {
@@ -269,7 +285,7 @@ impl Message {
         Ok(serde_json::from_slice(raw_payload)?)
     }
 
-    pub fn get_payload_deserializable<'a, D: Deserialize<'a>>(&'a self) -> Result<D> {
+    pub fn get_payload_deserializable<'b, D: Deserialize<'b>>(&'b self) -> Result<D> {
         let mut raw_payload = self.get_payload()?;
         if raw_payload.last() == Some(&0) {
             raw_payload = &raw_payload[..raw_payload.len() - 1];
@@ -431,21 +447,23 @@ impl Message {
         ))?;
         Ok(buffer)
     }
-
-    pub fn decode(data: &[u8]) -> Result<Self> {
-        let msg_ptr = flux_try!(flux_msg_decode(data.as_ptr() as *mut c_void, data.len()))?;
-        unsafe { Self::from_ptr(msg_ptr) }
-    }
 }
 
-impl Clone for Message {
+impl Clone for OwnedMessage {
     fn clone(&self) -> Self {
-        let new_ptr = unsafe { flux_msg_incref(self.c_msg.as_mut_ptr()) };
-        Self { c_msg: FluxPtr::create_owned(new_ptr as *mut flux_msg_t, flux_msg_destroy).expect("The 'flux_msg_incref' function returned NULL, which indicates that the Message being cloned has memory corruption") }
+        self.to_owned()
     }
 }
 
-impl PartialEq<MessageMatch> for Message {
+impl<State: PossiblyDroppablePtr<flux_msg_t>> TryFrom<&Message<State>> for OwnedMessage {
+    type Error = FluxError;
+
+    fn try_from(value: &Message<State>) -> std::prelude::v1::Result<Self, Self::Error> {
+        value.try_clone(true)
+    }
+}
+
+impl<State: PossiblyDroppablePtr<flux_msg_t>> PartialEq<MessageMatch> for Message<State> {
     fn eq(&self, other: &MessageMatch) -> bool {
         let c_match = flux_match {
             typemask: other.typemask.unwrap_or(MessageType::NONE).bits() as _,
@@ -459,18 +477,21 @@ impl PartialEq<MessageMatch> for Message {
     }
 }
 
-unsafe impl BorrowFluxPtr for Message {
+unsafe impl<'a> BorrowFluxPtr for BorrowedMessage<'a> {
     type CType = flux_msg_t;
     type FromRawArgs = ();
 
     unsafe fn borrow_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
         Ok(Self {
-            c_msg: FluxPtr::create_borrowed(ptr, flux_msg_destroy)?,
+            c_msg: FluxPtr::create_borrowed(ptr)?,
         })
     }
 }
 
-unsafe impl FromFluxPtr for Message {
+unsafe impl FromFluxPtr for OwnedMessage {
+    type CType = flux_msg_t;
+    type FromRawArgs = ();
+
     unsafe fn from_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
         Ok(Self {
             c_msg: FluxPtr::create_owned(ptr, flux_msg_destroy)?,
@@ -478,4 +499,10 @@ unsafe impl FromFluxPtr for Message {
     }
 }
 
-default_impl_as_flux_ptr!(Message, flux_msg_t, c_msg);
+unsafe impl<State: PossiblyDroppablePtr<flux_msg_t>> AsFluxPtr for Message<State> {
+    define_as_flux_ptr_body!(flux_msg_t, c_msg);
+}
+
+unsafe impl IntoFluxPtr for OwnedMessage {
+    define_into_flux_ptr_body!(c_msg);
+}

@@ -1,19 +1,20 @@
 use std::ffi::{CStr, CString, c_char, c_void};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use bitflags::bitflags;
 use flux_sys::core::{
     FLUX_NODEID_ANY, FLUX_NODEID_UPSTREAM, FLUX_RPC_NORESPONSE, FLUX_RPC_STREAMING, flux_rpc_get,
-    flux_rpc_get_matchtag, flux_rpc_get_nodeid, flux_rpc_message, flux_rpc_raw,
+    flux_rpc_get_matchtag, flux_rpc_get_nodeid, flux_rpc_message, flux_rpc_raw, flux_t,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::error::{Result, flux_try};
-use crate::flux_ptr_management::FromFluxPtrNoArgs;
-use crate::future::FluxFuture;
+use crate::flux_ptr_management::{Borrowed, FromFluxPtrNoArgs, Owned, PossiblyDroppablePtr};
+use crate::future::{AsyncFluxFuture, FluxFuture, OwnedFluxFuture};
 use crate::handle::FluxHandle;
 use crate::msg::Message;
-use crate::utils::impl_async_future_wrapper;
 
 bitflags! {
     #[repr(transparent)]
@@ -42,14 +43,17 @@ impl RpcNodeId {
     }
 }
 
-pub struct Rpc<'a> {
-    handle: Option<&'a FluxHandle>,
-    future: FluxFuture<'static>,
+pub struct Rpc<'a, FhState: PossiblyDroppablePtr<flux_t>> {
+    handle: Option<&'a FluxHandle<FhState>>,
+    future: FluxFuture,
 }
 
-impl<'a> Rpc<'a> {
+pub type OwnedRpc<'a> = Rpc<'a, Owned<flux_t>>;
+pub type BorrowedRpc<'a, 'fh> = Rpc<'a, Borrowed<'fh, flux_t>>;
+
+impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Rpc<'a, FhState> {
     pub fn create(
-        handle: &'a FluxHandle,
+        handle: &'a FluxHandle<FhState>,
         topic: &str,
         data: &[u8],
         nodeid: RpcNodeId,
@@ -76,7 +80,7 @@ impl<'a> Rpc<'a> {
     }
 
     pub fn create_json(
-        handle: &'a FluxHandle,
+        handle: &'a FluxHandle<FhState>,
         topic: &str,
         data: &Value,
         nodeid: RpcNodeId,
@@ -87,7 +91,7 @@ impl<'a> Rpc<'a> {
     }
 
     pub fn create_serializable<T: Serialize>(
-        handle: &'a FluxHandle,
+        handle: &'a FluxHandle<FhState>,
         topic: &str,
         data: &T,
         nodeid: RpcNodeId,
@@ -98,7 +102,7 @@ impl<'a> Rpc<'a> {
     }
 
     pub fn create_message(
-        handle: &'a FluxHandle,
+        handle: &'a FluxHandle<FhState>,
         msg: &Message,
         nodeid: RpcNodeId,
         flags: RpcFlags,
@@ -115,7 +119,7 @@ impl<'a> Rpc<'a> {
         })
     }
 
-    pub fn get(&self) -> Result<Option<&'a [u8]>> {
+    pub fn get<'s>(&'s self) -> Result<Option<&'s [u8]>> {
         let mut buf: *const c_char = std::ptr::null();
         flux_try!(flux_rpc_get(
             self.future.c_future.as_mut_ptr(),
@@ -139,7 +143,7 @@ impl<'a> Rpc<'a> {
         Ok(serde_json::from_slice(raw_payload)?)
     }
 
-    pub fn get_deserializable<D: Deserialize<'a>>(&self) -> Result<Option<D>> {
+    pub fn get_deserializable<'s, D: Deserialize<'s>>(&'s self) -> Result<Option<D>> {
         let mut raw_payload = match self.get()? {
             Some(p) => p,
             None => return Ok(None),
@@ -159,8 +163,8 @@ impl<'a> Rpc<'a> {
     }
 }
 
-impl From<FluxFuture<'static>> for Rpc<'_> {
-    fn from(value: FluxFuture<'static>) -> Self {
+impl From<OwnedFluxFuture> for Rpc<'_, Owned<flux_t>> {
+    fn from(value: OwnedFluxFuture) -> Self {
         Self {
             handle: None,
             future: value,
@@ -168,12 +172,31 @@ impl From<FluxFuture<'static>> for Rpc<'_> {
     }
 }
 
-impl_async_future_wrapper!(
-    #[from_sync(Rpc<'a>)]
-    pub struct AsyncRpc<'a> {
-        #[from_sync(future)]
-        future: AsyncFluxFuture,
-        #[from_sync(handle)]
-        handle: Option<&'a FluxHandle>,
+pub struct AsyncRpc<'a, State: PossiblyDroppablePtr<flux_t>> {
+    future: AsyncFluxFuture,
+    handle: Option<&'a FluxHandle<State>>,
+}
+
+impl<'a, State: PossiblyDroppablePtr<flux_t>> AsyncRpc<'a, State> {
+    pub fn new(sync_val: Rpc<'a, State>) -> Result<Self> {
+        Ok(Self {
+            future: AsyncFluxFuture::new(sync_val.future)?,
+            handle: sync_val.handle,
+        })
     }
-);
+}
+
+impl<'a, State: PossiblyDroppablePtr<flux_t>> ::std::future::Future for AsyncRpc<'a, State> {
+    type Output = Rpc<'a, State>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let pinned_future = Pin::new(&mut self.future);
+        match pinned_future.poll(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(sync_future) => Poll::Ready(Rpc {
+                future: sync_future,
+                handle: self.handle,
+            }),
+        }
+    }
+}

@@ -7,20 +7,24 @@ use crate::async_driver::base::{
     AsyncDriver, get_poll_fd_for_async, process_readable_event_for_async,
 };
 use crate::error::{FluxError, Result};
-use crate::handle::FluxHandle;
+use crate::handle::OwnedFluxHandle;
 use crate::reactor::FluxReactorThread;
 
 pub struct TokioDriver {
-    pub(crate) handle: Option<Arc<Mutex<FluxHandle>>>,
+    pub(crate) handle: Option<Arc<Mutex<OwnedFluxHandle>>>,
     pub(crate) task_handle: Option<JoinHandle<Result<()>>>,
 }
 
 impl TokioDriver {
-    pub(crate) async fn drive_with_reactor_fd(handle: Arc<Mutex<FluxHandle>>) -> Result<()> {
+    pub(crate) async fn drive_with_reactor_fd(handle: Arc<Mutex<OwnedFluxHandle>>) -> Result<()> {
         // Get the polling file descriptor
         let fd = get_poll_fd_for_async(handle.clone())?;
         // Wrap the file descriptor into a Tokio AsyncFd
         let async_fd = AsyncFd::new(fd)?;
+
+        // Drain any pre-existing events before awaiting I/O readiness
+        process_readable_event_for_async(handle.clone())?;
+
         loop {
             // Yield the thread to Tokio until the file descriptor becomes readable
             let mut guard = async_fd.readable().await?;
@@ -32,10 +36,10 @@ impl TokioDriver {
     }
 }
 
-impl TryFrom<Arc<Mutex<FluxHandle>>> for TokioDriver {
+impl TryFrom<Arc<Mutex<OwnedFluxHandle>>> for TokioDriver {
     type Error = FluxError;
 
-    fn try_from(handle: Arc<Mutex<FluxHandle>>) -> Result<Self> {
+    fn try_from(handle: Arc<Mutex<OwnedFluxHandle>>) -> Result<Self> {
         Ok(Self {
             handle: Some(handle),
             task_handle: None,

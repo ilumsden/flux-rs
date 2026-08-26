@@ -4,12 +4,12 @@ use std::ops::{Deref, DerefMut};
 use flux_sys::core::{flux_job_wait_get_id, flux_job_wait_get_status, flux_jobid_t};
 
 use crate::error::{FluxError, Result, flux_try};
-use crate::future::FluxFuture;
+use crate::future::OwnedFluxFuture;
 use crate::job::jobid::JobId;
 use crate::utils::impl_async_future_wrapper;
 
 pub struct JobStatus {
-    future: FluxFuture<'static>,
+    future: OwnedFluxFuture,
     id: Option<JobId>,
     success: Option<bool>,
     errstr: Option<String>,
@@ -61,7 +61,7 @@ impl JobStatus {
 }
 
 impl Deref for JobStatus {
-    type Target = FluxFuture<'static>;
+    type Target = OwnedFluxFuture;
 
     fn deref(&self) -> &Self::Target {
         &self.future
@@ -74,8 +74,8 @@ impl DerefMut for JobStatus {
     }
 }
 
-impl From<FluxFuture<'static>> for JobStatus {
-    fn from(value: FluxFuture<'static>) -> Self {
+impl From<OwnedFluxFuture> for JobStatus {
+    fn from(value: OwnedFluxFuture) -> Self {
         Self {
             future: value,
             id: None,

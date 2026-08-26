@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_void};
-use std::marker::PhantomData;
 use std::sync::Arc;
 
 use flux_sys::core::{
@@ -12,39 +11,44 @@ use flux_sys::core::{
     flux_future_incref, flux_future_next_child, flux_future_or_then, flux_future_push,
     flux_future_reset, flux_future_set_flux, flux_future_set_reactor, flux_future_t,
     flux_future_then, flux_future_wait_all_create, flux_future_wait_any_create,
-    flux_future_wait_for,
+    flux_future_wait_for, flux_reactor_t,
 };
 
 use crate::error::{FluxError, Result, flux_try};
 use crate::flux_ptr_management::{
-    BorrowFluxPtr, BorrowFluxPtrNoArgs, FluxPtr, FromFluxPtr, FromFluxPtrNoArgs,
-    default_impl_as_flux_ptr,
+    AsFluxPtr, BorrowFluxPtr, BorrowFluxPtrNoArgs, Borrowed, FluxPtr, FromFluxPtr,
+    FromFluxPtrNoArgs, IntoFluxPtr, Owned, PossiblyDroppablePtr, define_as_flux_ptr_body,
+    define_into_flux_ptr_body,
 };
-use crate::handle::{AuxThinPtrWrapper, FluxHandle};
-use crate::reactor::Reactor;
+use crate::handle::{AuxThinPtrWrapper, BorrowedFluxHandle, FluxHandle};
+use crate::reactor::{BorrowedReactor, Reactor};
 
-pub(crate) type FluxFutureInitializer = Arc<dyn Fn(&mut FluxFuture<'_>) + Send + 'static>;
+pub(crate) type FluxFutureInitializer = Arc<dyn Fn(&mut BorrowedFluxFuture<'_>) + Send + 'static>;
 
-pub struct FluxFuture<'a> {
+pub struct FluxFuture<State: PossiblyDroppablePtr<flux_future_t> = Owned<flux_future_t>> {
     /// The underlying flux_future_t C pointer wrapped in the FluxPtr struct
-    pub(crate) c_future: FluxPtr<flux_future_t>,
-    /// A PhantomData field to enforce borrowing rules on the flux_future_t pointer for child futures
-    _phantom: PhantomData<&'a flux_future_t>,
+    pub(crate) c_future: FluxPtr<flux_future_t, State>,
     /// A field to store the callback passed to FluxFuture::new to ensure it isn't dropped
     pub(crate) _init_cb: Option<FluxFutureInitializer>,
+    /// A field to store the Reactor passed to FluxFuture::set_reactor to ensure it isn't dropped
+    pub(crate) _curr_set_reactor: Option<Reactor>,
 }
 
-impl<'a> FluxFuture<'a> {
-    pub fn new<F>(initializer: F) -> Result<FluxFuture<'static>>
+pub type OwnedFluxFuture = FluxFuture<Owned<flux_future_t>>;
+pub type BorrowedFluxFuture<'a> = FluxFuture<Borrowed<'a, flux_future_t>>;
+
+impl OwnedFluxFuture {
+    pub fn new<F>(initializer: F) -> Result<Self>
     where
-        F: Fn(&mut FluxFuture<'_>) + Send + Sync + 'static,
+        F: Fn(&mut BorrowedFluxFuture<'_>) + Send + Sync + 'static,
     {
-        let cb: FluxFutureInitializer = Arc::new(initializer);
-        let raw_arg = Arc::into_raw(cb.clone()) as *mut c_void;
+        let arc_cb = Arc::new(initializer);
+        let raw_arg = Arc::as_ptr(&arc_cb) as *mut c_void;
+        let dyn_cb: FluxFutureInitializer = arc_cb;
 
         extern "C" fn trampoline<F>(f: *mut flux_future_t, arg: *mut c_void)
         where
-            F: Fn(&mut FluxFuture<'_>) + Send + Sync + 'static,
+            F: Fn(&mut BorrowedFluxFuture<'_>) + Send + Sync + 'static,
         {
             // Borrow the Arc without taking ownership — safe because _init_cb keeps it alive
             let cb = unsafe { &*(arg as *const F) };
@@ -52,17 +56,23 @@ impl<'a> FluxFuture<'a> {
                 Ok(f) => f,
                 Err(_) => return,
             };
-            cb(&mut future);
+            if let Err(e) =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cb(&mut future)))
+            {
+                eprintln!("Panic caught in FluxFuture::new callback: {:?}", e);
+            }
         }
 
         let ptr = flux_try!(flux_future_create(Some(trampoline::<F>), raw_arg))?;
         Ok(FluxFuture {
             c_future: FluxPtr::create_owned(ptr, flux_future_destroy)?,
-            _phantom: PhantomData,
-            _init_cb: Some(cb),
+            _init_cb: Some(dyn_cb),
+            _curr_set_reactor: None,
         })
     }
+}
 
+impl<State: PossiblyDroppablePtr<flux_future_t>> FluxFuture<State> {
     pub fn set_aux<T: Send + Sync + 'static>(&mut self, name: &str, data: T) -> Result<()> {
         let c_name = CString::new(name)?;
         let wrapper = Box::new(AuxThinPtrWrapper {
@@ -115,10 +125,15 @@ impl<'a> FluxFuture<'a> {
         ))
     }
 
-    pub fn set_reactor(&mut self, reactor: &Reactor) {
+    pub fn set_reactor<ReactState: PossiblyDroppablePtr<flux_reactor_t>>(
+        &mut self,
+        reactor: &Reactor<ReactState>,
+    ) -> Result<()> {
         unsafe {
             flux_future_set_reactor(self.c_future.as_mut_ptr(), reactor.c_reactor.as_mut_ptr());
         }
+        self._curr_set_reactor = Some(reactor.to_owned()?);
+        Ok(())
     }
 
     /// Get the Reactor associated with this future.
@@ -135,7 +150,7 @@ impl<'a> FluxFuture<'a> {
     /// or mutating the handle while using the returned `Reactor`.
     ///
     /// In single-threaded environments, this method is completely safe.
-    pub unsafe fn get_reactor(&self) -> Result<Reactor> {
+    pub unsafe fn get_reactor(&self) -> Result<BorrowedReactor<'_>> {
         let ptr = flux_try!(flux_future_get_reactor(self.c_future.as_mut_ptr()))?;
         unsafe { Reactor::borrow_ptr(ptr) }
     }
@@ -160,7 +175,7 @@ impl<'a> FluxFuture<'a> {
     /// or mutating the handle while using the returned `FluxHandle`.
     ///
     /// In single-threaded environments, this method is completely safe.
-    pub unsafe fn get_flux(&self) -> Result<FluxHandle> {
+    pub unsafe fn get_flux(&self) -> Result<BorrowedFluxHandle<'_>> {
         let ptr = flux_try!(flux_future_get_flux(self.c_future.as_mut_ptr()))?;
         unsafe { FluxHandle::borrow_ptr(ptr) }
     }
@@ -172,14 +187,14 @@ impl<'a> FluxFuture<'a> {
     /// object. So, with Clone, a user can go from `FluxFuture<'a>` to `FluxFuture<'a>` or from
     /// `FluxFuture<'static>` to `FluxFuture<'static>`, but they cannot go from `FluxFuture<'a>`
     /// to `FluxFuture<'static>`. This method provides a way to do that lifetime upgrade.
-    pub fn to_owned(&self) -> Result<FluxFuture<'static>> {
+    pub fn to_owned(&self) -> Result<OwnedFluxFuture> {
         unsafe {
             flux_future_incref(self.c_future.as_mut_ptr());
         }
         Ok(FluxFuture {
             c_future: FluxPtr::create_owned(self.c_future.as_mut_ptr(), flux_future_destroy)?,
-            _phantom: PhantomData,
             _init_cb: self._init_cb.clone(),
+            _curr_set_reactor: self._curr_set_reactor.clone(),
         })
     }
 
@@ -216,7 +231,7 @@ impl<'a> FluxFuture<'a> {
         callback: F,
     ) -> (*mut c_void, extern "C" fn(*mut flux_future_t, *mut c_void))
     where
-        F: FnOnce(FluxFuture<'static>) + Send + 'static,
+        F: FnOnce(OwnedFluxFuture) + Send + 'static,
     {
         // Get a stable C pointer to the user-provided callback
         let boxed_cb: Box<F> = Box::new(callback);
@@ -229,7 +244,7 @@ impl<'a> FluxFuture<'a> {
         // Define the actual callback
         extern "C" fn trampoline_cb<F>(f: *mut flux_future_t, arg: *mut c_void)
         where
-            F: FnOnce(FluxFuture<'static>) + Send + 'static,
+            F: FnOnce(OwnedFluxFuture) + Send + 'static,
         {
             // Get the user-provided closure from 'arg'
             let closure = unsafe { Box::from_raw(arg as *mut F) };
@@ -240,7 +255,11 @@ impl<'a> FluxFuture<'a> {
             };
             // Call the user callback. There is no need for 'arg' here because Rust
             // closures can capture
-            closure(owned_future);
+            if let Err(e) =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| closure(owned_future)))
+            {
+                eprintln!("Panic caught in FluxFuture continuation callback: {:?}", e);
+            }
         }
         (raw_ptr_cb, trampoline_cb::<F>)
     }
@@ -248,7 +267,7 @@ impl<'a> FluxFuture<'a> {
     /// flux_future_then
     pub fn then<F>(&mut self, timeout: f64, callback: F) -> Result<()>
     where
-        F: FnOnce(FluxFuture<'static>) + Send + 'static,
+        F: FnOnce(OwnedFluxFuture) + Send + 'static,
     {
         // Prepare the data needed for the call to flux_future_then
         let (raw_ptr_cb, trampoline) = self.prepare_callback(callback);
@@ -273,9 +292,9 @@ impl<'a> FluxFuture<'a> {
         Ok(())
     }
 
-    pub fn and_then<F>(&mut self, callback: F) -> Result<Self>
+    pub fn and_then<F>(&mut self, callback: F) -> Result<OwnedFluxFuture>
     where
-        F: FnOnce(FluxFuture<'static>) + Send + 'static,
+        F: FnOnce(OwnedFluxFuture) + Send + 'static,
     {
         // Prepare the data needed for the call to flux_future_then
         let (raw_ptr_cb, trampoline) = self.prepare_callback(callback);
@@ -294,9 +313,9 @@ impl<'a> FluxFuture<'a> {
         unsafe { FluxFuture::from_ptr(new_future) }
     }
 
-    pub fn or_then<F>(&mut self, callback: F) -> Result<Self>
+    pub fn or_then<F>(&mut self, callback: F) -> Result<OwnedFluxFuture>
     where
-        F: FnOnce(FluxFuture<'static>) + Send + 'static,
+        F: FnOnce(OwnedFluxFuture) + Send + 'static,
     {
         // Prepare the data needed for the call to flux_future_then
         let (raw_ptr_cb, trampoline) = self.prepare_callback(callback);
@@ -315,7 +334,10 @@ impl<'a> FluxFuture<'a> {
         unsafe { FluxFuture::from_ptr(new_future) }
     }
 
-    pub fn continue_with_future(&mut self, result_future: &FluxFuture) -> Result<()> {
+    pub fn continue_with_future<OtherState: PossiblyDroppablePtr<flux_future_t>>(
+        &mut self,
+        result_future: &FluxFuture<OtherState>,
+    ) -> Result<()> {
         flux_try!(empty_ok
             flux_future_continue(
                 self.c_future.as_mut_ptr(),
@@ -459,7 +481,7 @@ impl<'a> FluxFuture<'a> {
         Ok(Some(c_str.to_str()?.to_owned()))
     }
 
-    pub fn get_child<'b>(&'b self, name: &str) -> Result<Option<FluxFuture<'b>>> {
+    pub fn get_child(&self, name: &str) -> Result<Option<BorrowedFluxFuture<'_>>> {
         let c_name = CString::new(name)?;
         let flux_future_ptr =
             unsafe { flux_future_get_child(self.c_future.as_mut_ptr(), c_name.as_ptr()) };
@@ -476,52 +498,53 @@ impl<'a> FluxFuture<'a> {
     }
 }
 
-impl<'a> Clone for FluxFuture<'a> {
+impl Clone for OwnedFluxFuture {
     fn clone(&self) -> Self {
-        unsafe {
-            flux_future_incref(self.c_future.as_mut_ptr());
-        }
-        Self {
-            c_future: FluxPtr::create_owned(self.c_future.as_mut_ptr(), flux_future_destroy)
-                .expect("The cloned Future has a NULL C pointer, which should never happen"),
-            _phantom: PhantomData,
-            _init_cb: self._init_cb.clone(),
-        }
+        self.to_owned()
+            .expect("Failed to increment the reference count on the Flux future")
     }
 }
 
-unsafe impl<'a> BorrowFluxPtr for FluxFuture<'a> {
+unsafe impl<'a> BorrowFluxPtr for BorrowedFluxFuture<'a> {
     type CType = flux_future_t;
     type FromRawArgs = ();
 
     unsafe fn borrow_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
         Ok(Self {
-            c_future: FluxPtr::create_borrowed(ptr, flux_future_destroy)?,
-            _phantom: PhantomData,
+            c_future: FluxPtr::create_borrowed(ptr)?,
             _init_cb: None,
+            _curr_set_reactor: None,
         })
     }
 }
 
-unsafe impl FromFluxPtr for FluxFuture<'static> {
+unsafe impl FromFluxPtr for OwnedFluxFuture {
+    type CType = flux_future_t;
+    type FromRawArgs = ();
+
     unsafe fn from_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
         Ok(Self {
             c_future: FluxPtr::create_owned(ptr, flux_future_destroy)?,
-            _phantom: PhantomData,
             _init_cb: None,
+            _curr_set_reactor: None,
         })
     }
 }
 
-unsafe impl Send for FluxFuture<'_> {}
-unsafe impl Sync for FluxFuture<'_> {}
+unsafe impl<State: PossiblyDroppablePtr<flux_future_t>> Send for FluxFuture<State> {}
 
-default_impl_as_flux_ptr!(FluxFuture<'static>, flux_future_t, c_future);
+unsafe impl<State: PossiblyDroppablePtr<flux_future_t>> AsFluxPtr for FluxFuture<State> {
+    define_as_flux_ptr_body!(flux_future_t, c_future);
+}
 
-fn push_to_collective_future(
-    coll_future: &mut FluxFuture,
+unsafe impl IntoFluxPtr for OwnedFluxFuture {
+    define_into_flux_ptr_body!(c_future);
+}
+
+fn push_to_collective_future<State: PossiblyDroppablePtr<flux_future_t>>(
+    coll_future: &mut OwnedFluxFuture,
     name: &str,
-    child_future: FluxFuture,
+    child_future: FluxFuture<State>,
 ) -> Result<()> {
     let c_name = CString::new(name)?;
     // Increment the ref count of the future since it will be auto-decremented by drop at the
@@ -536,7 +559,9 @@ fn push_to_collective_future(
     )
 }
 
-pub fn create_wait_all_future(futures: HashMap<String, FluxFuture>) -> Result<FluxFuture> {
+pub fn create_wait_all_future<State: PossiblyDroppablePtr<flux_future_t>>(
+    futures: HashMap<String, FluxFuture<State>>,
+) -> Result<OwnedFluxFuture> {
     let raw_coll_future = flux_try!(flux_future_wait_all_create())?;
     let mut coll_future = unsafe { FluxFuture::from_ptr(raw_coll_future)? };
     for (name, child_future) in futures.into_iter() {
@@ -545,7 +570,9 @@ pub fn create_wait_all_future(futures: HashMap<String, FluxFuture>) -> Result<Fl
     Ok(coll_future)
 }
 
-pub fn create_wait_any_future(futures: HashMap<String, FluxFuture>) -> Result<FluxFuture> {
+pub fn create_wait_any_future<State: PossiblyDroppablePtr<flux_future_t>>(
+    futures: HashMap<String, FluxFuture<State>>,
+) -> Result<OwnedFluxFuture> {
     let raw_coll_future = flux_try!(flux_future_wait_any_create())?;
     let mut coll_future = unsafe { FluxFuture::from_ptr(raw_coll_future)? };
     for (name, child_future) in futures.into_iter() {

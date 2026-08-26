@@ -449,7 +449,7 @@ fn iter_count_matches_len() {
 #[test]
 fn ref_into_iterator_yields_all_ids() {
     let idset = make_idset(&[1, 2, 3]);
-    let ids: Vec<u32> = (&idset).into_iter().collect();
+    let ids: Vec<u32> = idset.into_iter().collect();
     assert_eq!(ids, vec![1, 2, 3]);
 }
 
@@ -566,7 +566,7 @@ fn debug_format_starts_with_type_name() {
     let idset = make_idset(&[1]);
     let debug_str = format!("{idset:?}");
     assert!(
-        debug_str.starts_with("Idset("),
+        debug_str.starts_with("OwnedIdset("),
         "Expected debug to start with 'Idset(', got: {debug_str}"
     );
 }

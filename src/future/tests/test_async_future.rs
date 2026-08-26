@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 
+use flux_sys::core::flux_future_t;
+
+use crate::flux_ptr_management::Owned;
 use crate::future::async_future::AsyncFluxFuture;
 use crate::future::sync_future::{FluxFuture, create_wait_all_future, create_wait_any_future};
 use crate::tests::common::with_handle;
@@ -8,12 +11,14 @@ use crate::tests::common::with_handle;
 // Helpers
 // =========================================================================
 
-fn make_wait_all() -> FluxFuture<'static> {
-    create_wait_all_future(HashMap::new()).expect("Failed to create empty wait_all future")
+fn make_wait_all() -> FluxFuture {
+    create_wait_all_future::<Owned<flux_future_t>>(HashMap::new())
+        .expect("Failed to create empty wait_all future")
 }
 
-fn make_wait_any() -> FluxFuture<'static> {
-    create_wait_any_future(HashMap::new()).expect("Failed to create empty wait_any future")
+fn make_wait_any() -> FluxFuture {
+    create_wait_any_future::<Owned<flux_future_t>>(HashMap::new())
+        .expect("Failed to create empty wait_any future")
 }
 
 // =========================================================================
@@ -32,7 +37,7 @@ fn new_with_wait_all_future_succeeds() {
     with_handle(|h| {
         let reactor = h.get_reactor().unwrap();
         let mut future = make_wait_all();
-        future.set_reactor(&reactor);
+        future.set_reactor(&reactor).unwrap();
         assert!(AsyncFluxFuture::new(future).is_ok());
     });
 }
@@ -42,7 +47,7 @@ fn new_with_wait_any_future_succeeds() {
     with_handle(|h| {
         let reactor = h.get_reactor().unwrap();
         let mut future = make_wait_any();
-        future.set_reactor(&reactor);
+        future.set_reactor(&reactor).unwrap();
         assert!(AsyncFluxFuture::new(future).is_ok());
     });
 }
@@ -54,7 +59,7 @@ fn new_with_sync_future_new_succeeds() {
     with_handle(|h| {
         let reactor = h.get_reactor().unwrap();
         let mut future = FluxFuture::new(|_| {}).unwrap();
-        future.set_reactor(&reactor);
+        future.set_reactor(&reactor).unwrap();
         assert!(AsyncFluxFuture::new(future).is_ok());
     });
 }
@@ -67,7 +72,7 @@ fn new_returns_ok_for_to_owned_future() {
         let reactor = h.get_reactor().unwrap();
         let base = make_wait_all();
         let mut owned = base.to_owned().unwrap();
-        owned.set_reactor(&reactor);
+        owned.set_reactor(&reactor).unwrap();
         assert!(AsyncFluxFuture::new(owned).is_ok());
     });
 }
@@ -78,10 +83,10 @@ fn new_returns_ok_for_cloned_future() {
         let reactor = h.get_reactor().unwrap();
         let base = make_wait_all();
         let mut cloned = base.clone();
-        cloned.set_reactor(&reactor);
+        cloned.set_reactor(&reactor).unwrap();
         // Both the original and clone can be independently wrapped.
         let mut base2 = make_wait_all();
-        base2.set_reactor(&reactor);
+        base2.set_reactor(&reactor).unwrap();
         assert!(AsyncFluxFuture::new(base2).is_ok());
         assert!(AsyncFluxFuture::new(cloned).is_ok());
     });
@@ -101,7 +106,7 @@ fn drop_without_await_does_not_panic() {
     with_handle(|h| {
         let reactor = h.get_reactor().unwrap();
         let mut future = make_wait_all();
-        future.set_reactor(&reactor);
+        future.set_reactor(&reactor).unwrap();
         let _af = AsyncFluxFuture::new(future).unwrap();
         // _af dropped here
     });
@@ -112,7 +117,7 @@ fn drop_wait_any_without_await_does_not_panic() {
     with_handle(|h| {
         let reactor = h.get_reactor().unwrap();
         let mut future = make_wait_any();
-        future.set_reactor(&reactor);
+        future.set_reactor(&reactor).unwrap();
         let _af = AsyncFluxFuture::new(future).unwrap();
     });
 }
@@ -125,7 +130,7 @@ fn multiple_constructions_do_not_panic() {
         let reactor = h.get_reactor().unwrap();
         for _ in 0..4 {
             let mut future = make_wait_all();
-            future.set_reactor(&reactor);
+            future.set_reactor(&reactor).unwrap();
             let _af = AsyncFluxFuture::new(future).unwrap();
         }
     });
@@ -147,6 +152,7 @@ mod tokio_tests {
     use super::*;
     use crate::async_driver::AsyncDriver;
     use crate::async_driver::TokioDriver;
+    use crate::future::BorrowedFluxFuture;
     use crate::handle::{FluxHandle, HandleFlags};
 
     fn open_shared_handle() -> Arc<Mutex<FluxHandle>> {
@@ -163,7 +169,7 @@ mod tokio_tests {
         with_handle(|h| {
             let reactor = h.get_reactor().unwrap();
             let mut future = make_wait_all();
-            future.set_reactor(&reactor);
+            future.set_reactor(&reactor).unwrap();
             assert!(AsyncFluxFuture::new(future).is_ok());
         });
     }
@@ -173,7 +179,7 @@ mod tokio_tests {
         with_handle(|h| {
             let reactor = h.get_reactor().unwrap();
             let mut future = make_wait_all();
-            future.set_reactor(&reactor);
+            future.set_reactor(&reactor).unwrap();
             let _af = AsyncFluxFuture::new(future).unwrap();
             // dropped here inside a tokio task — no await needed
         });
@@ -190,9 +196,12 @@ mod tokio_tests {
         let shared = open_shared_handle();
         let mut driver = TokioDriver::spawn_async_driver(shared.clone()).unwrap();
 
-        let reactor = shared.lock().unwrap().get_reactor().unwrap();
         let mut future = make_wait_all();
-        future.set_reactor(&reactor);
+        {
+            let handle = shared.lock().unwrap();
+            let reactor = handle.get_reactor().unwrap();
+            future.set_reactor(&reactor).unwrap();
+        }
 
         let af = AsyncFluxFuture::new(future).unwrap();
 
@@ -213,12 +222,15 @@ mod tokio_tests {
         let shared = open_shared_handle();
         let mut driver = TokioDriver::spawn_async_driver(shared.clone()).unwrap();
 
-        let reactor = shared.lock().unwrap().get_reactor().unwrap();
-        let mut future = FluxFuture::new(|f: &mut FluxFuture<'_>| {
+        let mut future = FluxFuture::new(|f: &mut BorrowedFluxFuture<'_>| {
             let _ = f.fulfill(None::<Box<()>>);
         })
         .unwrap();
-        future.set_reactor(&reactor);
+        {
+            let handle = shared.lock().unwrap();
+            let reactor = handle.get_reactor().unwrap();
+            future.set_reactor(&reactor).unwrap();
+        }
 
         let af = AsyncFluxFuture::new(future).unwrap();
 
@@ -236,9 +248,12 @@ mod tokio_tests {
         let shared = open_shared_handle();
         let mut driver = TokioDriver::spawn_async_driver(shared.clone()).unwrap();
 
-        let reactor = shared.lock().unwrap().get_reactor().unwrap();
         let mut future = make_wait_all();
-        future.set_reactor(&reactor);
+        {
+            let handle = shared.lock().unwrap();
+            let reactor = handle.get_reactor().unwrap();
+            future.set_reactor(&reactor).unwrap();
+        }
 
         {
             let _af = AsyncFluxFuture::new(future).unwrap();
@@ -266,6 +281,7 @@ mod smol_tests {
     use super::*;
     use crate::async_driver::AsyncDriver;
     use crate::async_driver::SmolDriver;
+    use crate::future::BorrowedFluxFuture;
     use crate::handle::{FluxHandle, HandleFlags};
 
     fn open_shared_handle() -> Arc<Mutex<FluxHandle>> {
@@ -282,7 +298,7 @@ mod smol_tests {
         with_handle(|h| {
             let reactor = h.get_reactor().unwrap();
             let mut future = make_wait_all();
-            future.set_reactor(&reactor);
+            future.set_reactor(&reactor).unwrap();
             assert!(AsyncFluxFuture::new(future).is_ok());
         });
     }
@@ -292,7 +308,7 @@ mod smol_tests {
         with_handle(|h| {
             let reactor = h.get_reactor().unwrap();
             let mut future = make_wait_all();
-            future.set_reactor(&reactor);
+            future.set_reactor(&reactor).unwrap();
             let _af = AsyncFluxFuture::new(future).unwrap();
             // dropped here — no await
         });
@@ -323,9 +339,12 @@ mod smol_tests {
             let shared = open_shared_handle();
             let mut driver = SmolDriver::spawn_async_driver(shared.clone()).unwrap();
 
-            let reactor = shared.lock().unwrap().get_reactor().unwrap();
             let mut future = make_wait_all();
-            future.set_reactor(&reactor);
+            {
+                let handle = shared.lock().unwrap();
+                let reactor = handle.get_reactor().unwrap();
+                future.set_reactor(&reactor).unwrap();
+            }
 
             let af = AsyncFluxFuture::new(future).unwrap();
 
@@ -344,12 +363,15 @@ mod smol_tests {
             let shared = open_shared_handle();
             let mut driver = SmolDriver::spawn_async_driver(shared.clone()).unwrap();
 
-            let reactor = shared.lock().unwrap().get_reactor().unwrap();
-            let mut future = FluxFuture::new(|f: &mut FluxFuture<'_>| {
+            let mut future = FluxFuture::new(|f: &mut BorrowedFluxFuture<'_>| {
                 let _ = f.fulfill(None::<Box<()>>);
             })
             .unwrap();
-            future.set_reactor(&reactor);
+            {
+                let handle = shared.lock().unwrap();
+                let reactor = handle.get_reactor().unwrap();
+                future.set_reactor(&reactor).unwrap();
+            }
 
             let af = AsyncFluxFuture::new(future).unwrap();
 
@@ -364,9 +386,12 @@ mod smol_tests {
         let shared = open_shared_handle();
         let mut driver = SmolDriver::spawn_async_driver(shared.clone()).unwrap();
 
-        let reactor = shared.lock().unwrap().get_reactor().unwrap();
         let mut future = make_wait_all();
-        future.set_reactor(&reactor);
+        {
+            let handle = shared.lock().unwrap();
+            let reactor = handle.get_reactor().unwrap();
+            future.set_reactor(&reactor).unwrap();
+        }
 
         {
             let _af = AsyncFluxFuture::new(future).unwrap();

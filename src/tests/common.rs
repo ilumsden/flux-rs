@@ -1,6 +1,6 @@
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
-use crate::handle::{FluxHandle, HandleFlags};
+use crate::handle::{FluxHandle, HandleFlags, OwnedFluxHandle};
 
 // -----------------------------------------------------------------------------
 // Shared Flux handle
@@ -14,7 +14,7 @@ use crate::handle::{FluxHandle, HandleFlags};
 // called.  If `FluxHandle` is already `Sync`, you can drop the `Mutex` and use
 // `OnceLock<FluxHandle>` directly.
 // -----------------------------------------------------------------------------
-static FLUX_HANDLE: OnceLock<Mutex<FluxHandle>> = OnceLock::new();
+static FLUX_HANDLE: OnceLock<Mutex<OwnedFluxHandle>> = OnceLock::new();
 
 /// Acquire a lock on the shared `FluxHandle` and pass a reference to `f`.
 ///

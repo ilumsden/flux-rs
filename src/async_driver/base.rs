@@ -2,24 +2,24 @@ use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
 use std::sync::{Arc, Mutex};
 
 use crate::error::{FluxError, Result};
-use crate::handle::{FluxHandle, PollEvents};
-use crate::reactor::{FluxReactorThread, Reactor, ReactorFlags};
+use crate::handle::{OwnedFluxHandle, PollEvents};
+use crate::reactor::{FluxReactorThread, OwnedReactor, ReactorFlags};
 
 pub trait AsyncDriver:
     Sized
-    + TryFrom<Arc<Mutex<FluxHandle>>, Error = FluxError>
+    + TryFrom<Arc<Mutex<OwnedFluxHandle>>, Error = FluxError>
     + TryFrom<FluxReactorThread, Error = FluxError>
 {
     fn spawn(&mut self) -> Result<()>;
     fn stop(&mut self) -> Result<()>;
 
-    fn spawn_async_driver(handle: Arc<Mutex<FluxHandle>>) -> Result<Self> {
+    fn spawn_async_driver(handle: Arc<Mutex<OwnedFluxHandle>>) -> Result<Self> {
         let mut driver = Self::try_from(handle)?;
         driver.spawn()?;
         Ok(driver)
     }
 
-    fn spawn_reactor_thread(reactor: Reactor) -> Result<Self> {
+    fn spawn_reactor_thread(reactor: OwnedReactor) -> Result<Self> {
         let flux_reactor_thread = FluxReactorThread::new(reactor);
         let mut driver = Self::try_from(flux_reactor_thread)?;
         driver.spawn()?;
@@ -41,7 +41,7 @@ impl AsFd for RawFdWrapper {
     }
 }
 
-pub(super) fn get_poll_fd_for_async(handle: Arc<Mutex<FluxHandle>>) -> Result<RawFdWrapper> {
+pub(super) fn get_poll_fd_for_async(handle: Arc<Mutex<OwnedFluxHandle>>) -> Result<RawFdWrapper> {
     handle
         .lock()
         .map_err(|_| {
@@ -53,7 +53,7 @@ pub(super) fn get_poll_fd_for_async(handle: Arc<Mutex<FluxHandle>>) -> Result<Ra
         .map(RawFdWrapper)
 }
 
-pub(super) fn process_readable_event_for_async(handle: Arc<Mutex<FluxHandle>>) -> Result<()> {
+pub(super) fn process_readable_event_for_async(handle: Arc<Mutex<OwnedFluxHandle>>) -> Result<()> {
     let locked_handle = handle.lock().map_err(|_| {
         FluxError::Logic(String::from(
             "Cannot get a reactor and pollevents because the mutex is poisoned",

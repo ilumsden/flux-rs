@@ -7,18 +7,22 @@ use crate::async_driver::base::{
     AsyncDriver, get_poll_fd_for_async, process_readable_event_for_async,
 };
 use crate::error::{FluxError, Result};
-use crate::handle::FluxHandle;
+use crate::handle::OwnedFluxHandle;
 use crate::reactor::FluxReactorThread;
 
 pub struct SmolDriver {
-    pub(crate) handle: Option<Arc<Mutex<FluxHandle>>>,
+    pub(crate) handle: Option<Arc<Mutex<OwnedFluxHandle>>>,
     pub(crate) task_handle: Option<Task<Result<()>>>,
 }
 
 impl SmolDriver {
-    pub(crate) async fn driver_with_reactor_fd(handle: Arc<Mutex<FluxHandle>>) -> Result<()> {
+    pub(crate) async fn driver_with_reactor_fd(handle: Arc<Mutex<OwnedFluxHandle>>) -> Result<()> {
         let fd = get_poll_fd_for_async(handle.clone())?;
         let async_fd = Async::new(fd)?;
+
+        // Drain any pre-existing events before awaiting I/O readiness
+        process_readable_event_for_async(handle.clone())?;
+
         loop {
             async_fd.readable().await?;
             process_readable_event_for_async(handle.clone())?;
@@ -26,10 +30,10 @@ impl SmolDriver {
     }
 }
 
-impl TryFrom<Arc<Mutex<FluxHandle>>> for SmolDriver {
+impl TryFrom<Arc<Mutex<OwnedFluxHandle>>> for SmolDriver {
     type Error = FluxError;
 
-    fn try_from(value: Arc<Mutex<FluxHandle>>) -> Result<Self> {
+    fn try_from(value: Arc<Mutex<OwnedFluxHandle>>) -> Result<Self> {
         Ok(Self {
             handle: Some(value),
             task_handle: None,

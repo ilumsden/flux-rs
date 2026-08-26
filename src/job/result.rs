@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::error::{FluxError, Result, flux_try};
-use crate::future::FluxFuture;
+use crate::future::OwnedFluxFuture;
 use crate::job::{JobId, JobInfo, JobStateFormat};
 use crate::utils::impl_async_future_wrapper;
 
@@ -73,7 +73,7 @@ impl Display for JobResultCode {
 }
 
 pub struct JobResult {
-    future: FluxFuture<'static>,
+    future: OwnedFluxFuture,
 }
 
 impl JobResult {
@@ -183,14 +183,14 @@ impl JobResult {
     }
 }
 
-impl From<FluxFuture<'static>> for JobResult {
-    fn from(value: FluxFuture<'static>) -> Self {
+impl From<OwnedFluxFuture> for JobResult {
+    fn from(value: OwnedFluxFuture) -> Self {
         Self { future: value }
     }
 }
 
 impl Deref for JobResult {
-    type Target = FluxFuture<'static>;
+    type Target = OwnedFluxFuture;
 
     fn deref(&self) -> &Self::Target {
         &self.future

@@ -1,14 +1,17 @@
 use std::ffi::CString;
 
-use flux_sys::core::{flux_service_register, flux_service_unregister};
+use flux_sys::core::{flux_service_register, flux_service_unregister, flux_t};
 
 use crate::error::{FluxError, Result};
-use crate::flux_ptr_management::FromFluxPtrNoArgs;
+use crate::flux_ptr_management::{FromFluxPtrNoArgs, PossiblyDroppablePtr};
 use crate::future::FluxFuture;
 use crate::handle::FluxHandle;
 use crate::rpc::Rpc;
 
-pub fn register_service(handle: &FluxHandle, name: &str) -> Result<()> {
+pub fn register_service<State: PossiblyDroppablePtr<flux_t>>(
+    handle: &FluxHandle<State>,
+    name: &str,
+) -> Result<()> {
     let c_name = CString::new(name)?;
     let ptr = unsafe { flux_service_register(handle.h.as_mut_ptr(), c_name.as_ptr()) };
     let rpc_future = Rpc::from(unsafe { FluxFuture::from_ptr(ptr)? });
@@ -38,7 +41,10 @@ pub fn register_service(handle: &FluxHandle, name: &str) -> Result<()> {
     }
 }
 
-pub fn unregister_service(handle: &FluxHandle, name: &str) -> Result<()> {
+pub fn unregister_service<State: PossiblyDroppablePtr<flux_t>>(
+    handle: &FluxHandle<State>,
+    name: &str,
+) -> Result<()> {
     let c_name = CString::new(name)?;
     let ptr = unsafe { flux_service_unregister(handle.h.as_mut_ptr(), c_name.as_ptr()) };
     let rpc_future = Rpc::from(unsafe { FluxFuture::from_ptr(ptr)? });

@@ -5,7 +5,7 @@ use crate::error::FluxError;
 use crate::flux_ptr_management::{AsFluxPtr, BorrowFluxPtrNoArgs, FromFluxPtrNoArgs, IntoFluxPtr};
 use crate::handle::{FluxHandle, HandleFlags, LogLevel, PollEvents};
 use crate::msg::MessageMatch;
-use crate::reactor::{Reactor, ReactorFlags};
+use crate::reactor::Reactor;
 use crate::request::Request;
 use crate::tests::common::with_handle;
 use crate::{flux_log, flux_log_debug, flux_log_error, flux_log_info, flux_log_warning};
@@ -323,14 +323,14 @@ fn get_reactor_produces_non_owning_reactor() {
 #[test]
 fn set_reactor_succeeds() {
     let mut h = open_fresh();
-    let reactor = Reactor::new(ReactorFlags::NONE).unwrap();
+    let reactor = Reactor::new().unwrap();
     assert!(h.set_reactor(&reactor).is_ok());
 }
 
 #[test]
 fn get_reactor_after_set_reactor_is_usable() {
     let mut h = open_fresh();
-    let reactor = Reactor::new(ReactorFlags::NONE).unwrap();
+    let reactor = Reactor::new().unwrap();
     h.set_reactor(&reactor).unwrap();
     let retrieved = h.get_reactor().unwrap();
     assert!(retrieved.now().is_ok());

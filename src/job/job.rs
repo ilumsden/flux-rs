@@ -2,19 +2,21 @@ use std::ffi::{CStr, CString, c_char};
 use std::ops::{Deref, DerefMut};
 
 use flux_sys::core::{
-    flux_job_cancel, flux_job_kill, flux_job_kvs_guest_key, flux_job_kvs_key,
+    flux_future_t, flux_job_cancel, flux_job_kill, flux_job_kvs_guest_key, flux_job_kvs_key,
     flux_job_kvs_namespace, flux_job_raise, flux_job_result, flux_job_set_urgency, flux_job_wait,
+    flux_t,
 };
 
 use crate::SignalCode;
 use crate::error::{FluxError, Result, flux_try};
-use crate::flux_ptr_management::FromFluxPtrNoArgs;
-use crate::future::FluxFuture;
+use crate::flux_ptr_management::{FromFluxPtrNoArgs, PossiblyDroppablePtr};
+use crate::future::{FluxFuture, OwnedFluxFuture};
 use crate::handle::FluxHandle;
 use crate::job::jobid::JobId;
 use crate::job::status::JobStatus;
 use crate::job::{JobResult, JobUrgency};
 use crate::kvs::KvsDir;
+use crate::kvs::kvs_dir::OwnedKvsDir;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct JobEventSeverity(u8);
@@ -46,20 +48,26 @@ impl DerefMut for JobEventSeverity {
     }
 }
 
-pub struct Job<'a> {
-    handle: &'a FluxHandle,
+pub struct Job<'a, State: PossiblyDroppablePtr<flux_t>> {
+    handle: &'a FluxHandle<State>,
     id: JobId,
 }
 
-impl<'a> Job<'a> {
-    pub fn new(handle: &'a FluxHandle, id: JobId) -> Result<Self> {
+impl<'a, State: PossiblyDroppablePtr<flux_t>> Job<'a, State> {
+    pub fn new(handle: &'a FluxHandle<State>, id: JobId) -> Result<Self> {
         Ok(Self { handle, id })
     }
 
     /// Build a Job from a FluxHandle reference and a FluxFuture from submit_async.
     ///
     /// This function is an alias to `Job::try_from`, provided by the implementation of `TryFrom<(&FluxHandle, FluxFuture)>`.
-    pub fn try_from_handle_and_future(handle: &'a FluxHandle, future: FluxFuture) -> Result<Self> {
+    pub fn try_from_handle_and_future<FutureState>(
+        handle: &'a FluxHandle<State>,
+        future: FluxFuture<FutureState>,
+    ) -> Result<Self>
+    where
+        FutureState: PossiblyDroppablePtr<flux_future_t>,
+    {
         Self::try_from((handle, future))
     }
 
@@ -88,7 +96,7 @@ impl<'a> Job<'a> {
         severity: Option<JobEventSeverity>,
         message: Option<&str>,
         exception_type: Option<&str>,
-    ) -> Result<FluxFuture<'static>> {
+    ) -> Result<OwnedFluxFuture> {
         let sev = severity.unwrap_or(JobEventSeverity::FATAL);
         let c_msg = message.map(CString::new).transpose()?;
         let c_exc_type = CString::new(exception_type.unwrap_or("cancel"))?;
@@ -102,7 +110,7 @@ impl<'a> Job<'a> {
         unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
-    pub fn cancel(&self, reason: Option<&str>) -> Result<FluxFuture<'static>> {
+    pub fn cancel(&self, reason: Option<&str>) -> Result<OwnedFluxFuture> {
         let c_reason = reason.map(CString::new).transpose()?;
         let future_ptr = flux_try!(flux_job_cancel(
             self.handle.h.as_mut_ptr(),
@@ -114,7 +122,7 @@ impl<'a> Job<'a> {
         unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
-    pub fn kill(&self, signal: SignalCode) -> Result<FluxFuture<'static>> {
+    pub fn kill(&self, signal: SignalCode) -> Result<OwnedFluxFuture> {
         let future_ptr = flux_try!(flux_job_kill(
             self.handle.h.as_mut_ptr(),
             *self.id,
@@ -123,7 +131,7 @@ impl<'a> Job<'a> {
         unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
-    pub fn set_urgency(&mut self, urgency: JobUrgency) -> Result<FluxFuture<'static>> {
+    pub fn set_urgency(&mut self, urgency: JobUrgency) -> Result<OwnedFluxFuture> {
         let future_ptr = flux_try!(flux_job_set_urgency(
             self.handle.h.as_mut_ptr(),
             *self.id,
@@ -132,7 +140,7 @@ impl<'a> Job<'a> {
         unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
-    pub fn get_kvs_dir(&self) -> Result<KvsDir> {
+    pub fn get_kvs_dir(&self) -> Result<OwnedKvsDir> {
         let key = self.get_kvs_key("")?;
         KvsDir::new(self.handle, Some(key.as_str()), None)
     }
@@ -177,7 +185,7 @@ impl<'a> Job<'a> {
         }
     }
 
-    pub fn get_kvs_guest_dir(&self) -> Result<KvsDir> {
+    pub fn get_kvs_guest_dir(&self) -> Result<OwnedKvsDir> {
         let key = self.get_kvs_guest_key("")?;
         KvsDir::new(self.handle, Some(key.as_str()), None)
     }
@@ -256,10 +264,15 @@ impl<'a> Job<'a> {
     }
 }
 
-impl<'a> TryFrom<(&'a FluxHandle, FluxFuture<'_>)> for Job<'a> {
+impl<'a, FhState, FutureState> TryFrom<(&'a FluxHandle<FhState>, FluxFuture<FutureState>)>
+    for Job<'a, FhState>
+where
+    FhState: PossiblyDroppablePtr<flux_t>,
+    FutureState: PossiblyDroppablePtr<flux_future_t>,
+{
     type Error = FluxError;
 
-    fn try_from(value: (&'a FluxHandle, FluxFuture)) -> Result<Self> {
+    fn try_from(value: (&'a FluxHandle<FhState>, FluxFuture<FutureState>)) -> Result<Self> {
         let job_id = JobId::try_from(value.1)?;
         Self::new(value.0, job_id)
     }

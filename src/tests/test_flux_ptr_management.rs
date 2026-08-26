@@ -1,7 +1,10 @@
 use std::cell::Cell;
 
 use crate::error::FluxError;
-use crate::flux_ptr_management::{AsFluxPtr, BorrowFluxPtr, FluxPtr, FromFluxPtr, IntoFluxPtr};
+use crate::flux_ptr_management::{
+    AsFluxPtr, BorrowFluxPtr, Borrowed, FluxPtr, FromFluxPtr, IntoFluxPtr, Owned,
+    PossiblyDroppablePtr,
+};
 // =========================================================================
 // Helpers
 // =========================================================================
@@ -29,22 +32,25 @@ fn was_destructor_called() -> bool {
 // A minimal local type that implements BorrowFluxPtr, FromFluxPtr,
 // AsFluxPtr, and IntoFluxPtr so all four traits (and their blanket
 // NoArgs wrappers) can be exercised without pulling in a real Flux type.
-struct DummyFlux {
-    ptr: FluxPtr<i32>,
+struct DummyFlux<State: PossiblyDroppablePtr<i32>> {
+    ptr: FluxPtr<i32, State>,
 }
 
-unsafe impl BorrowFluxPtr for DummyFlux {
+unsafe impl<'a> BorrowFluxPtr for DummyFlux<Borrowed<'a, i32>> {
     type CType = i32;
     type FromRawArgs = ();
 
     unsafe fn borrow_raw(ptr: *mut i32, _args: ()) -> crate::error::Result<Self> {
         Ok(Self {
-            ptr: FluxPtr::create_borrowed(ptr, noop_destructor)?,
+            ptr: FluxPtr::create_borrowed(ptr)?,
         })
     }
 }
 
-unsafe impl FromFluxPtr for DummyFlux {
+unsafe impl FromFluxPtr for DummyFlux<Owned<i32>> {
+    type CType = i32;
+    type FromRawArgs = ();
+
     unsafe fn from_raw(ptr: *mut i32, _args: ()) -> crate::error::Result<Self> {
         Ok(Self {
             ptr: FluxPtr::create_owned(ptr, noop_destructor)?,
@@ -52,7 +58,7 @@ unsafe impl FromFluxPtr for DummyFlux {
     }
 }
 
-unsafe impl AsFluxPtr for DummyFlux {
+unsafe impl<State: PossiblyDroppablePtr<i32>> AsFluxPtr for DummyFlux<State> {
     type CType = i32;
 
     fn as_mut_ptr(&self) -> *mut i32 {
@@ -60,7 +66,7 @@ unsafe impl AsFluxPtr for DummyFlux {
     }
 }
 
-unsafe impl IntoFluxPtr for DummyFlux {
+unsafe impl IntoFluxPtr for DummyFlux<Owned<i32>> {
     fn into_raw(self) -> *mut i32 {
         self.ptr.into_raw()
     }
@@ -72,7 +78,7 @@ unsafe impl IntoFluxPtr for DummyFlux {
 
 #[test]
 fn create_owned_null_returns_logic_error() {
-    let result = FluxPtr::<i32>::create_owned(std::ptr::null_mut(), noop_destructor);
+    let result = FluxPtr::<i32, Owned<i32>>::create_owned(std::ptr::null_mut(), noop_destructor);
     assert!(matches!(result, Err(FluxError::Logic(_))));
 }
 
@@ -96,21 +102,21 @@ fn create_owned_is_owned_true() {
 
 #[test]
 fn create_borrowed_null_returns_logic_error() {
-    let result = FluxPtr::<i32>::create_borrowed(std::ptr::null_mut(), noop_destructor);
+    let result = FluxPtr::<i32, Borrowed<i32>>::create_borrowed(std::ptr::null_mut());
     assert!(matches!(result, Err(FluxError::Logic(_))));
 }
 
 #[test]
 fn create_borrowed_non_null_returns_ok() {
     let mut val: i32 = 1;
-    let result = FluxPtr::create_borrowed(&mut val as *mut i32, noop_destructor);
+    let result = FluxPtr::create_borrowed(&mut val as *mut i32);
     assert!(result.is_ok());
 }
 
 #[test]
 fn create_borrowed_is_owned_false() {
     let mut val: i32 = 1;
-    let fp = FluxPtr::create_borrowed(&mut val as *mut i32, noop_destructor).unwrap();
+    let fp = FluxPtr::create_borrowed(&mut val as *mut i32).unwrap();
     assert!(!fp.is_owned());
 }
 
@@ -130,7 +136,7 @@ fn as_mut_ptr_owned_returns_original_pointer() {
 fn as_mut_ptr_borrowed_returns_original_pointer() {
     let mut val: i32 = 42;
     let ptr = &mut val as *mut i32;
-    let fp = FluxPtr::create_borrowed(ptr, noop_destructor).unwrap();
+    let fp = FluxPtr::create_borrowed(ptr).unwrap();
     assert_eq!(fp.as_mut_ptr(), ptr);
 }
 
@@ -180,8 +186,7 @@ fn drop_borrowed_does_not_call_destructor() {
     reset_tracking();
     let mut val: i32 = 0;
     {
-        let _fp =
-            FluxPtr::create_borrowed(&mut val as *mut i32, tracking_destructor::<i32>).unwrap();
+        let _fp = FluxPtr::create_borrowed(&mut val as *mut i32).unwrap();
     } // _fp dropped here
     assert!(
         !was_destructor_called(),

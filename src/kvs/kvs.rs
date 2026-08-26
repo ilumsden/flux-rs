@@ -1,4 +1,6 @@
 use std::ffi::{CStr, CString, c_char, c_void};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use flux_sys::core::{
     FLUX_USERID_UNKNOWN, flux_kvs_commit, flux_kvs_commit_get_sequence, flux_kvs_copy,
@@ -6,27 +8,27 @@ use flux_sys::core::{
     flux_kvs_lookup_cancel, flux_kvs_lookup_get_dir, flux_kvs_lookup_get_key,
     flux_kvs_lookup_get_raw, flux_kvs_lookup_get_symlink, flux_kvs_move, flux_kvs_namespace_create,
     flux_kvs_namespace_create_with, flux_kvs_namespace_remove, flux_kvsdir_copy, flux_kvsdir_t,
+    flux_t,
 };
 use serde::Deserialize;
 use serde_json::{Value, from_slice};
 
 use crate::error::{FluxError, Result, flux_try};
-use crate::flux_ptr_management::{FromFluxPtr, FromFluxPtrNoArgs};
-use crate::future::FluxFuture;
+use crate::flux_ptr_management::{FromFluxPtr, FromFluxPtrNoArgs, PossiblyDroppablePtr};
+use crate::future::{AsyncFluxFuture, FluxFuture, OwnedFluxFuture};
 use crate::handle::FluxHandle;
 use crate::kvs::flags::KvsFlags;
-use crate::kvs::kvs_dir::KvsDir;
+use crate::kvs::kvs_dir::{KvsDir, OwnedKvsDir};
 use crate::kvs::txn::KvsTransaction;
-use crate::utils::impl_async_future_wrapper;
 
-pub struct Kvs<'a> {
-    handle: &'a FluxHandle,
+pub struct Kvs<'a, FhState: PossiblyDroppablePtr<flux_t>> {
+    handle: &'a FluxHandle<FhState>,
 }
 
-impl<'a> Kvs<'a> {
+impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Kvs<'a, FhState> {
     // TODO implement support for functions related to treeobj and kvsdir
 
-    pub const fn new(handle: &'a FluxHandle) -> Self {
+    pub const fn new(handle: &'a FluxHandle<FhState>) -> Self {
         Self { handle }
     }
 
@@ -35,7 +37,7 @@ impl<'a> Kvs<'a> {
         namespace: &str,
         flags: KvsFlags,
         owner: Option<u32>,
-    ) -> Result<FluxFuture<'static>> {
+    ) -> Result<OwnedFluxFuture> {
         let c_namespace = CString::new(namespace)?;
         let c_owner = owner.unwrap_or(FLUX_USERID_UNKNOWN);
         let future_ptr = flux_try!(flux_kvs_namespace_create(
@@ -53,7 +55,7 @@ impl<'a> Kvs<'a> {
         rootref: &str,
         flags: KvsFlags,
         owner: Option<u32>,
-    ) -> Result<FluxFuture<'static>> {
+    ) -> Result<OwnedFluxFuture> {
         let c_namespace = CString::new(namespace)?;
         let c_rootref = CString::new(rootref)?;
         let c_owner = owner.unwrap_or(FLUX_USERID_UNKNOWN);
@@ -67,7 +69,7 @@ impl<'a> Kvs<'a> {
         unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
-    pub fn remove_namespace(&mut self, namespace: &str) -> Result<FluxFuture<'static>> {
+    pub fn remove_namespace(&mut self, namespace: &str) -> Result<OwnedFluxFuture> {
         let c_namespace = CString::new(namespace)?;
         let future_ptr = flux_try!(flux_kvs_namespace_remove(
             self.handle.h.as_mut_ptr(),
@@ -124,7 +126,7 @@ impl<'a> Kvs<'a> {
         commit_flags: KvsFlags,
         src_namespace: Option<&str>,
         dst_namespace: Option<&str>,
-    ) -> Result<FluxFuture<'static>> {
+    ) -> Result<OwnedFluxFuture> {
         let c_srckey = CString::new(srckey)?;
         let c_dstkey = CString::new(dstkey)?;
         let c_src_namespace: Option<CString> = src_namespace
@@ -155,7 +157,7 @@ impl<'a> Kvs<'a> {
         commit_flags: KvsFlags,
         src_namespace: Option<&str>,
         dst_namespace: Option<&str>,
-    ) -> Result<FluxFuture<'static>> {
+    ) -> Result<OwnedFluxFuture> {
         let c_srckey = CString::new(srckey)?;
         let c_dstkey = CString::new(dstkey)?;
         let c_src_namespace: Option<CString> = src_namespace
@@ -201,21 +203,21 @@ impl<'a> Kvs<'a> {
 }
 
 pub struct Lookup {
-    pub(crate) future: FluxFuture<'static>,
+    pub(crate) future: OwnedFluxFuture,
     pub(crate) key: String,
 }
 
 impl Lookup {
     // TODO implement get_treeobj
 
-    pub fn new(future: FluxFuture<'static>, key: &str) -> Self {
+    pub fn new(future: OwnedFluxFuture, key: &str) -> Self {
         Self {
             future,
             key: key.to_string(),
         }
     }
 
-    pub fn get(&mut self) -> Result<&[u8]> {
+    pub fn get(&self) -> Result<&[u8]> {
         let mut value_ptr: *const c_void = std::ptr::null();
         let mut value_len = 0;
         flux_try!(flux_kvs_lookup_get_raw(
@@ -231,17 +233,17 @@ impl Lookup {
         Ok(unsafe { std::slice::from_raw_parts(value_ptr as *const u8, value_len as _) })
     }
 
-    pub fn get_json(&mut self) -> Result<Value> {
+    pub fn get_json(&self) -> Result<Value> {
         let raw_value = self.get()?;
         Ok(from_slice(raw_value)?)
     }
 
-    pub fn get_deserializable<'a, D: Deserialize<'a>>(&'a mut self) -> Result<D> {
+    pub fn get_deserializable<'a, D: Deserialize<'a>>(&'a self) -> Result<D> {
         let raw_value = self.get()?;
         Ok(from_slice(raw_value)?)
     }
 
-    pub fn get_dir(&mut self) -> Result<KvsDir> {
+    pub fn get_dir(&self) -> Result<OwnedKvsDir> {
         let mut kvsdir: *const flux_kvsdir_t = std::ptr::null();
         flux_try!(flux_kvs_lookup_get_dir(
             self.future.c_future.as_mut_ptr(),
@@ -251,7 +253,7 @@ impl Lookup {
         unsafe { KvsDir::from_raw(kvsdir_copy, Some(self.key.clone())) }
     }
 
-    pub fn get_symlink(&mut self) -> Result<(&str, Option<&str>)> {
+    pub fn get_symlink(&self) -> Result<(&str, Option<&str>)> {
         let mut ns_val: *const c_char = std::ptr::null();
         let mut target_val: *const c_char = std::ptr::null();
         flux_try!(flux_kvs_lookup_get_symlink(
@@ -278,7 +280,7 @@ impl Lookup {
     /// * `Ok(Some(&str))` when the key is successfully obtained from Flux.
     /// * `Ok(None)` when the future used to create the `Lookup` object did not come from a KVS lookup.
     /// * `Err(FluxError)` when an error occurs.
-    pub fn get_key(&mut self) -> Result<Option<&str>> {
+    pub fn get_key(&self) -> Result<Option<&str>> {
         let key_ptr = unsafe { flux_kvs_lookup_get_key(self.future.c_future.as_mut_ptr()) };
         if key_ptr.is_null() {
             let last_os_error = std::io::Error::last_os_error();
@@ -298,23 +300,41 @@ impl Lookup {
     }
 }
 
-impl_async_future_wrapper!(
-    #[from_sync(Lookup)]
-    pub struct AsyncLookup {
-        #[from_sync(future)]
-        future: AsyncFluxFuture,
-        #[from_sync(key)]
-        #[to_sync_action(Clone)]
-        key: String,
+pub struct AsyncLookup {
+    future: AsyncFluxFuture,
+    key: String,
+}
+
+impl AsyncLookup {
+    pub fn new(sync_val: Lookup) -> Result<AsyncLookup> {
+        Ok(Self {
+            future: AsyncFluxFuture::new(sync_val.future)?,
+            key: sync_val.key,
+        })
     }
-);
+}
+
+impl Future for AsyncLookup {
+    type Output = Lookup;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let pinned_future = Pin::new(&mut self.future);
+        match pinned_future.poll(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(sync_future) => Poll::Ready(Lookup {
+                future: sync_future,
+                key: self.key.clone(),
+            }),
+        }
+    }
+}
 
 pub struct Getroot {
-    pub(crate) future: FluxFuture<'static>,
+    pub(crate) future: OwnedFluxFuture,
 }
 
 impl Getroot {
-    pub const fn new(future: FluxFuture<'static>) -> Self {
+    pub const fn new(future: OwnedFluxFuture) -> Self {
         Self { future }
     }
 
@@ -339,20 +359,38 @@ impl Getroot {
     }
 }
 
-impl_async_future_wrapper!(
-    #[from_sync(Getroot)]
-    pub struct AsyncGetroot {
-        #[from_sync(future)]
-        future: AsyncFluxFuture,
+pub struct AsyncGetroot {
+    future: AsyncFluxFuture,
+}
+
+impl AsyncGetroot {
+    pub fn new(sync_val: Getroot) -> Result<AsyncGetroot> {
+        Ok(Self {
+            future: AsyncFluxFuture::new(sync_val.future)?,
+        })
     }
-);
+}
+
+impl Future for AsyncGetroot {
+    type Output = Getroot;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let pinned_future = Pin::new(&mut self.future);
+        match pinned_future.poll(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(sync_future) => Poll::Ready(Getroot {
+                future: sync_future,
+            }),
+        }
+    }
+}
 
 pub struct Commit {
-    pub(crate) future: FluxFuture<'static>,
+    pub(crate) future: OwnedFluxFuture,
 }
 
 impl Commit {
-    pub const fn new(future: FluxFuture<'static>) -> Self {
+    pub const fn new(future: OwnedFluxFuture) -> Self {
         Self { future }
     }
 
@@ -368,10 +406,28 @@ impl Commit {
     }
 }
 
-impl_async_future_wrapper!(
-    #[from_sync(Commit)]
-    pub struct AsyncCommit {
-        #[from_sync(future)]
-        future: AsyncFluxFuture,
+pub struct AsyncCommit {
+    future: AsyncFluxFuture,
+}
+
+impl AsyncCommit {
+    pub fn new(sync_val: Commit) -> Result<AsyncCommit> {
+        Ok(Self {
+            future: AsyncFluxFuture::new(sync_val.future)?,
+        })
     }
-);
+}
+
+impl Future for AsyncCommit {
+    type Output = Commit;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let pinned_future = Pin::new(&mut self.future);
+        match pinned_future.poll(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(sync_future) => Poll::Ready(Commit {
+                future: sync_future,
+            }),
+        }
+    }
+}

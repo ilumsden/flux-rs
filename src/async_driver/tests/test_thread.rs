@@ -5,7 +5,7 @@ use crate::async_driver::thread::ThreadDriver;
 use crate::error::FluxError;
 use crate::handle::FluxHandle;
 use crate::handle::HandleFlags;
-use crate::reactor::{FluxReactorThread, Reactor, ReactorFlags};
+use crate::reactor::{FluxReactorThread, Reactor};
 
 // =========================================================================
 // Helpers
@@ -13,8 +13,7 @@ use crate::reactor::{FluxReactorThread, Reactor, ReactorFlags};
 
 /// Create a fresh Reactor and wrap it in a FluxReactorThread for testing.
 fn make_reactor_thread() -> FluxReactorThread {
-    let reactor =
-        Reactor::new(ReactorFlags::NONE).expect("Failed to create Reactor for ThreadDriver test");
+    let reactor = Reactor::new().expect("Failed to create Reactor for ThreadDriver test");
     FluxReactorThread::new(reactor)
 }
 
@@ -97,7 +96,7 @@ fn spawn_async_driver_always_returns_logic_error() {
 
 #[test]
 fn spawn_reactor_thread_succeeds() {
-    let reactor = Reactor::new(ReactorFlags::NONE).unwrap();
+    let reactor = Reactor::new().unwrap();
     assert!(ThreadDriver::spawn_reactor_thread(reactor).is_ok());
 }
 
@@ -105,7 +104,7 @@ fn spawn_reactor_thread_succeeds() {
 fn spawn_reactor_thread_driver_field_is_none_after_spawn() {
     // spawn() calls driver.spawn() which starts the reactor thread;
     // the driver field is still Some until stop() is called.
-    let reactor = Reactor::new(ReactorFlags::NONE).unwrap();
+    let reactor = Reactor::new().unwrap();
     let driver = ThreadDriver::spawn_reactor_thread(reactor).unwrap();
     assert!(
         driver.driver.is_some(),

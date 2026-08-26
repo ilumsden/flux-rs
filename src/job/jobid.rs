@@ -3,11 +3,13 @@ use std::fmt::Display;
 use std::ops::{Deref, DerefMut};
 
 use flux_sys::core::{
-    FLUX_JOBID_ANY, flux_job_id_encode, flux_job_id_parse, flux_job_submit_get_id, flux_jobid_t,
+    FLUX_JOBID_ANY, flux_future_t, flux_job_id_encode, flux_job_id_parse, flux_job_submit_get_id,
+    flux_jobid_t,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::error::{FluxError, Result, flux_try};
+use crate::flux_ptr_management::PossiblyDroppablePtr;
 use crate::future::FluxFuture;
 
 pub enum JobIdEncodingType {
@@ -185,10 +187,10 @@ impl From<flux_jobid_t> for JobId {
     }
 }
 
-impl TryFrom<FluxFuture<'_>> for JobId {
+impl<State: PossiblyDroppablePtr<flux_future_t>> TryFrom<FluxFuture<State>> for JobId {
     type Error = FluxError;
 
-    fn try_from(value: FluxFuture) -> Result<Self> {
+    fn try_from(value: FluxFuture<State>) -> Result<Self> {
         let mut c_jobid: flux_jobid_t = 0;
         flux_try!(flux_job_submit_get_id(
             value.c_future.as_mut_ptr(),

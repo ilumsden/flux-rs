@@ -4,15 +4,15 @@ use bitflags::bitflags;
 use errno::{Errno, set_errno};
 use flux_sys::core::{
     FLUX_REACTOR_NOWAIT, FLUX_REACTOR_ONCE, flux_reactor_create, flux_reactor_destroy,
-    flux_reactor_now, flux_reactor_now_update, flux_reactor_run, flux_reactor_stop,
-    flux_reactor_stop_error, flux_reactor_t, flux_reactor_time,
+    flux_reactor_incref, flux_reactor_now, flux_reactor_now_update, flux_reactor_run,
+    flux_reactor_stop, flux_reactor_stop_error, flux_reactor_t, flux_reactor_time,
 };
 
-#[cfg(flux_core_has_reactor_ref_count)]
-use flux_sys::core::flux_reactor_incref;
-
 use crate::error::{Result, flux_try};
-use crate::flux_ptr_management::{BorrowFluxPtr, FluxPtr, FromFluxPtr, default_impl_as_flux_ptr};
+use crate::flux_ptr_management::{
+    AsFluxPtr, BorrowFluxPtr, Borrowed, FluxPtr, FromFluxPtr, IntoFluxPtr, Owned,
+    PossiblyDroppablePtr, define_as_flux_ptr_body, define_into_flux_ptr_body,
+};
 
 bitflags! {
     #[repr(transparent)]
@@ -24,22 +24,31 @@ bitflags! {
     }
 }
 
-pub struct Reactor {
-    pub(crate) c_reactor: FluxPtr<flux_reactor_t>,
+pub struct Reactor<State: PossiblyDroppablePtr<flux_reactor_t> = Owned<flux_reactor_t>> {
+    pub(crate) c_reactor: FluxPtr<flux_reactor_t, State>,
 }
 
-unsafe impl Send for Reactor {}
+pub type OwnedReactor = Reactor<Owned<flux_reactor_t>>;
+pub type BorrowedReactor<'a> = Reactor<Borrowed<'a, flux_reactor_t>>;
 
-impl Reactor {
-    pub fn new(flags: ReactorFlags) -> Result<Self> {
-        let c_flags = if cfg!(flux_core_reactor_create_accepts_flags) {
-            flags.bits()
-        } else {
-            0
-        };
-        let reactor_ptr = flux_try!(flux_reactor_create(c_flags as _))?;
+unsafe impl<State: PossiblyDroppablePtr<flux_reactor_t>> Send for Reactor<State> {}
+
+impl OwnedReactor {
+    pub fn new() -> Result<Self> {
+        let reactor_ptr = flux_try!(flux_reactor_create(0))?;
         Ok(Self {
             c_reactor: FluxPtr::create_owned(reactor_ptr, flux_reactor_destroy)?,
+        })
+    }
+}
+
+impl<State: PossiblyDroppablePtr<flux_reactor_t>> Reactor<State> {
+    pub fn to_owned(&self) -> Result<OwnedReactor> {
+        unsafe {
+            flux_reactor_incref(self.c_reactor.as_mut_ptr());
+        }
+        Ok(Reactor {
+            c_reactor: FluxPtr::create_owned(self.c_reactor.as_mut_ptr(), flux_reactor_destroy)?,
         })
     }
 
@@ -92,33 +101,29 @@ impl Reactor {
     }
 }
 
-#[cfg(flux_core_has_reactor_ref_count)]
-impl Clone for Reactor {
+impl Clone for OwnedReactor {
     fn clone(&self) -> Self {
-        unsafe {
-            flux_reactor_incref(self.c_reactor.as_mut_ptr());
-        }
-        Self {
-            c_reactor: FluxPtr::create_owned(self.c_reactor.as_mut_ptr(), flux_reactor_destroy)
-                .expect(
-                "The reactor being cloned has a NULL internal pointer, which shouldn't be possible",
-            ),
-        }
+        self.to_owned().expect(
+            "The reactor being cloned has a NULL internal pointer, which shouldn't be possible",
+        )
     }
 }
 
-unsafe impl BorrowFluxPtr for Reactor {
+unsafe impl<'a> BorrowFluxPtr for BorrowedReactor<'a> {
     type CType = flux_reactor_t;
     type FromRawArgs = ();
 
     unsafe fn borrow_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
         Ok(Self {
-            c_reactor: FluxPtr::create_borrowed(ptr, flux_reactor_destroy)?,
+            c_reactor: FluxPtr::create_borrowed(ptr)?,
         })
     }
 }
 
-unsafe impl FromFluxPtr for Reactor {
+unsafe impl FromFluxPtr for OwnedReactor {
+    type CType = flux_reactor_t;
+    type FromRawArgs = ();
+
     unsafe fn from_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
         Ok(Self {
             c_reactor: FluxPtr::create_owned(ptr, flux_reactor_destroy)?,
@@ -126,7 +131,13 @@ unsafe impl FromFluxPtr for Reactor {
     }
 }
 
-default_impl_as_flux_ptr!(Reactor, flux_reactor_t, c_reactor);
+unsafe impl<State: PossiblyDroppablePtr<flux_reactor_t>> AsFluxPtr for Reactor<State> {
+    define_as_flux_ptr_body!(flux_reactor_t, c_reactor);
+}
+
+unsafe impl IntoFluxPtr for OwnedReactor {
+    define_into_flux_ptr_body!(c_reactor);
+}
 
 /// A struct for launching a progress thread for the Flux reactor.
 ///
@@ -135,16 +146,16 @@ default_impl_as_flux_ptr!(Reactor, flux_reactor_t, c_reactor);
 /// the reactor. For more async runtime-native integration, see FluxAsyncDriver.
 pub struct FluxReactorThread {
     /// A pointer to the Flux reactor.
-    reactor: Reactor,
+    reactor: OwnedReactor,
     /// A handle to the spawned reactor thread.
     handle: Option<JoinHandle<Result<()>>>,
 }
 
-unsafe impl Send for FluxReactorThread {}
-unsafe impl Sync for FluxReactorThread {}
+unsafe impl<'a> Send for FluxReactorThread {}
+unsafe impl<'a> Sync for FluxReactorThread {}
 
 impl FluxReactorThread {
-    pub fn new(reactor: Reactor) -> Self {
+    pub fn new(reactor: OwnedReactor) -> Self {
         Self {
             reactor,
             handle: None,
@@ -154,10 +165,7 @@ impl FluxReactorThread {
     /// Spawns a background thread to drive the Flux reactor.
     pub fn spawn(&mut self) -> Result<()> {
         let mut reactor_copy = Reactor {
-            c_reactor: FluxPtr::create_borrowed(
-                self.reactor.c_reactor.as_mut_ptr(),
-                flux_reactor_destroy,
-            )?,
+            c_reactor: FluxPtr::create_borrowed(self.reactor.c_reactor.as_mut_ptr())?,
         };
         // This thread simply calls `flux_reactor_run` to run indefinitely.
         // If using an async runtime, this thread will ensure the callbacks registered

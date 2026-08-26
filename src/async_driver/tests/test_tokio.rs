@@ -5,7 +5,7 @@ use crate::async_driver::tokio::TokioDriver;
 use crate::error::FluxError;
 use crate::handle::FluxHandle;
 use crate::handle::HandleFlags;
-use crate::reactor::{FluxReactorThread, Reactor, ReactorFlags};
+use crate::reactor::{FluxReactorThread, Reactor};
 
 // =========================================================================
 // Helpers
@@ -19,8 +19,7 @@ fn make_shared_handle() -> Arc<Mutex<FluxHandle>> {
 }
 
 fn make_reactor_thread() -> FluxReactorThread {
-    let reactor =
-        Reactor::new(ReactorFlags::NONE).expect("Failed to create Reactor for TokioDriver test");
+    let reactor = Reactor::new().expect("Failed to create Reactor for TokioDriver test");
     FluxReactorThread::new(reactor)
 }
 
@@ -86,7 +85,7 @@ fn try_from_reactor_thread_error_message_mentions_reactor_thread() {
 
 #[test]
 fn spawn_reactor_thread_always_returns_logic_error() {
-    let reactor = Reactor::new(ReactorFlags::NONE).unwrap();
+    let reactor = Reactor::new().unwrap();
     assert!(matches!(
         TokioDriver::spawn_reactor_thread(reactor),
         Err(FluxError::Logic(_))

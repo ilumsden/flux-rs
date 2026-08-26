@@ -5,4 +5,6 @@ mod sync_future;
 mod tests;
 
 pub use async_future::AsyncFluxFuture;
-pub use sync_future::{FluxFuture, create_wait_all_future, create_wait_any_future};
+pub use sync_future::{
+    BorrowedFluxFuture, FluxFuture, OwnedFluxFuture, create_wait_all_future, create_wait_any_future,
+};

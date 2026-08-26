@@ -8,14 +8,14 @@ use flux_sys::core::{flux_future_incref, flux_future_t, flux_future_then};
 
 use crate::error::{FluxError, Result};
 use crate::flux_ptr_management::FromFluxPtrNoArgs;
-use crate::future::sync_future::FluxFuture;
+use crate::future::sync_future::{FluxFuture, OwnedFluxFuture};
 
 /// A struct providing the shared state between the Flux runtime and Rust async runtime
 struct SharedState {
     /// The waker for the Rust async runtime
     waker: Option<Waker>,
     /// The result of the Flux future. This will either store the real result or an error message.
-    result: Option<FluxFuture<'static>>,
+    result: Option<OwnedFluxFuture>,
 }
 
 /// A Rust Future wrapper around `flux_future_t`.
@@ -24,13 +24,13 @@ struct SharedState {
 /// Rust object must have ownership over the underlying `flux_future_t`. If you have a more
 /// generic `FluxFuture<'a>`, you should first call `FluxFuture::to_owned` to get a `FluxFuture<'static>`.
 pub struct AsyncFluxFuture {
-    _inner: FluxFuture<'static>,
+    _inner: OwnedFluxFuture,
     state: Arc<Mutex<SharedState>>,
 }
 
 impl AsyncFluxFuture {
     /// Creates a new AsyncFluxFuture from a Flux future.
-    pub fn new(future: FluxFuture<'static>) -> Result<Self> {
+    pub fn new(future: OwnedFluxFuture) -> Result<Self> {
         // Create the shared state between Flux runtime and Rust async runtime
         let state = Arc::new(Mutex::new(SharedState {
             waker: None,
@@ -87,7 +87,7 @@ impl AsyncFluxFuture {
 }
 
 impl Future for AsyncFluxFuture {
-    type Output = FluxFuture<'static>;
+    type Output = OwnedFluxFuture;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // Lock the shared state for the async runtime

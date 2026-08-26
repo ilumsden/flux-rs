@@ -1,28 +1,32 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use flux_sys::core::{flux_future_destroy, flux_future_incref};
+use flux_sys::core::{flux_future_destroy, flux_future_incref, flux_future_t};
 
 use crate::error::FluxError;
-use crate::flux_ptr_management::{BorrowFluxPtrNoArgs, FromFluxPtrNoArgs, IntoFluxPtr};
+use crate::flux_ptr_management::{
+    BorrowFluxPtrNoArgs, Borrowed, FromFluxPtrNoArgs, IntoFluxPtr, Owned,
+};
 use crate::future::sync_future::{FluxFuture, create_wait_all_future, create_wait_any_future};
-use crate::reactor::{Reactor, ReactorFlags};
+use crate::reactor::Reactor;
 use crate::tests::common::with_handle;
 
 // =========================================================================
 // Helpers
 // =========================================================================
 
-fn make_wait_all() -> FluxFuture<'static> {
-    create_wait_all_future(HashMap::new()).expect("Failed to create empty wait_all future")
+fn make_wait_all() -> FluxFuture {
+    create_wait_all_future::<Owned<flux_future_t>>(HashMap::new())
+        .expect("Failed to create empty wait_all future")
 }
 
-fn make_wait_any() -> FluxFuture<'static> {
-    create_wait_any_future(HashMap::new()).expect("Failed to create empty wait_any future")
+fn make_wait_any() -> FluxFuture {
+    create_wait_any_future::<Owned<flux_future_t>>(HashMap::new())
+        .expect("Failed to create empty wait_any future")
 }
 
 /// Build a wait_all future that has one unfulfilled child under the given name.
-fn make_wait_all_with_child(name: &str) -> FluxFuture<'static> {
+fn make_wait_all_with_child(name: &str) -> FluxFuture {
     let child = make_wait_all();
     let mut map = HashMap::new();
     map.insert(name.to_string(), child);
@@ -208,16 +212,16 @@ fn get_aux_raw_nul_byte_key_returns_error() {
 #[test]
 fn set_reactor_and_get_reactor_succeeds() {
     let mut future = make_wait_all();
-    let reactor = Reactor::new(ReactorFlags::NONE).unwrap();
-    future.set_reactor(&reactor);
+    let reactor = Reactor::new().unwrap();
+    future.set_reactor(&reactor).unwrap();
     assert!(unsafe { future.get_reactor().is_ok() });
 }
 
 #[test]
 fn get_reactor_after_set_produces_non_owning_reactor() {
     let mut future = make_wait_all();
-    let reactor = Reactor::new(ReactorFlags::NONE).unwrap();
-    future.set_reactor(&reactor);
+    let reactor = Reactor::new().unwrap();
+    future.set_reactor(&reactor).unwrap();
     let borrowed = unsafe { future.get_reactor().unwrap() };
     assert!(!borrowed.c_reactor.is_owned());
 }
@@ -225,8 +229,8 @@ fn get_reactor_after_set_produces_non_owning_reactor() {
 #[test]
 fn get_reactor_after_set_is_usable() {
     let mut future = make_wait_all();
-    let reactor = Reactor::new(ReactorFlags::NONE).unwrap();
-    future.set_reactor(&reactor);
+    let reactor = Reactor::new().unwrap();
+    future.set_reactor(&reactor).unwrap();
     let borrowed = unsafe { future.get_reactor().unwrap() };
     assert!(borrowed.now().is_ok());
 }
@@ -270,7 +274,8 @@ fn get_flux_after_set_is_usable() {
 
 #[test]
 fn create_wait_all_empty_map_succeeds() {
-    assert!(create_wait_all_future(HashMap::new()).is_ok());
+    assert!(create_wait_all_future::<Owned<flux_future_t>>(HashMap::new()).is_ok());
+    assert!(create_wait_all_future::<Borrowed<'_, flux_future_t>>(HashMap::new()).is_ok());
 }
 
 #[test]
@@ -303,7 +308,8 @@ fn create_wait_all_nul_byte_child_name_returns_error() {
 
 #[test]
 fn create_wait_any_empty_map_succeeds() {
-    assert!(create_wait_any_future(HashMap::new()).is_ok());
+    assert!(create_wait_any_future::<Owned<flux_future_t>>(HashMap::new()).is_ok());
+    assert!(create_wait_any_future::<Borrowed<'_, flux_future_t>>(HashMap::new()).is_ok());
 }
 
 #[test]
@@ -376,7 +382,7 @@ fn to_owned_shares_pointer_with_source() {
 
 #[test]
 fn to_owned_remains_valid_after_source_dropped() {
-    let owned: FluxFuture<'static> = {
+    let owned: FluxFuture = {
         let future = make_wait_all();
         future.to_owned().unwrap()
     };

@@ -1,15 +1,15 @@
 use std::ffi::CString;
 
 use flux_sys::core::{
-    flux_job_submit, job_submit_flags_FLUX_JOB_DEBUG, job_submit_flags_FLUX_JOB_NOVALIDATE,
+    flux_job_submit, flux_t, job_submit_flags_FLUX_JOB_DEBUG, job_submit_flags_FLUX_JOB_NOVALIDATE,
     job_submit_flags_FLUX_JOB_PRE_SIGNED, job_submit_flags_FLUX_JOB_WAITABLE,
 };
 
 use bitflags::bitflags;
 
 use crate::error::{Result, flux_try};
-use crate::flux_ptr_management::FromFluxPtrNoArgs;
-use crate::future::FluxFuture;
+use crate::flux_ptr_management::{FromFluxPtrNoArgs, PossiblyDroppablePtr};
+use crate::future::{FluxFuture, OwnedFluxFuture};
 use crate::handle::FluxHandle;
 use crate::job::job::Job;
 use crate::job::jobspec::Jobspec;
@@ -25,12 +25,12 @@ bitflags! {
     }
 }
 
-pub fn submit_async(
-    handle: &FluxHandle,
+pub fn submit_async<State: PossiblyDroppablePtr<flux_t>>(
+    handle: &FluxHandle<State>,
     jobspec: &Jobspec,
     urgency: Option<JobUrgency>,
     flags: Option<JobSubmitFlags>,
-) -> Result<FluxFuture<'static>> {
+) -> Result<OwnedFluxFuture> {
     let serialized_jobspec = serde_json::to_string(jobspec)?;
     let c_serialized_jobspec = CString::new(serialized_jobspec)?;
     let c_urgency: i32 = urgency.unwrap_or(JobUrgency::DEFAULT).into();
@@ -44,12 +44,12 @@ pub fn submit_async(
     unsafe { FluxFuture::from_ptr(future_ptr) }
 }
 
-pub fn submit<'h>(
-    handle: &'h FluxHandle,
+pub fn submit<'r, State: PossiblyDroppablePtr<flux_t>>(
+    handle: &'r FluxHandle<State>,
     jobspec: &Jobspec,
     urgency: Option<JobUrgency>,
     flags: Option<JobSubmitFlags>,
-) -> Result<Job<'h>> {
+) -> Result<Job<'r, State>> {
     let submit_future = submit_async(handle, jobspec, urgency, flags)?;
     Job::try_from((handle, submit_future))
 }

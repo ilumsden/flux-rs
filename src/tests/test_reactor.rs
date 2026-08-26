@@ -8,7 +8,7 @@ use crate::reactor::{FluxReactorThread, Reactor, ReactorFlags};
 // =========================================================================
 
 fn make_reactor() -> Reactor {
-    Reactor::new(ReactorFlags::NONE).expect("Failed to create Reactor")
+    Reactor::new().expect("Failed to create Reactor")
 }
 
 // =========================================================================
@@ -42,13 +42,8 @@ fn reactor_flags_combination_contains_both_members() {
 // =========================================================================
 
 #[test]
-fn new_with_none_flags_succeeds() {
-    assert!(Reactor::new(ReactorFlags::NONE).is_ok());
-}
-
-#[test]
-fn new_with_nowait_flag_succeeds() {
-    assert!(Reactor::new(ReactorFlags::NOWAIT).is_ok());
+fn new_succeeds() {
+    assert!(Reactor::new().is_ok());
 }
 
 // NOTE: FLUX_REACTOR_ONCE is only valid as a flag to flux_reactor_run,
@@ -148,7 +143,6 @@ fn stop_with_non_os_error_falls_through_to_normal_stop() {
 // freeing the allocation — making a safe owning Clone impossible.
 // =========================================================================
 
-#[cfg(flux_core_has_reactor_ref_count)]
 #[test]
 fn clone_is_usable() {
     let reactor = make_reactor();
@@ -156,7 +150,6 @@ fn clone_is_usable() {
     assert!(clone.now().is_ok());
 }
 
-#[cfg(flux_core_has_reactor_ref_count)]
 #[test]
 fn clone_and_original_have_independent_stop_calls() {
     let reactor = make_reactor();
@@ -166,7 +159,6 @@ fn clone_and_original_have_independent_stop_calls() {
     assert!(reactor.now().is_ok());
 }
 
-#[cfg(flux_core_has_reactor_ref_count)]
 #[test]
 fn clone_remains_valid_after_original_dropped() {
     // With true refcounting, the clone keeps the allocation alive after

@@ -32,38 +32,23 @@ fn declare_check_cfgs() {
 }
 
 fn add_core_conditional_compilation_checks() {
-    let has_module_loader_helpers = env::var("DEP_FLUX_CORE_VERSION")
+    let flux_core_version = env::var("DEP_FLUX_CORE_VERSION")
         .ok()
         .and_then(|v| Version::parse(&v).ok())
-        .map(|v| v >= Version::parse("0.83.1").unwrap())
-        .unwrap_or(false);
+        .unwrap();
+
+    if flux_core_version < Version::parse("0.71.0").unwrap() {
+        panic!(
+            "The `flux-core` Rust crate requires at least version 0.71.0 of libflux_core.so, but the flux-sys crate was built against version {}.{}.{}",
+            flux_core_version.major, flux_core_version.minor, flux_core_version.patch
+        );
+    }
+
+    let has_module_loader_helpers = flux_core_version >= Version::parse("0.83.1").unwrap();
     // Module loader helpers are first exported in v0.83.1
     create_conditional_compilation_var!(
         "flux_core_has_module_loader_helpers",
         has_module_loader_helpers
-    );
-
-    let has_proper_reactor_ref_count = env::var("DEP_FLUX_CORE_VERSION")
-        .ok()
-        .and_then(|v| Version::parse(&v).ok())
-        .map(|v| v >= Version::parse("0.70.0").unwrap())
-        .unwrap_or(false);
-    // v0.70.0 was the first version where flux_reactor_incref/decref exist
-    create_conditional_compilation_var!(
-        "flux_core_has_reactor_ref_count",
-        has_proper_reactor_ref_count
-    );
-
-    let reactor_create_accepts_flags = env::var("DEP_FLUX_CORE_VERSION")
-        .ok()
-        .and_then(|v| Version::parse(&v).ok())
-        .map(|v| v <= Version::parse("0.70.0").unwrap())
-        .unwrap_or(false);
-    // v0.70.0 was the last version where flux_reactor_create
-    // accepts flags that != 0
-    create_conditional_compilation_var!(
-        "flux_core_reactor_create_accepts_flags",
-        reactor_create_accepts_flags
     );
 }
 

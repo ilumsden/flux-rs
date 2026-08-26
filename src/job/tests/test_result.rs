@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
-use flux_sys::core::flux_job_result_t;
+use flux_sys::core::{flux_future_t, flux_job_result_t};
 
+use crate::flux_ptr_management::Owned;
 use crate::future::create_wait_all_future;
 use crate::job::result::{JobResult, JobResultCode};
 
@@ -11,8 +12,8 @@ use crate::job::result::{JobResult, JobResultCode};
 
 /// Create a JobResult wrapping a dummy empty wait_all future.
 fn make_dummy_result() -> JobResult {
-    let future =
-        create_wait_all_future(HashMap::new()).expect("Failed to create dummy wait_all future");
+    let future = create_wait_all_future::<Owned<flux_future_t>>(HashMap::new())
+        .expect("Failed to create dummy wait_all future");
     JobResult::from(future)
 }
 

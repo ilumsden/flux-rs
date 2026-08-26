@@ -2,26 +2,101 @@ use std::ffi::{CStr, CString, c_char, c_void};
 use std::ops::{Deref, DerefMut};
 
 use flux_sys::core::{
-    flux_response_decode_error, flux_response_decode_raw, flux_response_derive,
+    flux_msg_t, flux_response_decode_error, flux_response_decode_raw, flux_response_derive,
     flux_response_encode_error, flux_response_encode_raw,
 };
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::FromFluxPtrNoArgs;
 use crate::error::{FluxError, FluxReturnType, Result, flux_try};
+use crate::flux_ptr_management::{Borrowed, FromFluxPtrNoArgs, Owned, PossiblyDroppablePtr};
 use crate::msg::Message;
 use crate::request::{
     DeserializedDecodedRequestResponse, JsonDecodedRequestResponse, RawDecodedRequestResponse,
     Request,
 };
 
-pub struct Response {
-    pub(crate) msg: Message,
+pub struct Response<State: PossiblyDroppablePtr<flux_msg_t> = Owned<flux_msg_t>> {
+    pub(crate) msg: Message<State>,
 }
 
-impl Response {
+pub type OwnedResponse = Response<Owned<flux_msg_t>>;
+pub type BorrowedResponse<'a> = Response<Borrowed<'a, flux_msg_t>>;
+
+impl OwnedResponse {
+    pub fn encode(topic: &str, data: &[u8]) -> Result<Self> {
+        let c_topic = CString::new(topic)?;
+        let msg_ptr = flux_try!(flux_response_encode_raw(
+            c_topic.as_ptr(),
+            data.as_ptr() as *const c_void,
+            data.len() as _,
+        ))?;
+        Ok(Response {
+            msg: unsafe { Message::from_ptr(msg_ptr)? },
+        })
+    }
+
+    pub fn encode_json(topic: &str, data: &Value) -> Result<Self> {
+        let data_vec = serde_json::to_vec(data)?;
+        Self::encode(topic, &data_vec)
+    }
+
+    pub fn encode_serializable<T: Serialize>(topic: &str, data: &T) -> Result<Self> {
+        let data_vec = serde_json::to_vec(data)?;
+        Self::encode(topic, &data_vec)
+    }
+
+    pub fn encode_error(topic: &str, error: std::io::Error) -> Result<Self> {
+        let errnum = error.raw_os_error().ok_or(FluxError::Logic(String::from("Passed a std::io::Error to encode_error that does not represent a OS error (i.e., errno). Consider using encode_raw_error")))?;
+        let errmsg = error.to_string();
+        Self::encode_raw_error(topic, errnum, &errmsg)
+    }
+
+    pub fn encode_raw_error(topic: &str, errnum: i32, errmsg: &str) -> Result<Self> {
+        let c_topic = CString::new(topic)?;
+        let c_errmsg = CString::new(errmsg)?;
+        let msg_ptr = flux_try!(flux_response_encode_error(
+            c_topic.as_ptr(),
+            errnum,
+            c_errmsg.as_ptr()
+        ))?;
+        Ok(Response {
+            msg: unsafe { Message::from_ptr(msg_ptr)? },
+        })
+    }
+
+    pub fn derive<ReqState>(
+        request: &Request<ReqState>,
+        error: Option<std::io::Error>,
+    ) -> Result<Self>
+    where
+        ReqState: PossiblyDroppablePtr<flux_msg_t>,
+    {
+        let errnum = error.map(|err| err.raw_os_error().ok_or(FluxError::Logic(String::from(
+            "Passed a std::io::Error to 'derive' that does not represent a OS error (i.e., errno). Consider using 'derive_raw_error'"
+        )))).transpose()?;
+        Self::derive_raw_error(request, errnum)
+    }
+
+    pub fn derive_raw_error<ReqState>(
+        request: &Request<ReqState>,
+        errnum: Option<i32>,
+    ) -> Result<Self>
+    where
+        ReqState: PossiblyDroppablePtr<flux_msg_t>,
+    {
+        let msg_ptr = flux_try!(flux_response_derive(
+            request.msg.c_msg.as_mut_ptr(),
+            errnum.unwrap_or(0)
+        ))?;
+        Ok(Response {
+            msg: unsafe { Message::from_ptr(msg_ptr)? },
+        })
+    }
+}
+
+impl<State: PossiblyDroppablePtr<flux_msg_t>> Response<State> {
     pub fn decode(&self) -> Result<RawDecodedRequestResponse<'_>> {
         let mut topic: *const c_char = std::ptr::null_mut();
         let mut data: *const c_void = std::ptr::null_mut();
@@ -85,9 +160,9 @@ impl Response {
         })
     }
 
-    pub fn decode_deserializable<'a, D: Deserialize<'a>>(
-        &'a self,
-    ) -> Result<DeserializedDecodedRequestResponse<'a, D>> {
+    pub fn decode_deserializable<D: for<'de> Deserialize<'de>>(
+        &self,
+    ) -> Result<DeserializedDecodedRequestResponse<'_, D>> {
         let RawDecodedRequestResponse {
             topic: decoded_topic,
             payload: decoded_payload,
@@ -105,87 +180,29 @@ impl Response {
             payload: json_payload,
         })
     }
-
-    pub fn encode(topic: &str, data: &[u8]) -> Result<Response> {
-        let c_topic = CString::new(topic)?;
-        let msg_ptr = flux_try!(flux_response_encode_raw(
-            c_topic.as_ptr(),
-            data.as_ptr() as *const c_void,
-            data.len() as _,
-        ))?;
-        Ok(Response {
-            msg: unsafe { Message::from_ptr(msg_ptr)? },
-        })
-    }
-
-    pub fn encode_json(topic: &str, data: &Value) -> Result<Response> {
-        let data_vec = serde_json::to_vec(data)?;
-        Self::encode(topic, &data_vec)
-    }
-
-    pub fn encode_serializable<T: Serialize>(topic: &str, data: &T) -> Result<Response> {
-        let data_vec = serde_json::to_vec(data)?;
-        Self::encode(topic, &data_vec)
-    }
-
-    pub fn encode_error(topic: &str, error: std::io::Error) -> Result<Response> {
-        let errnum = error.raw_os_error().ok_or(FluxError::Logic(String::from("Passed a std::io::Error to encode_error that does not represent a OS error (i.e., errno). Consider using encode_raw_error")))?;
-        let errmsg = error.to_string();
-        Self::encode_raw_error(topic, errnum, &errmsg)
-    }
-
-    pub fn encode_raw_error(topic: &str, errnum: i32, errmsg: &str) -> Result<Response> {
-        let c_topic = CString::new(topic)?;
-        let c_errmsg = CString::new(errmsg)?;
-        let msg_ptr = flux_try!(flux_response_encode_error(
-            c_topic.as_ptr(),
-            errnum,
-            c_errmsg.as_ptr()
-        ))?;
-        Ok(Response {
-            msg: unsafe { Message::from_ptr(msg_ptr)? },
-        })
-    }
-
-    pub fn derive(request: &Request, error: Option<std::io::Error>) -> Result<Response> {
-        let errnum = error.map(|err| err.raw_os_error().ok_or(FluxError::Logic(String::from(
-            "Passed a std::io::Error to 'derive' that does not represent a OS error (i.e., errno). Consider using 'derive_raw_error'"
-        )))).transpose()?;
-        Self::derive_raw_error(request, errnum)
-    }
-
-    pub fn derive_raw_error(request: &Request, errnum: Option<i32>) -> Result<Response> {
-        let msg_ptr = flux_try!(flux_response_derive(
-            request.msg.c_msg.as_mut_ptr(),
-            errnum.unwrap_or(0)
-        ))?;
-        Ok(Response {
-            msg: unsafe { Message::from_ptr(msg_ptr)? },
-        })
-    }
 }
 
-impl From<Message> for Response {
-    fn from(value: Message) -> Self {
+impl<State: PossiblyDroppablePtr<flux_msg_t>> From<Message<State>> for Response<State> {
+    fn from(value: Message<State>) -> Self {
         Self { msg: value }
     }
 }
 
-impl From<Response> for Message {
-    fn from(value: Response) -> Self {
+impl<State: PossiblyDroppablePtr<flux_msg_t>> From<Response<State>> for Message<State> {
+    fn from(value: Response<State>) -> Self {
         value.msg
     }
 }
 
-impl Deref for Response {
-    type Target = Message;
+impl<State: PossiblyDroppablePtr<flux_msg_t>> Deref for Response<State> {
+    type Target = Message<State>;
 
     fn deref(&self) -> &Self::Target {
         &self.msg
     }
 }
 
-impl DerefMut for Response {
+impl<State: PossiblyDroppablePtr<flux_msg_t>> DerefMut for Response<State> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.msg
     }

@@ -19,7 +19,8 @@ use serde_json::{Map, Value};
 
 use crate::error::{FluxError, Result, flux_try, to_flux_rc};
 use crate::flux_ptr_management::{
-    BorrowFluxPtr, BorrowFluxPtrNoArgs, FluxPtr, FromFluxPtr, default_impl_as_flux_ptr,
+    AsFluxPtr, BorrowFluxPtr, BorrowFluxPtrNoArgs, Borrowed, FluxPtr, FromFluxPtr, IntoFluxPtr,
+    Owned, PossiblyDroppablePtr, define_as_flux_ptr_body, define_into_flux_ptr_body,
 };
 use crate::handle::AuxThinPtrWrapper;
 
@@ -43,13 +44,16 @@ bitflags! {
     }
 }
 
-pub struct PluginArgs {
-    c_args: FluxPtr<flux_plugin_arg_t>,
+pub struct PluginArgs<State: PossiblyDroppablePtr<flux_plugin_arg_t> = Owned<flux_plugin_arg_t>> {
+    c_args: FluxPtr<flux_plugin_arg_t, State>,
     in_args: Map<String, Value>,
     out_args: Map<String, Value>,
 }
 
-impl PluginArgs {
+pub type OwnedPluginArgs = PluginArgs<Owned<flux_plugin_arg_t>>;
+pub type BorrowedPluginArgs<'a> = PluginArgs<Borrowed<'a, flux_plugin_arg_t>>;
+
+impl OwnedPluginArgs {
     pub fn new() -> Result<Self> {
         let c_args = flux_try!(flux_plugin_arg_create())?;
         Ok(Self {
@@ -58,7 +62,9 @@ impl PluginArgs {
             out_args: Map::new(),
         })
     }
+}
 
+impl<State: PossiblyDroppablePtr<flux_plugin_arg_t>> PluginArgs<State> {
     pub fn input_args(&self) -> &Map<String, Value> {
         &self.in_args
     }
@@ -152,7 +158,7 @@ impl PluginArgs {
     }
 }
 
-unsafe impl BorrowFluxPtr for PluginArgs {
+unsafe impl<'a> BorrowFluxPtr for BorrowedPluginArgs<'a> {
     type CType = flux_plugin_arg_t;
     type FromRawArgs = ();
 
@@ -236,14 +242,17 @@ unsafe impl BorrowFluxPtr for PluginArgs {
             libc::free(json_c_str as *mut c_void);
         }
         Ok(Self {
-            c_args: FluxPtr::create_borrowed(ptr, flux_plugin_arg_destroy)?,
+            c_args: FluxPtr::create_borrowed(ptr)?,
             in_args: in_args?,
             out_args: out_args?,
         })
     }
 }
 
-unsafe impl FromFluxPtr for PluginArgs {
+unsafe impl FromFluxPtr for OwnedPluginArgs {
+    type CType = flux_plugin_arg_t;
+    type FromRawArgs = ();
+
     unsafe fn from_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
         if ptr.is_null() {
             return Err(FluxError::Logic(
@@ -331,7 +340,13 @@ unsafe impl FromFluxPtr for PluginArgs {
     }
 }
 
-default_impl_as_flux_ptr!(PluginArgs, flux_plugin_arg_t, c_args);
+unsafe impl<State: PossiblyDroppablePtr<flux_plugin_arg_t>> AsFluxPtr for PluginArgs<State> {
+    define_as_flux_ptr_body!(flux_plugin_arg_t, c_args);
+}
+
+unsafe impl IntoFluxPtr for OwnedPluginArgs {
+    define_into_flux_ptr_body!(c_args);
+}
 
 macro_rules! check_plugin_strerror {
     ($plugin_ptr:expr) => {{
@@ -353,14 +368,18 @@ macro_rules! check_plugin_strerror {
     }};
 }
 
-pub type PluginCallback = Box<dyn FnMut(Plugin, &str, PluginArgs) -> Result<()>>;
+pub type PluginCallback =
+    Box<dyn FnMut(BorrowedPlugin<'_>, &str, BorrowedPluginArgs<'_>) -> Result<()>>;
 
-pub struct Plugin {
-    pub(crate) c_plugin: FluxPtr<flux_plugin_t>,
-    pub(crate) _cb_boxes: IndexMap<String, PluginCallback>,
+pub struct Plugin<State: PossiblyDroppablePtr<flux_plugin_t> = Owned<flux_plugin_t>> {
+    pub(crate) c_plugin: FluxPtr<flux_plugin_t, State>,
+    pub(crate) _cb_boxes: IndexMap<String, Box<PluginCallback>>,
 }
 
-impl Plugin {
+pub type OwnedPlugin = Plugin<Owned<flux_plugin_t>>;
+pub type BorrowedPlugin<'a> = Plugin<Borrowed<'a, flux_plugin_t>>;
+
+impl OwnedPlugin {
     pub fn new() -> Result<Self> {
         let plugin_ptr = flux_try!(flux_plugin_create())?;
         Ok(Self {
@@ -368,7 +387,9 @@ impl Plugin {
             _cb_boxes: IndexMap::new(),
         })
     }
+}
 
+impl<State: PossiblyDroppablePtr<flux_plugin_t>> Plugin<State> {
     pub fn set_flags(&mut self, flags: PluginLoadFlags) -> Result<()> {
         let rc = unsafe { flux_plugin_set_flags(self.c_plugin.as_mut_ptr(), flags.bits() as _) };
         if rc == -1 {
@@ -473,73 +494,57 @@ impl Plugin {
         ))
     }
 
-    #[inline]
-    fn create_handler_callback(
-        &mut self,
-        rust_callback: &mut PluginCallback,
-    ) -> (
-        *mut c_void,
-        extern "C" fn(
-            *mut flux_plugin_t,
-            *const c_char,
-            *mut flux_plugin_arg_t,
-            *mut c_void,
-        ) -> c_int,
-    ) {
-        let arg_ptr = rust_callback as *mut PluginCallback as *mut c_void;
-
-        extern "C" fn trampoline(
-            p: *mut flux_plugin_t,
-            topic: *const c_char,
-            args: *mut flux_plugin_arg_t,
-            data: *mut c_void,
-        ) -> c_int {
-            let closure = unsafe {
-                &mut *(data as *mut Box<dyn FnMut(Plugin, &str, PluginArgs) -> Result<()>>)
-            };
-            let rust_topic = unsafe { CStr::from_ptr(topic).to_string_lossy() };
-            let plugin_args = match unsafe { PluginArgs::borrow_ptr(args) } {
-                Ok(pa) => pa,
-                Err(err) => {
-                    let err_code = err.to_errno();
-                    unsafe {
-                        let errno_ptr = libc::__errno_location();
-                        *errno_ptr = err_code;
-                    }
-                    return -1;
-                }
-            };
-            let plugin = match unsafe { Plugin::borrow_ptr(p) } {
-                Ok(plug) => plug,
-                Err(e) => return to_flux_rc(Err(e), None),
-            };
-            let closure_result = closure(plugin, &rust_topic, plugin_args);
-            to_flux_rc(closure_result, None)
+    extern "C" fn trampoline(
+        p: *mut flux_plugin_t,
+        topic: *const c_char,
+        args: *mut flux_plugin_arg_t,
+        data: *mut c_void,
+    ) -> c_int {
+        if data.is_null() {
+            return -1;
         }
-
-        (arg_ptr, trampoline)
+        let closure = unsafe { &mut *(data as *mut PluginCallback) };
+        let rust_topic = unsafe { CStr::from_ptr(topic).to_string_lossy() };
+        let plugin_args = match unsafe { PluginArgs::borrow_ptr(args) } {
+            Ok(pa) => pa,
+            Err(err) => {
+                return to_flux_rc(Err(err), None);
+            }
+        };
+        let plugin = match unsafe { Plugin::borrow_ptr(p) } {
+            Ok(plug) => plug,
+            Err(e) => return to_flux_rc(Err(e), None),
+        };
+        let panic_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            closure(plugin, &rust_topic, plugin_args)
+        }));
+        match panic_res {
+            Ok(res) => to_flux_rc(res, None),
+            Err(_) => -1,
+        }
     }
 
-    pub fn add_handler(&mut self, topic: &str, mut callback: PluginCallback) -> Result<()> {
+    pub fn add_handler(&mut self, topic: &str, callback: PluginCallback) -> Result<()> {
         if self._cb_boxes.contains_key(topic) {
             return Err(FluxError::Logic(format!(
                 "Handler for topic '{topic}' already exists",
             )));
         }
         let c_topic = CString::new(topic)?;
-        let (arg_ptr, c_callback) = self.create_handler_callback(&mut callback);
+        let mut stable_cb = Box::new(callback);
+        let arg_ptr = &mut *stable_cb as *mut PluginCallback as *mut c_void;
         flux_try!(flux_plugin_add_handler(
             self.c_plugin.as_mut_ptr(),
             c_topic.as_ptr(),
-            Some(c_callback),
+            Some(Self::trampoline),
             arg_ptr,
         ))?;
-        self._cb_boxes.insert(topic.to_string(), callback);
+        self._cb_boxes.insert(topic.to_string(), stable_cb);
         Ok(())
     }
 
     pub fn get_handler(&self, topic: &str) -> Option<&PluginCallback> {
-        self._cb_boxes.get(topic)
+        self._cb_boxes.get(topic).map(|b| &**b)
     }
 
     pub fn match_handler(&self, topic: &str) -> Option<&PluginCallback> {
@@ -586,19 +591,22 @@ impl Plugin {
     }
 }
 
-unsafe impl BorrowFluxPtr for Plugin {
+unsafe impl<'a> BorrowFluxPtr for BorrowedPlugin<'a> {
     type CType = flux_plugin_t;
     type FromRawArgs = ();
 
     unsafe fn borrow_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
         Ok(Self {
-            c_plugin: FluxPtr::create_borrowed(ptr, flux_plugin_destroy)?,
+            c_plugin: FluxPtr::create_borrowed(ptr)?,
             _cb_boxes: IndexMap::new(),
         })
     }
 }
 
-unsafe impl FromFluxPtr for Plugin {
+unsafe impl FromFluxPtr for OwnedPlugin {
+    type CType = flux_plugin_t;
+    type FromRawArgs = ();
+
     unsafe fn from_raw(ptr: *mut Self::CType, _args: Self::FromRawArgs) -> Result<Self> {
         Ok(Self {
             c_plugin: FluxPtr::create_owned(ptr, flux_plugin_destroy)?,
@@ -607,4 +615,10 @@ unsafe impl FromFluxPtr for Plugin {
     }
 }
 
-default_impl_as_flux_ptr!(Plugin, flux_plugin_t, c_plugin);
+unsafe impl<State: PossiblyDroppablePtr<flux_plugin_t>> AsFluxPtr for Plugin<State> {
+    define_as_flux_ptr_body!(flux_plugin_t, c_plugin);
+}
+
+unsafe impl IntoFluxPtr for OwnedPlugin {
+    define_into_flux_ptr_body!(c_plugin);
+}

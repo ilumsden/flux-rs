@@ -14,26 +14,33 @@ use flux_sys::core::{
 use indexmap::IndexMap;
 
 use crate::error::{FluxError, FluxReturnType, Result, flux_try};
-use crate::flux_ptr_management::{AsFluxPtr, BorrowFluxPtr, FromFluxPtr, FromFluxPtrNoArgs};
+use crate::flux_ptr_management::{
+    AsFluxPtr, BorrowFluxPtr, Borrowed, FromFluxPtr, FromFluxPtrNoArgs, Owned, PossiblyDroppablePtr,
+};
 use crate::handle::{AuxThinPtrWrapper, FluxHandle};
 use crate::job::{JobEventSeverity, JobId, JobResultCode};
 use crate::msg::MessageRolemask;
-use crate::msg_handler::{MsgHandler, MsgHandlerCallback};
+use crate::msg_handler::{MsgHandlerCallback, msg_handler_trampoline};
 use crate::plugin::{Plugin, PluginArgs};
 
-pub struct JobtapPlugin {
-    plugin: Plugin,
+pub struct JobtapPlugin<State: PossiblyDroppablePtr<flux_plugin_t> = Owned<flux_plugin_t>> {
+    plugin: Plugin<State>,
     _cb_boxes: IndexMap<String, MsgHandlerCallback>,
 }
 
-impl JobtapPlugin {
+pub type OwnedJobtapPlugin = JobtapPlugin<Owned<flux_plugin_t>>;
+pub type BorrowedJobtapPlugin<'a> = JobtapPlugin<Borrowed<'a, flux_plugin_t>>;
+
+impl OwnedJobtapPlugin {
     pub fn new() -> Result<Self> {
         Ok(Self {
             plugin: Plugin::new()?,
             _cb_boxes: IndexMap::new(),
         })
     }
+}
 
+impl<State: PossiblyDroppablePtr<flux_plugin_t>> JobtapPlugin<State> {
     pub fn get_flux(&self) -> Result<FluxHandle> {
         // Get the raw flux_t pointer for the plugin
         let flux_ptr = flux_try!(flux_jobtap_get_flux(self.plugin.as_mut_ptr()))?;
@@ -57,14 +64,14 @@ impl JobtapPlugin {
                 self.plugin.as_mut_ptr(),
                 c_method.as_ptr(),
                 rmask.bits(),
-                Some(MsgHandler::msg_handler_trampoline),
+                Some(msg_handler_trampoline),
                 arg_ptr,
             ))?;
         } else {
             flux_try!(flux_jobtap_service_register(
                 self.plugin.as_mut_ptr(),
                 c_method.as_ptr(),
-                Some(MsgHandler::msg_handler_trampoline),
+                Some(msg_handler_trampoline),
                 arg_ptr,
             ))?;
         };
@@ -384,21 +391,21 @@ impl JobtapPlugin {
     // TODO consider whether to add a wrapper to flux_jobtap_call
 }
 
-impl Deref for JobtapPlugin {
-    type Target = Plugin;
+impl<State: PossiblyDroppablePtr<flux_plugin_t>> Deref for JobtapPlugin<State> {
+    type Target = Plugin<State>;
 
     fn deref(&self) -> &Self::Target {
         &self.plugin
     }
 }
 
-impl DerefMut for JobtapPlugin {
+impl<State: PossiblyDroppablePtr<flux_plugin_t>> DerefMut for JobtapPlugin<State> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.plugin
     }
 }
 
-unsafe impl BorrowFluxPtr for JobtapPlugin {
+unsafe impl<'a> BorrowFluxPtr for BorrowedJobtapPlugin<'a> {
     type CType = flux_plugin_t;
     type FromRawArgs = ();
 
@@ -410,7 +417,10 @@ unsafe impl BorrowFluxPtr for JobtapPlugin {
     }
 }
 
-unsafe impl FromFluxPtr for JobtapPlugin {
+unsafe impl FromFluxPtr for OwnedJobtapPlugin {
+    type CType = flux_plugin_t;
+    type FromRawArgs = ();
+
     unsafe fn from_raw(ptr: *mut Self::CType, args: Self::FromRawArgs) -> Result<Self> {
         Ok(Self {
             plugin: unsafe { Plugin::from_raw(ptr, args)? },
@@ -419,7 +429,7 @@ unsafe impl FromFluxPtr for JobtapPlugin {
     }
 }
 
-pub type JobtapPluginEntrypoint = fn(JobtapPlugin) -> Result<()>;
+pub type JobtapPluginEntrypoint = fn(BorrowedJobtapPlugin<'_>) -> Result<()>;
 
 #[macro_export]
 macro_rules! __create_jobtap_entrypoint_macro {

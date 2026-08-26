@@ -1,13 +1,13 @@
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::ops::{Deref, DerefMut};
 
-use flux_sys::core::{flux_request_decode_raw, flux_request_encode_raw};
+use flux_sys::core::{flux_msg_t, flux_request_decode_raw, flux_request_encode_raw};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::FromFluxPtrNoArgs;
 use crate::error::{FluxReturnType, Result, flux_try};
+use crate::flux_ptr_management::{Borrowed, FromFluxPtrNoArgs, Owned, PossiblyDroppablePtr};
 use crate::msg::Message;
 
 #[derive(Debug)]
@@ -27,12 +27,15 @@ pub struct DeserializedDecodedRequestResponse<'a, D: Deserialize<'a>> {
     pub payload: Option<D>,
 }
 
-pub struct Request {
-    pub(crate) msg: Message,
+pub struct Request<State: PossiblyDroppablePtr<flux_msg_t> = Owned<flux_msg_t>> {
+    pub(crate) msg: Message<State>,
 }
 
-impl Request {
-    pub fn encode(topic: &str, data: &[u8]) -> Result<Request> {
+pub type OwnedRequest = Request<Owned<flux_msg_t>>;
+pub type BorrowedRequest<'a> = Request<Borrowed<'a, flux_msg_t>>;
+
+impl OwnedRequest {
+    pub fn encode(topic: &str, data: &[u8]) -> Result<Self> {
         let c_topic = CString::new(topic)?;
         let msg_ptr = flux_try!(flux_request_encode_raw(
             c_topic.as_ptr(),
@@ -44,16 +47,18 @@ impl Request {
         })
     }
 
-    pub fn encode_json(topic: &str, data: &Value) -> Result<Request> {
+    pub fn encode_json(topic: &str, data: &Value) -> Result<Self> {
         let data_vec = serde_json::to_vec(data)?;
         Self::encode(topic, &data_vec)
     }
 
-    pub fn encode_serializable<T: Serialize>(topic: &str, data: &T) -> Result<Request> {
+    pub fn encode_serializable<T: Serialize>(topic: &str, data: &T) -> Result<Self> {
         let data_vec = serde_json::to_vec(data)?;
         Self::encode(topic, &data_vec)
     }
+}
 
+impl<State: PossiblyDroppablePtr<flux_msg_t>> Request<State> {
     pub fn decode(&self) -> Result<RawDecodedRequestResponse<'_>> {
         let mut topic_ptr: *const c_char = std::ptr::null_mut();
         let mut data_ptr: *const c_void = std::ptr::null_mut();
@@ -96,9 +101,9 @@ impl Request {
         })
     }
 
-    pub fn decode_deserializable<'a, D: Deserialize<'a>>(
-        &'a self,
-    ) -> Result<DeserializedDecodedRequestResponse<'a, D>> {
+    pub fn decode_deserializable<D: for<'de> Deserialize<'de>>(
+        &self,
+    ) -> Result<DeserializedDecodedRequestResponse<'_, D>> {
         let RawDecodedRequestResponse {
             topic: decoded_topic,
             payload: decoded_payload,
@@ -118,27 +123,27 @@ impl Request {
     }
 }
 
-impl From<Message> for Request {
-    fn from(value: Message) -> Self {
+impl<State: PossiblyDroppablePtr<flux_msg_t>> From<Message<State>> for Request<State> {
+    fn from(value: Message<State>) -> Self {
         Self { msg: value }
     }
 }
 
-impl From<Request> for Message {
-    fn from(value: Request) -> Self {
+impl<State: PossiblyDroppablePtr<flux_msg_t>> From<Request<State>> for Message<State> {
+    fn from(value: Request<State>) -> Self {
         value.msg
     }
 }
 
-impl Deref for Request {
-    type Target = Message;
+impl<State: PossiblyDroppablePtr<flux_msg_t>> Deref for Request<State> {
+    type Target = Message<State>;
 
     fn deref(&self) -> &Self::Target {
         &self.msg
     }
 }
 
-impl DerefMut for Request {
+impl<State: PossiblyDroppablePtr<flux_msg_t>> DerefMut for Request<State> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.msg
     }
