@@ -100,7 +100,7 @@ fn message_rolemask_none_is_not_owner() {
 fn message_match_new_all_none_converts_to_zeroed_flux_match() {
     let mm = MessageMatch::new(None, None, None).unwrap();
     let fm: flux_match = (&mm).into();
-    assert_eq!(fm.typemask, 0);
+    assert_eq!(fm.typemask, MessageType::ANY.bits() as i32);
     assert_eq!(fm.matchtag, 0);
     assert!(fm.topic_glob.is_null());
 }
@@ -137,7 +137,7 @@ fn set_typemask_to_none_yields_zero_in_flux_match() {
     let mut mm = MessageMatch::new(Some(MessageType::REQUEST), None, None).unwrap();
     mm.set_typemask(None);
     let fm: flux_match = (&mm).into();
-    assert_eq!(fm.typemask, 0);
+    assert_eq!(fm.typemask, MessageType::ANY.bits() as i32);
 }
 
 #[test]
@@ -176,7 +176,7 @@ fn set_topic_glob_none_clears_topic_in_flux_match() {
 fn from_message_match_ref_all_none_yields_zeroed_flux_match() {
     let mm = MessageMatch::new(None, None, None).unwrap();
     let fm: flux_match = (&mm).into();
-    assert_eq!(fm.typemask, 0);
+    assert_eq!(fm.typemask, MessageType::ANY.bits() as i32);
     assert_eq!(fm.matchtag, 0);
     assert!(fm.topic_glob.is_null());
 }

@@ -622,10 +622,18 @@ fn respond_with_none_payload_does_not_panic() {
 }
 
 #[test]
+fn respond_with_raw_payload_does_not_panic() {
+    with_handle(|h| {
+        let req = make_request();
+        let _ = h.respond_raw(&req, Some(b"response data"));
+    });
+}
+
+#[test]
 fn respond_with_payload_does_not_panic() {
     with_handle(|h| {
         let req = make_request();
-        let _ = h.respond(&req, Some(b"response data"));
+        let _ = h.respond(&req, Some(c"response data"));
     });
 }
 

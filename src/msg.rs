@@ -83,12 +83,18 @@ bitflags! {
 
 #[derive(Default, Clone, PartialEq, Eq, Debug)]
 pub struct MessageMatch {
-    typemask: Option<MessageType>,
-    matchtag: Option<u32>,
-    topic_glob: Option<CString>,
+    pub(crate) typemask: Option<MessageType>,
+    pub(crate) matchtag: Option<u32>,
+    pub(crate) topic_glob: Option<CString>,
 }
 
 impl MessageMatch {
+    pub const ANY: Self = MessageMatch {
+        typemask: None,
+        matchtag: None,
+        topic_glob: None,
+    };
+
     pub fn new(
         typemask: Option<MessageType>,
         matchtag: Option<u32>,
@@ -137,8 +143,10 @@ impl TryFrom<flux_match> for MessageMatch {
 impl From<&MessageMatch> for flux_match {
     fn from(value: &MessageMatch) -> Self {
         flux_match {
-            typemask: value.typemask.map_or(0, |t| t.bits() as _),
-            matchtag: value.matchtag.unwrap_or(0),
+            typemask: value
+                .typemask
+                .map_or(FLUX_MSGTYPE_ANY as i32, |t| t.bits() as _),
+            matchtag: value.matchtag.unwrap_or(FLUX_MATCHTAG_NONE),
             topic_glob: value
                 .topic_glob
                 .as_ref()

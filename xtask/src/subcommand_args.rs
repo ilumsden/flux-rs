@@ -7,9 +7,16 @@ pub struct BuildFixturesArgs {
 }
 
 #[derive(Args)]
-pub struct TestIntegrationArgs {
+pub struct TestBrokerRpcArgs {
     #[arg(short, long)]
     pub release: bool,
-    #[arg(long)]
-    pub skip_teardown: bool,
+
+    #[arg(short, long, default_value = "rust-test")]
+    pub service_name: String,
+
+    #[arg(short, long, default_value = "rust_broker_module")]
+    pub broker_module_name: String,
+
+    #[arg(short, long, default_value = "flux_user")]
+    pub uname: String,
 }

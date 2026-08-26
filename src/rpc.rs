@@ -5,16 +5,27 @@ use std::task::{Context, Poll};
 use bitflags::bitflags;
 use flux_sys::core::{
     FLUX_NODEID_ANY, FLUX_NODEID_UPSTREAM, FLUX_RPC_NORESPONSE, FLUX_RPC_STREAMING, flux_rpc_get,
-    flux_rpc_get_matchtag, flux_rpc_get_nodeid, flux_rpc_message, flux_rpc_raw, flux_t,
+    flux_rpc_get_matchtag, flux_rpc_get_nodeid, flux_rpc_get_raw, flux_rpc_message, flux_rpc_raw,
+    flux_t,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::error::{Result, flux_try};
+use crate::error::{FluxError, Result, flux_try};
 use crate::flux_ptr_management::{Borrowed, FromFluxPtrNoArgs, Owned, PossiblyDroppablePtr};
 use crate::future::{AsyncFluxFuture, FluxFuture, OwnedFluxFuture};
 use crate::handle::FluxHandle;
 use crate::msg::Message;
+
+/// A utility function used to mark a branch as unlikely to be taken.
+///
+/// This function is intended to help the compiler in optimization, similar
+/// to C/C++'s __builtin_expect.
+///
+/// This should be replacewd with the `likely` and `unlikely` functions once they
+/// are stabilized.
+#[cold]
+fn mark_branch_as_unlikely() {}
 
 bitflags! {
     #[repr(transparent)]
@@ -46,6 +57,7 @@ impl RpcNodeId {
 pub struct Rpc<'a, FhState: PossiblyDroppablePtr<flux_t>> {
     handle: Option<&'a FluxHandle<FhState>>,
     future: FluxFuture,
+    is_streaming: bool,
 }
 
 pub type OwnedRpc<'a> = Rpc<'a, Owned<flux_t>>;
@@ -76,6 +88,7 @@ impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Rpc<'a, FhState> {
         Ok(Self {
             handle: Some(handle),
             future: unsafe { FluxFuture::from_ptr(future_ptr)? },
+            is_streaming: flags.contains(RpcFlags::STREAMING),
         })
     }
 
@@ -116,15 +129,53 @@ impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Rpc<'a, FhState> {
         Ok(Self {
             handle: Some(handle),
             future: unsafe { FluxFuture::from_ptr(future_ptr)? },
+            is_streaming: flags.contains(RpcFlags::STREAMING),
         })
+    }
+
+    pub fn get_raw<'s>(&'s self) -> Result<Option<&'s [u8]>> {
+        let mut buf: *const c_void = std::ptr::null();
+        let mut len: usize = 0;
+        if let Err(e) = flux_try!(flux_rpc_get_raw(
+            self.future.c_future.as_mut_ptr(),
+            &mut buf as *mut *const c_void,
+            &mut len as *mut _
+        )) {
+            if let FluxError::System(_, io_err) = &e
+                && self.is_streaming
+                && io_err.raw_os_error() == Some(libc::ENODATA)
+            {
+                return Err(FluxError::EndOfStreamRpc);
+            } else {
+                return Err(e);
+            }
+        }
+        if buf.is_null() {
+            // This branch is included for completeness, but realistically
+            // it should never be reachable because flux_rpc_get_raw errors
+            // when there is no payload
+            mark_branch_as_unlikely();
+            Ok(None)
+        } else {
+            Ok(Some(unsafe { CStr::from_ptr(buf as *const u8).to_bytes() }))
+        }
     }
 
     pub fn get<'s>(&'s self) -> Result<Option<&'s [u8]>> {
         let mut buf: *const c_char = std::ptr::null();
-        flux_try!(flux_rpc_get(
+        if let Err(e) = flux_try!(flux_rpc_get(
             self.future.c_future.as_mut_ptr(),
             &mut buf as *mut *const c_char,
-        ))?;
+        )) {
+            if let FluxError::System(_, io_err) = &e
+                && self.is_streaming
+                && io_err.raw_os_error() == Some(libc::ENODATA)
+            {
+                return Err(FluxError::EndOfStreamRpc);
+            } else {
+                return Err(e);
+            }
+        }
         if buf.is_null() {
             Ok(None)
         } else {
@@ -140,6 +191,7 @@ impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Rpc<'a, FhState> {
         if raw_payload.last() == Some(&0) {
             raw_payload = &raw_payload[..raw_payload.len() - 1];
         }
+        println!("Raw payload is {:?}", raw_payload);
         Ok(serde_json::from_slice(raw_payload)?)
     }
 
@@ -152,6 +204,15 @@ impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Rpc<'a, FhState> {
             raw_payload = &raw_payload[..raw_payload.len() - 1];
         }
         Ok(serde_json::from_slice(raw_payload)?)
+    }
+
+    pub fn get_string<'s>(&'s self) -> Result<Option<&'s str>> {
+        let raw_payload = match self.get()? {
+            Some(p) => p,
+            None => return Ok(None),
+        };
+        let string_slice = std::str::from_utf8(raw_payload)?;
+        Ok(Some(string_slice.trim_end_matches('\0')))
     }
 
     pub fn get_matchtag(&self) -> u32 {
@@ -168,6 +229,7 @@ impl From<OwnedFluxFuture> for Rpc<'_, Owned<flux_t>> {
         Self {
             handle: None,
             future: value,
+            is_streaming: false,
         }
     }
 }
@@ -175,6 +237,7 @@ impl From<OwnedFluxFuture> for Rpc<'_, Owned<flux_t>> {
 pub struct AsyncRpc<'a, State: PossiblyDroppablePtr<flux_t>> {
     future: AsyncFluxFuture,
     handle: Option<&'a FluxHandle<State>>,
+    is_streaming: bool,
 }
 
 impl<'a, State: PossiblyDroppablePtr<flux_t>> AsyncRpc<'a, State> {
@@ -182,6 +245,7 @@ impl<'a, State: PossiblyDroppablePtr<flux_t>> AsyncRpc<'a, State> {
         Ok(Self {
             future: AsyncFluxFuture::new(sync_val.future)?,
             handle: sync_val.handle,
+            is_streaming: sync_val.is_streaming,
         })
     }
 }
@@ -196,6 +260,7 @@ impl<'a, State: PossiblyDroppablePtr<flux_t>> ::std::future::Future for AsyncRpc
             Poll::Ready(sync_future) => Poll::Ready(Rpc {
                 future: sync_future,
                 handle: self.handle,
+                is_streaming: self.is_streaming,
             }),
         }
     }

@@ -58,6 +58,9 @@ pub enum FluxError {
     /// A custom error for request/response messages
     #[error("Error occured in response/request.\nSystem Error: {0}\nError Message: {1}")]
     RequestResponseError(io::Error, String),
+
+    #[error("End of streaming RPC detected")]
+    EndOfStreamRpc,
 }
 
 impl FluxError {
@@ -68,6 +71,7 @@ impl FluxError {
             Self::Io(err) => err.raw_os_error().unwrap_or(libc::EINVAL),
             Self::NixError(err) => *err as i32,
             Self::RequestResponseError(err, _) => err.raw_os_error().unwrap_or(libc::EINVAL),
+            Self::EndOfStreamRpc => libc::ENODATA,
             _ => libc::EINVAL,
         }
     }

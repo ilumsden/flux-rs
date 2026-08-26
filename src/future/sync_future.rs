@@ -59,7 +59,14 @@ impl OwnedFluxFuture {
             if let Err(e) =
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| cb(&mut future)))
             {
-                eprintln!("Panic caught in FluxFuture::new callback: {:?}", e);
+                let panic_msg = if let Some(s) = e.downcast_ref::<&str>() {
+                    *s
+                } else if let Some(s) = e.downcast_ref::<String>() {
+                    s
+                } else {
+                    "UNKNOWN PANIC"
+                };
+                eprintln!("Panic caught in FluxFuture::new callback: {}", panic_msg);
             }
         }
 
@@ -258,7 +265,17 @@ impl<State: PossiblyDroppablePtr<flux_future_t>> FluxFuture<State> {
             if let Err(e) =
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| closure(owned_future)))
             {
-                eprintln!("Panic caught in FluxFuture continuation callback: {:?}", e);
+                let panic_msg = if let Some(s) = e.downcast_ref::<&str>() {
+                    *s
+                } else if let Some(s) = e.downcast_ref::<String>() {
+                    s.as_str()
+                } else {
+                    "UNKNOWN PANIC"
+                };
+                eprintln!(
+                    "Panic caught in FluxFuture continuation callback: {}",
+                    panic_msg
+                );
             }
         }
         (raw_ptr_cb, trampoline_cb::<F>)

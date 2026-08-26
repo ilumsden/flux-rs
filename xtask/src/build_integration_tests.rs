@@ -6,11 +6,12 @@ pub fn build_integration_tests(sh: &Shell, release: bool) -> Result<()> {
     let mut args = vec![
         "build",
         "--package",
-        "test-broker-mod",
+        "flux-core-rs-test-broker-module",
         "--package",
-        "test-jobtap-plugin",
-        "--package",
-        "rpc-client",
+        "flux-core-rs-test-rpc",
+        // TODO uncomment once jobtap integration test is implemented
+        // "--package",
+        // "test-jobtap-plugin",
     ];
 
     if release {

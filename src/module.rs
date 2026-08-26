@@ -205,7 +205,20 @@ macro_rules! __create_module_entrypoint_macro {
                     return $crate::error::to_flux_rc(Err(e), None);
                 }
             };
-            $crate::error::to_flux_rc($user_main(rust_handle.clone(), args), Some(&rust_handle))
+            match ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| $user_main(rust_handle.clone(), args))) {
+                Ok(main_res) => $crate::error::to_flux_rc(main_res, Some(&rust_handle)),
+                Err(panic_box) => {
+                    let panic_msg = if let Some(s) = panic_box.downcast_ref::<&str>() {
+                        *s
+                    } else if let Some(s) = panic_box.downcast_ref::<String>() {
+                        s.as_str()
+                    } else {
+                        "UNKNOWN PANIC"
+                    };
+                    $crate::flux_log_error!(rust_handle, "Panic occured in module main: {}", panic_msg);
+                    -1
+                }
+            }
         }
     };
 }

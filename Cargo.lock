@@ -475,6 +475,8 @@ dependencies = [
  "clap",
  "flux-core",
  "libc",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -484,6 +486,9 @@ dependencies = [
  "anyhow",
  "clap",
  "flux-core",
+ "libc",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

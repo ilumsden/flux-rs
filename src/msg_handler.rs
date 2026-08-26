@@ -1,4 +1,4 @@
-use std::ffi::c_void;
+use std::ffi::{CString, c_void};
 
 use flux_sys::core::{
     flux_match, flux_msg_handler_allow_rolemask, flux_msg_handler_create,
@@ -67,9 +67,17 @@ pub(crate) extern "C" fn msg_handler_trampoline(
         );
         closure(owned_handle, msg_handler, msg)
     })) {
+        let panic_msg = if let Some(s) = e.downcast_ref::<&str>() {
+            *s
+        } else if let Some(s) = e.downcast_ref::<String>() {
+            s
+        } else {
+            "UNKNOWN PANIC"
+        };
         flux_log_error!(
             handle,
-            "A panic occured in the user-provided Rust callback for a MsgHandler: {e:?}"
+            "A panic occured in the user-provided Rust callback for a MsgHandler: {}",
+            panic_msg
         )
     }
 }
@@ -200,19 +208,29 @@ impl MsgHandlerSpec {
 
 /// Create and start multiple MsgHandlers from a collection of MsgHandlerSpecs.
 ///
-/// This function does the same thing `flux_msg_handler_addvec` from the C API.
+/// This function does the same thing `flux_msg_handler_addvec_ex` from the C API.
 ///
 /// Note: because `flux_msg_handler_destroy` is called automatically by MsgHandler::drop, there is no
 /// equivalent to the `flux_msg_handler_delvec` from the C API. Simply call `drop` on the `Vec` returned
 /// from this function to achieve the same thing.
-pub fn add_handler_vec<I>(handle: &FluxHandle, specs: I) -> Result<Vec<OwnedMsgHandler>>
+pub fn add_handler_vec<I>(
+    handle: &FluxHandle,
+    specs: I,
+    service_name: Option<&str>,
+) -> Result<Vec<OwnedMsgHandler>>
 where
     I: IntoIterator<Item = MsgHandlerSpec>,
 {
     specs
         .into_iter()
         .map(|spec| {
-            let matcher = spec.as_msg_match()?;
+            let mut matcher = spec.as_msg_match()?;
+            if let Some(sn) = service_name
+                && let Some(tg) = matcher.topic_glob
+            {
+                matcher.topic_glob =
+                    Some(CString::new(format!("{}.{}", sn, tg.to_string_lossy()))?);
+            }
             let mut handler = MsgHandler::new(handle, matcher, spec.cb)?;
             handler.allow_rolemask(spec.rolemask);
             handler.start();

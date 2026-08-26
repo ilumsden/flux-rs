@@ -297,7 +297,30 @@ fn add_handler_vec_with_valid_specs_succeeds() {
                 MessageRolemask::OWNER,
             ),
         ];
-        let handlers = add_handler_vec(h, specs);
+        let handlers = add_handler_vec(h, specs, None);
+        assert!(handlers.is_ok());
+        assert_eq!(handlers.unwrap().len(), 2);
+    });
+}
+
+#[test]
+fn add_handler_vec_with_valid_specs_and_service_name_succeeds() {
+    with_handle(|h| {
+        let specs = vec![
+            MsgHandlerSpec::new(
+                MessageType::REQUEST,
+                "method1",
+                |_, _, _| {},
+                MessageRolemask::OWNER,
+            ),
+            MsgHandlerSpec::new(
+                MessageType::REQUEST,
+                "method2",
+                |_, _, _| {},
+                MessageRolemask::OWNER,
+            ),
+        ];
+        let handlers = add_handler_vec(h, specs, Some("svc"));
         assert!(handlers.is_ok());
         assert_eq!(handlers.unwrap().len(), 2);
     });
@@ -312,14 +335,14 @@ fn add_handler_vec_with_nul_byte_topic_returns_error() {
             |_, _, _| {},
             MessageRolemask::OWNER,
         )];
-        assert!(add_handler_vec(h, specs).is_err());
+        assert!(add_handler_vec(h, specs, None).is_err());
     });
 }
 
 #[test]
 fn add_handler_vec_empty_specs_returns_empty_vec() {
     with_handle(|h| {
-        let handlers = add_handler_vec(h, std::iter::empty::<MsgHandlerSpec>()).unwrap();
+        let handlers = add_handler_vec(h, std::iter::empty::<MsgHandlerSpec>(), None).unwrap();
         assert!(handlers.is_empty());
     });
 }
@@ -335,7 +358,7 @@ fn add_handler_vec_handlers_are_started() {
             |_, _, _| {},
             MessageRolemask::OWNER,
         )];
-        let handlers = add_handler_vec(h, specs).unwrap();
+        let handlers = add_handler_vec(h, specs, None).unwrap();
         handlers[0].stop();
     });
 }

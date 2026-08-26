@@ -600,7 +600,7 @@ impl<State: PossiblyDroppablePtr<flux_t>> FluxHandle<State> {
     }
 
     /// Respond to the provided Request with an optional data payload consisting of arbitrary bytes.
-    pub fn respond(&self, request: &Request, data: Option<&[u8]>) -> Result<()> {
+    pub fn respond_raw(&self, request: &Request, data: Option<&[u8]>) -> Result<()> {
         let (data_ptr, data_len) = match data {
             Some(data_slice) => (data_slice.as_ptr(), data_slice.len()),
             None => (std::ptr::null(), 0),
@@ -615,11 +615,22 @@ impl<State: PossiblyDroppablePtr<flux_t>> FluxHandle<State> {
         )
     }
 
+    pub fn respond(&self, request: &Request, data: Option<&CStr>) -> Result<()> {
+        let data_ptr = match data {
+            Some(s) => s.as_ptr(),
+            None => std::ptr::null(),
+        };
+        flux_try!(flux_respond(
+            self.h.as_mut_ptr(),
+            request.msg.c_msg.as_mut_ptr(),
+            data_ptr
+        ))
+        .map(|_| ())
+    }
+
     /// Respond to the provided Request with an optional data payload consisting of `serde`-serialized JSON data.
     pub fn respond_json(&self, request: &Request, data: Option<&Value>) -> Result<()> {
-        let data_vec_opt = data.map(serde_json::to_vec).transpose()?;
-        let data_slice_opt = data_vec_opt.as_deref();
-        self.respond(request, data_slice_opt)
+        self.respond_serializable(request, data)
     }
 
     /// Respond to the provided Request with an optional data payload consisting of arbitrary `serde`-serializable data.
@@ -628,24 +639,18 @@ impl<State: PossiblyDroppablePtr<flux_t>> FluxHandle<State> {
         request: &Request,
         data: Option<&T>,
     ) -> Result<()> {
-        let data_vec_opt = data
-            .map(|data_value| serde_json::to_vec(data_value))
+        let data_cstring = data
+            .map(serde_json::to_vec)
+            .transpose()?
+            .map(|buf| CString::new(buf))
             .transpose()?;
-        let data_slice_opt = data_vec_opt.as_deref();
-        self.respond(request, data_slice_opt)
+        self.respond(request, data_cstring.as_deref())
     }
 
     /// Respond to the provided Request with an optional data payload consisting of a UTF-8 string.
     pub fn respond_string(&self, request: &Request, data: Option<&str>) -> Result<()> {
         let c_data = data.map(CString::new).transpose()?;
-        let c_data_ptr = c_data.as_ref().map(|cs| cs.as_ptr());
-        flux_try!(empty_ok
-            flux_respond(
-                self.h.as_mut_ptr(),
-                request.msg.c_msg.as_mut_ptr(),
-                c_data_ptr.unwrap_or(std::ptr::null()),
-            )
-        )
+        self.respond(request, c_data.as_deref())
     }
 
     /// Respond to the provided Request with an error code and optional error message.
