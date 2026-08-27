@@ -168,7 +168,7 @@ fn run_module_and_rpc(
         String::from("Got expected response from the `hello_world` topic from the broker module!"),
     ];
 
-    let stdout_lines: Vec<String> = String::from_utf8_lossy_owned(rpc_client_output.stdout)
+    let stdout_lines: Vec<String> = String::from_utf8_lossy(&rpc_client_output.stdout)
         .lines()
         .map(String::from)
         .collect();

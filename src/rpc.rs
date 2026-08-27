@@ -133,7 +133,7 @@ impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Rpc<'a, FhState> {
         })
     }
 
-    pub fn get_raw<'s>(&'s self) -> Result<Option<&'s [u8]>> {
+    pub fn get_raw(&self) -> Result<Option<&[u8]>> {
         let mut buf: *const c_void = std::ptr::null();
         let mut len: usize = 0;
         if let Err(e) = flux_try!(flux_rpc_get_raw(
@@ -157,11 +157,11 @@ impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Rpc<'a, FhState> {
             mark_branch_as_unlikely();
             Ok(None)
         } else {
-            Ok(Some(unsafe { CStr::from_ptr(buf as *const u8).to_bytes() }))
+            Ok(Some(unsafe { CStr::from_ptr(buf as *const _).to_bytes() }))
         }
     }
 
-    pub fn get<'s>(&'s self) -> Result<Option<&'s [u8]>> {
+    pub fn get(&self) -> Result<Option<&[u8]>> {
         let mut buf: *const c_char = std::ptr::null();
         if let Err(e) = flux_try!(flux_rpc_get(
             self.future.c_future.as_mut_ptr(),
@@ -206,7 +206,7 @@ impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Rpc<'a, FhState> {
         Ok(serde_json::from_slice(raw_payload)?)
     }
 
-    pub fn get_string<'s>(&'s self) -> Result<Option<&'s str>> {
+    pub fn get_string(&self) -> Result<Option<&str>> {
         let raw_payload = match self.get()? {
             Some(p) => p,
             None => return Ok(None),

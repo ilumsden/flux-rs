@@ -40,7 +40,7 @@ jobs:
       matrix:
         rust: ["1.88", "stable"]
         image: ["bookworm", "noble"]
-        flux_version: ["v0.88.0", "v0.83.0-amd64", "v0.69.0-amd64"]
+        flux_version: ["v0.88.0", "v0.83.0-amd64", "v0.71.0-amd64"]
 
     steps:
       - uses: actions/checkout@v4
@@ -61,6 +61,8 @@ jobs:
 
       - name: Cargo Cache
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "${{ matrix.image }}-${{ matrix.flux_version }}"
 
       - name: Type Check
         run: cargo check --all-targets --all-features
@@ -70,6 +72,9 @@ jobs:
 
       - name: Run Unit Tests under Flux
         run: flux start cargo test --all-features
+        
+      - name: Run Broker Module/RPC Integration Test
+        run: cargo xtask test-broker-rpc -r
 
   coverage:
     name: Code Coverage
@@ -98,11 +103,12 @@ jobs:
 
       - name: Cargo Cache
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "bookworm-v0.88.0"
 
       - name: Generate Code Coverage under Flux
         run: |
-          flux start cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
-          flux start cargo llvm-cov --all-features --workspace --html --output-dir coverage-html
+            cargo xtask coverage
 
       - name: Upload Coverage Artifacts
         uses: actions/upload-artifact@v4

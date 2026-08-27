@@ -642,7 +642,7 @@ impl<State: PossiblyDroppablePtr<flux_t>> FluxHandle<State> {
         let data_cstring = data
             .map(serde_json::to_vec)
             .transpose()?
-            .map(|buf| CString::new(buf))
+            .map(CString::new)
             .transpose()?;
         self.respond(request, data_cstring.as_deref())
     }

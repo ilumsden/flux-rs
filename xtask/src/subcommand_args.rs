@@ -20,3 +20,9 @@ pub struct TestBrokerRpcArgs {
     #[arg(short, long, default_value = "flux_user")]
     pub uname: String,
 }
+
+#[derive(Args)]
+pub struct CoverageArgs {
+    #[arg(short, long, default_value_t = false)]
+    pub release: bool,
+}

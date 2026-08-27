@@ -3,13 +3,15 @@ use clap::{Parser, Subcommand};
 use xshell::Shell;
 
 mod build_integration_tests;
+mod coverage;
 mod flux_utils;
 mod run_broker_rpc_tests;
 mod subcommand_args;
 
 use crate::build_integration_tests::build_integration_tests;
+use crate::coverage::run_code_coverage;
 use crate::run_broker_rpc_tests::run_integration_tests;
-use crate::subcommand_args::{BuildFixturesArgs, TestBrokerRpcArgs};
+use crate::subcommand_args::{BuildFixturesArgs, CoverageArgs, TestBrokerRpcArgs};
 
 #[derive(Parser)]
 #[command(name = "cargo xtask", about = "Pure-Rust Flux integration testing")]
@@ -24,6 +26,8 @@ enum Commands {
     BuildFixtures(BuildFixturesArgs),
     /// Run full integration tests with Flux
     TestBrokerRpc(TestBrokerRpcArgs),
+    /// Run code coverage across both unit and integration tests
+    Coverage(CoverageArgs),
 }
 
 fn main() -> Result<()> {
@@ -35,5 +39,6 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::BuildFixtures(args) => build_integration_tests(&sh, args.release),
         Commands::TestBrokerRpc(args) => run_integration_tests(&sh, args),
+        Commands::Coverage(args) => run_code_coverage(&sh, args),
     }
 }

@@ -151,8 +151,8 @@ pub struct FluxReactorThread {
     handle: Option<JoinHandle<Result<()>>>,
 }
 
-unsafe impl<'a> Send for FluxReactorThread {}
-unsafe impl<'a> Sync for FluxReactorThread {}
+unsafe impl Send for FluxReactorThread {}
+unsafe impl Sync for FluxReactorThread {}
 
 impl FluxReactorThread {
     pub fn new(reactor: OwnedReactor) -> Self {

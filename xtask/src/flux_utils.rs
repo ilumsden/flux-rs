@@ -37,7 +37,6 @@ pub fn start_flux_instance(sh: &Shell) -> Result<(FluxInstanceGuard, String)> {
     Ok((FluxInstanceGuard(child_proc), flux_uri))
 }
 
-#[allow(dead_code)]
 pub fn update_shell_env<'a>(sh: &'a Shell, env_mods: &HashMap<String, String>) -> Vec<PushEnv<'a>> {
     env_mods.iter().map(|(k, v)| sh.push_env(k, v)).collect()
 }

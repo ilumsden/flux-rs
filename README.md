@@ -5,7 +5,11 @@ the [flux-core](https://github.com/flux-framework/flux-core) component.
 
 ## Dependencies
 
-The Flux-Core Rust API has the following dependencies (specified in `Cargo.toml`):
+The most important dependency of the Flux-Core Rust API is `flux-core` version 0.71.0 or higher.
+Earlier versions of `flux-core` are not supported due to certain functionality not being
+present for `flux_reactor_t` (e.g., reference counting) that are critical to implementing the Rust API.
+
+The Flux-Core Rust API has the following Rust dependencies (specified in `Cargo.toml`):
 <table>
   <tr>
     <th>Crate Name</th>
