@@ -1,3 +1,5 @@
+#![cfg_attr(all(not(feature = "smol"), not(feature = "tokio")), allow(dead_code))]
+
 mod base;
 mod thread;
 

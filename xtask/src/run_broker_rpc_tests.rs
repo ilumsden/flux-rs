@@ -53,8 +53,10 @@ fn run_broker_module_init_failure(sh: &Shell, broker_mod: &PathBuf) -> Result<()
 
     let init_failure_err_count = init_failure_dmesg_lines
         .iter()
-        .filter(|line| line.contains("Flux logic error: Aborting during init per user request"))
+        .filter(|line| line.contains("Flux logic error: Aborting during init per test request"))
         .count();
+
+    println!("Err count: {}", init_failure_err_count);
 
     if init_failure_err_count != 1 {
         bail!(
