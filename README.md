@@ -1,62 +1,183 @@
 # Flux-Core Rust API
 
-This repo provides a higher-level, more Rust-native API for Flux-Core.
+This repo provides a high-level Rust API for LLNL's [Flux's resource manager](https://flux-framework.org/), primarily
+the [flux-core](https://github.com/flux-framework/flux-core) component.
 
-## Outstanding Flux APIs
-The following APIs still need to be implemented. They are listed in order of highest priority to lowest priority.
+## Dependencies
 
-_High Priority (needed for initial use)_
-**All implemented. Still needs testing.**
+The Flux-Core Rust API has the following dependencies (specified in `Cargo.toml`):
+<table>
+  <tr>
+    <th>Crate Name</th>
+    <th>Version</th>
+    <th>Build Dependency?</th>
+    <th>Required?</th>
+    <th>Required Features</th>
+    <th>Optional Features</th>
+  </tr>
+  <tr>
+    <td><a href="https://crates.io/crates/semver">semver</a></td>
+    <td>1.0</td>
+    <td>✅</td>
+    <td>✅</td>
+    <td></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><a href="https://github.com/flux-framework/flux-sys-rs">flux-sys</a></td>
+    <td>0.3.0</td>
+    <td></td>
+    <td>✅</td>
+    <td>core, idset, hostlist</td>
+    <td>jobtap</td>
+  </tr>
+  <tr>
+    <td><a href="https://crates.io/crates/serde">serde</a></td>
+    <td>1.0</td>
+    <td></td>
+    <td>✅</td>
+    <td>derive</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><a href="https://crates.io/crates/serde_json">serde_json</a></td>
+    <td>1.0</td>
+    <td></td>
+    <td>✅</td>
+    <td></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><a href="https://crates.io/crates/bitflags">bitflags</a></td>
+    <td>2.8</td>
+    <td></td>
+    <td>✅</td>
+    <td>serde</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><a href="https://crates.io/crates/libc">libc</a></td>
+    <td>0.2</td>
+    <td></td>
+    <td>✅</td>
+    <td></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><a href="https://crates.io/crates/errno">errno</a></td>
+    <td>0.3</td>
+    <td></td>
+    <td>✅</td>
+    <td></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><a href="https://crates.io/crates/thiserror">thiserror</a></td>
+    <td>2.0</td>
+    <td></td>
+    <td>✅</td>
+    <td></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><a href="https://crates.io/crates/pastey">pastey</a></td>
+    <td>0.2</td>
+    <td></td>
+    <td>✅</td>
+    <td></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><a href="https://crates.io/crates/chrono">chrono</a></td>
+    <td>0.4</td>
+    <td></td>
+    <td>✅</td>
+    <td></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><a href="https://crates.io/crates/url">url</a></td>
+    <td>2.5</td>
+    <td></td>
+    <td>✅</td>
+    <td></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><a href="https://crates.io/crates/indexmap">indexmap</a></td>
+    <td>2.14.0</td>
+    <td></td>
+    <td>✅</td>
+    <td></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><a href="https://crates.io/crates/nix">nix</a></td>
+    <td>0.31</td>
+    <td></td>
+    <td>✅</td>
+    <td>fs</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><a href="https://crates.io/crates/tokio">tokio</a></td>
+    <td>1.0</td>
+    <td></td>
+    <td></td>
+    <td>net, rt, macros, time</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><a href="https://crates.io/crates/smol">smol</a></td>
+    <td>2.0</td>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><a href="https://crates.io/crates/async-io">async-io</a></td>
+    <td>2.0</td>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td></td>
+  </tr>
+</table>
 
-_Medium Priority (good to have for initial release)_
-- Handle (`flux_t`)
-  - Flux Attr Cache (`flux_attr_cache_first`, `flux_attr_cache_next`)
-  - Host-by-Rank (`flux_get_hostbyrank`)
-  - Rank-by-Host (`flux_get_rankbyhost`)
-  - Instance Start Time (`flux_get_instance_starttime`)
-  - Log redirect (`flux_log_set_redirect`)
-  - Message counters (`flux_get_msgcounters`, `flux_clr_msgcounters`)
-  - Stats (`flux_stats` family of functions)
-- Message (`flux_msg_t`)
-  - Macros for `FLUX_MATCH_ANY`, `FLUX_MATCH_EVENT`, `FLUX_MATCH_REQUEST`, `FLUX_MATCH_RESPONSE`
-  - Aux set/get (`flux_msg_aux_get`, `flux_msg_aux_set`)
-  - Message get_type/set_type (`flux_msg_set_type`, `flux_msg_get_type`)
-  - Get last error (`flux_msg_last_error`)
-  - Set/Get control (`flux_msg_set_control`, `flux_msg_get_control`)
-  - Fprint (`flux_msg_fprint`, `flux_msg_fprint_ts`)
-  - Routes (`flux_msg_route` family of functions)
-- KVS (`flux_kvs` family of functions and `flux_kvs_txn_t`)
-  - Get/Wait Version (`flux_kvs_get_version`, `flux_kvs_wait_version`)
-  - Drop Cache (`flux_kvs_dropcache`)
-  - KVS Fencing (`flux_kvs_fence`)
-  - Get rootref (`flux_kvs_commit_get_rootref`)
-  - Kvs Getroot Blobref and Treeobj (`flux_kvs_getroot_get_treeobj`, `flux_kvs_getroot_get_blobref`)
-  - KVS Lookup treeobj (`flux_kvs_lookup_get_treeobj`)
-  - KVS Transaction put_treeobj, clear, and is_empty(`flux_kvs_txn_put_treeobj`, `flux_kvs_txn_clear`, `flux_kvs_txn_is_empty`)
-  - Everything related to `treeobj`
-- Jobspec and Job (`job.h`, `jobspec1.h`)
-  - `Jobspec::resource_walk` (similar to the Python method of the same name)
-  - The `from_submit`, `from_alloc`, `from_batch`, and `apply_options` for the `JobspecV1` struct (mapping to the same methods from the Python bindings)
-  
-  _Low Priority (not necessary for initial release)_
-- Watchers (`flux_watcher_t`)
-  - Handle watcher get Flux (`flux_handle_watcher_get_flux`)
-  - FD Watcher get FD (`flux_fd_watcher_get_fd`)
-  - Timer watcher
-  - Periodic watcher
-  - Prepare/Check/Idle watcher
-  - Child watcher
-  - Signal watcher
-  - Stat watcher
-  - Create custom watcher (`flux_watcher_create`)
-  - Get watcher data (`flux_watcher_get_data`)
-  - Get watcher ops (`flux_watcher_get_ops`)
-- Configuration (`flux_conf_t`)
-- Message List (`flux_msglist` family of functions)
-- Event (`flux_event` family of functions)
-- Treeobj
-- Command (`flux_cmd` family of functions)
-- Service registration (`flux_service` family of functions)
-- Subprocess (`flux_subprocess` family of functions)
-- `flux_sync_create`
-- Version (`flux_core_version`, `flux_core_version_string`)
+## Building and Using in Other Projects
+
+As with most Rust crates, building flux-core-rs and using it in
+other projects is as simple as adding the following to your
+`dependencies` table in `Cargo.toml`:
+
+```toml
+[dependencies]
+flux-core = { version = "0.1.0", git = "https://github.com/flux-framework/flux-core-rs.git", branch = "main" }
+```
+
+> [!NOTE]
+> The `flux-core` crate is not yet available on crates.io.
+> So, users need to add the dependency directly via `git`, as
+> shown above.
+
+In addition to a default build, flux-core-rs also provides the
+following Cargo features for optional functionality:
+* `jobtap`: builds the high-level Rust API for jobtap plugins
+* `tokio`: builds `flux_core::async_driver::TokioDriver`, which enables driving the Tokio async runtime using the Flux reactor
+* `smol`: builds `flux_core::async_driver::SmolDriver`, which enables driving the Smol async runtime using the Flux reactor
+
+## Examples
+
+TBA
+
+## Copyright and License
+
+The Flux-Core Rust API is distributed under the terms of the GNU Lesser General Public License v3.0. All new contributions must be made under this license.
+
+See [LICENSE](LICENSE)
+and [NOTICE.LLNS](NOTICE.LLNS)
+for details.
+
+SPDX-License-Identifier: LGPL-3.0
+LLNL-CODE-XXXXXX
