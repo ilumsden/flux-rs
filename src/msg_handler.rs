@@ -1,4 +1,5 @@
 use std::ffi::{CString, c_void};
+use std::ops::Deref;
 
 use flux_sys::core::{
     flux_match, flux_msg_handler_allow_rolemask, flux_msg_handler_create,
@@ -142,12 +143,6 @@ impl<State: PossiblyDroppablePtr<flux_msg_handler_t>> MsgHandler<State> {
     }
 }
 
-impl<State: PossiblyDroppablePtr<flux_msg_handler_t>> Drop for MsgHandler<State> {
-    fn drop(&mut self) {
-        self.stop();
-    }
-}
-
 unsafe impl<'a> BorrowFluxPtr for BorrowedMsgHandler<'a> {
     type CType = flux_msg_handler_t;
     type FromRawArgs = ();
@@ -206,6 +201,24 @@ impl MsgHandlerSpec {
     }
 }
 
+pub struct MsgHandlerVec(Vec<OwnedMsgHandler>);
+
+impl Deref for MsgHandlerVec {
+    type Target = [OwnedMsgHandler];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Drop for MsgHandlerVec {
+    fn drop(&mut self) {
+        for handler in &self.0 {
+            handler.stop();
+        }
+    }
+}
+
 /// Create and start multiple MsgHandlers from a collection of MsgHandlerSpecs.
 ///
 /// This function does the same thing `flux_msg_handler_addvec_ex` from the C API.
@@ -217,24 +230,26 @@ pub fn add_handler_vec<I>(
     handle: &FluxHandle,
     specs: I,
     service_name: Option<&str>,
-) -> Result<Vec<OwnedMsgHandler>>
+) -> Result<MsgHandlerVec>
 where
     I: IntoIterator<Item = MsgHandlerSpec>,
 {
-    specs
-        .into_iter()
-        .map(|spec| {
-            let mut matcher = spec.as_msg_match()?;
-            if let Some(sn) = service_name
-                && let Some(tg) = matcher.topic_glob
-            {
-                matcher.topic_glob =
-                    Some(CString::new(format!("{}.{}", sn, tg.to_string_lossy()))?);
-            }
-            let mut handler = MsgHandler::new(handle, matcher, spec.cb)?;
-            handler.allow_rolemask(spec.rolemask);
-            handler.start();
-            Ok(handler)
-        })
-        .collect()
+    Ok(MsgHandlerVec(
+        specs
+            .into_iter()
+            .map(|spec| -> Result<MsgHandler> {
+                let mut matcher = spec.as_msg_match()?;
+                if let Some(sn) = service_name
+                    && let Some(tg) = matcher.topic_glob
+                {
+                    matcher.topic_glob =
+                        Some(CString::new(format!("{}.{}", sn, tg.to_string_lossy()))?);
+                }
+                let mut handler = MsgHandler::new(handle, matcher, spec.cb)?;
+                handler.allow_rolemask(spec.rolemask);
+                handler.start();
+                Ok(handler)
+            })
+            .collect::<Result<Vec<OwnedMsgHandler>>>()?,
+    ))
 }
