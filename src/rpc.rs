@@ -1,4 +1,5 @@
 use std::ffi::{CStr, CString, c_char, c_void};
+use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -221,6 +222,20 @@ impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Rpc<'a, FhState> {
 
     pub fn get_nodeid(&self) -> u32 {
         unsafe { flux_rpc_get_nodeid(self.future.c_future.as_mut_ptr()) }
+    }
+}
+
+impl<'a, T: PossiblyDroppablePtr<flux_t>> Deref for Rpc<'a, T> {
+    type Target = FluxFuture;
+
+    fn deref(&self) -> &Self::Target {
+        &self.future
+    }
+}
+
+impl<'a, T: PossiblyDroppablePtr<flux_t>> DerefMut for Rpc<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.future
     }
 }
 

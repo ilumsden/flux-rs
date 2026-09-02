@@ -52,43 +52,49 @@ fn main() -> Result<()> {
 
         println!("Sending Streaming RPC to '{info_rpc_topic}' target");
 
-        // Send an initial RPC to <service_name>.info and validate the response
-        let rpc_handle = handle.send_rpc(
-            &info_rpc_topic,
-            &[],
-            RpcNodeId::Rank(0),
-            RpcFlags::STREAMING,
-        )?;
+        // Scope used to control when the underlying flux_future_t
+        // is released by the Rpc struct
+        {
+            // Send an initial RPC to <service_name>.info and validate the response
+            let mut rpc_handle = handle.send_rpc(
+                &info_rpc_topic,
+                &[],
+                RpcNodeId::Rank(0),
+                RpcFlags::STREAMING,
+            )?;
 
-        println!("Getting service name from RPC");
-        match rpc_handle.get_string()? {
-            Some(val) => {
-                if val == &args.module_name {
-                    println!("Got expected service name from broker module!");
-                } else {
-                    bail!("Got incorrect service name from broker module!");
+            println!("Getting service name from RPC");
+            match rpc_handle.get_string()? {
+                Some(val) => {
+                    if val == &args.module_name {
+                        println!("Got expected service name from broker module!");
+                    } else {
+                        bail!("Got incorrect service name from broker module!");
+                    }
+                }
+                None => {
+                    bail!(
+                        "Got an empty response from the broker module when checking for service name!"
+                    );
                 }
             }
-            None => {
-                bail!(
-                    "Got an empty response from the broker module when checking for service name!"
-                );
-            }
-        }
 
-        println!("Checking for ENODATA to indicate end-of-stream");
-        if let Err(flux_err) = rpc_handle.get() {
-            match flux_err {
-                FluxError::EndOfStreamRpc => {
-                    println!("Got expected ENODATA error to indicate end of streaming RPC!")
+            rpc_handle.reset()?;
+
+            println!("Checking for ENODATA to indicate end-of-stream");
+            if let Err(flux_err) = rpc_handle.get() {
+                match flux_err {
+                    FluxError::EndOfStreamRpc => {
+                        println!("Got expected ENODATA error to indicate end of streaming RPC!")
+                    }
+                    _ => bail!(
+                        "Unexpected error occured while waiting for ENODATA: {}",
+                        flux_err
+                    ),
                 }
-                _ => bail!(
-                    "Unexpected error occured while waiting for ENODATA: {}",
-                    flux_err
-                ),
+            } else {
+                bail!("Did not receive ENODATA to indicate end of streaming RPC.");
             }
-        } else {
-            bail!("Did not receive ENODATA to indicate end of streaming RPC.");
         }
 
         let hello_world_rpc_topic = format!("{}.hello_world", target_name);
