@@ -83,7 +83,7 @@ fn from_flux_future_creates_job_result() {
 
 #[test]
 fn deref_exposes_inner_future_methods() {
-    let mut result = make_dummy_result();
+    let result = make_dummy_result();
     // Deref allows calling check_error directly on JobResult
     assert!(result.check_error().is_ok());
 }

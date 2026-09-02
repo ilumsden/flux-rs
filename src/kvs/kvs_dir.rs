@@ -33,7 +33,7 @@ impl OwnedKvsDir {
         path: Option<&str>,
         namespace: Option<&str>,
     ) -> Result<Self> {
-        let mut kvs_handle = Kvs::new(handle);
+        let kvs_handle = Kvs::new(handle);
         let dir_path = path.unwrap_or(".");
         let lookup = kvs_handle.lookup(dir_path, KvsFlags::READDIR, namespace)?;
         lookup.get_dir()

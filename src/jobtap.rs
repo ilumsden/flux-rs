@@ -354,11 +354,11 @@ impl<State: PossiblyDroppablePtr<flux_plugin_t>> JobtapPlugin<State> {
         Ok(rc == 1)
     }
 
-    pub fn subscribe_to_job_events(&self, id: JobId) -> Result<()> {
+    pub fn subscribe_to_job_events(&mut self, id: JobId) -> Result<()> {
         flux_try!(empty_ok flux_jobtap_job_subscribe(self.plugin.as_mut_ptr(), id.0))
     }
 
-    pub fn unsubscribe_from_job_events(&self, id: JobId) {
+    pub fn unsubscribe_from_job_events(&mut self, id: JobId) {
         unsafe {
             flux_jobtap_job_unsubscribe(self.plugin.as_mut_ptr(), id.0);
         }

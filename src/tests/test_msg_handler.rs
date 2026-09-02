@@ -70,7 +70,7 @@ fn new_stores_callback_in_cb_box() {
 #[test]
 fn start_on_new_handler_succeeds() {
     with_handle(|h| {
-        let handler = make_handler(h);
+        let mut handler = make_handler(h);
         handler.start();
     });
 }
@@ -78,7 +78,7 @@ fn start_on_new_handler_succeeds() {
 #[test]
 fn stop_after_start_succeeds() {
     with_handle(|h| {
-        let handler = make_handler(h);
+        let mut handler = make_handler(h);
         handler.start();
         handler.stop();
     });
@@ -88,7 +88,7 @@ fn stop_after_start_succeeds() {
 fn stop_without_prior_start_succeeds() {
     // flux_msg_handler_stop on an unstarted handler is a safe no-op.
     with_handle(|h| {
-        let handler = make_handler(h);
+        let mut handler = make_handler(h);
         handler.stop();
     });
 }
@@ -96,7 +96,7 @@ fn stop_without_prior_start_succeeds() {
 #[test]
 fn start_stop_start_cycle_succeeds() {
     with_handle(|h| {
-        let handler = make_handler(h);
+        let mut handler = make_handler(h);
         handler.start();
         handler.stop();
         handler.start();
@@ -107,7 +107,7 @@ fn start_stop_start_cycle_succeeds() {
 fn double_start_is_idempotent() {
     // flux_msg_handler_start is idempotent; calling it twice should not error.
     with_handle(|h| {
-        let handler = make_handler(h);
+        let mut handler = make_handler(h);
         handler.start();
         handler.start();
     });
@@ -116,7 +116,7 @@ fn double_start_is_idempotent() {
 #[test]
 fn double_stop_is_idempotent() {
     with_handle(|h| {
-        let handler = make_handler(h);
+        let mut handler = make_handler(h);
         handler.start();
         handler.stop();
         handler.stop();
@@ -212,7 +212,7 @@ fn borrowed_handler_can_start_and_stop() {
     with_handle(|h| {
         let handler = make_handler(h);
         let ptr = handler.as_mut_ptr();
-        let borrowed = unsafe { MsgHandler::borrow_ptr(ptr) }.unwrap();
+        let mut borrowed = unsafe { MsgHandler::borrow_ptr(ptr) }.unwrap();
         borrowed.start();
         borrowed.stop();
     });
@@ -358,7 +358,7 @@ fn add_handler_vec_handlers_are_started() {
             |_, _, _| {},
             MessageRolemask::OWNER,
         )];
-        let handlers = add_handler_vec(h, specs, None).unwrap();
+        let mut handlers = add_handler_vec(h, specs, None).unwrap();
         handlers[0].stop();
     });
 }

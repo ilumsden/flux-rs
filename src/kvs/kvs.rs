@@ -33,7 +33,7 @@ impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Kvs<'a, FhState> {
     }
 
     pub fn create_namespace(
-        &mut self,
+        &self,
         namespace: &str,
         flags: KvsFlags,
         owner: Option<u32>,
@@ -50,7 +50,7 @@ impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Kvs<'a, FhState> {
     }
 
     pub fn create_namespace_with(
-        &mut self,
+        &self,
         namespace: &str,
         rootref: &str,
         flags: KvsFlags,
@@ -69,7 +69,7 @@ impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Kvs<'a, FhState> {
         unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
-    pub fn remove_namespace(&mut self, namespace: &str) -> Result<OwnedFluxFuture> {
+    pub fn remove_namespace(&self, namespace: &str) -> Result<OwnedFluxFuture> {
         let c_namespace = CString::new(namespace)?;
         let future_ptr = flux_try!(flux_kvs_namespace_remove(
             self.handle.h.as_mut_ptr(),
@@ -78,12 +78,7 @@ impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Kvs<'a, FhState> {
         unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
-    pub fn lookup(
-        &mut self,
-        key: &str,
-        flags: KvsFlags,
-        namespace: Option<&str>,
-    ) -> Result<Lookup> {
+    pub fn lookup(&self, key: &str, flags: KvsFlags, namespace: Option<&str>) -> Result<Lookup> {
         // Optionally convert 'namespace' to a C String.
         // If namespace is None, c_namespace will be None.
         // If namespace is Some(val), val will be converted to a C String.
@@ -107,7 +102,7 @@ impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Kvs<'a, FhState> {
         ))
     }
 
-    pub fn getroot(&mut self, namespace: Option<&str>) -> Result<Getroot> {
+    pub fn getroot(&self, namespace: Option<&str>) -> Result<Getroot> {
         let c_namespace = namespace
             .map(|ns| CString::new(ns).map_err(FluxError::NulError))
             .transpose()?;
@@ -120,7 +115,7 @@ impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Kvs<'a, FhState> {
     }
 
     pub fn copy_entry(
-        &mut self,
+        &self,
         srckey: &str,
         dstkey: &str,
         commit_flags: KvsFlags,
@@ -151,7 +146,7 @@ impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Kvs<'a, FhState> {
     }
 
     pub fn move_entry(
-        &mut self,
+        &self,
         srckey: &str,
         dstkey: &str,
         commit_flags: KvsFlags,
@@ -182,7 +177,7 @@ impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Kvs<'a, FhState> {
     }
 
     pub fn commit(
-        &mut self,
+        &self,
         txn: &KvsTransaction,
         flags: KvsFlags,
         namespace: Option<&str>,
@@ -340,7 +335,7 @@ impl Getroot {
 
     // TODO implement get_treeobj and get_blobref
 
-    pub fn get_sequence(&mut self) -> Result<i32> {
+    pub fn get_sequence(&self) -> Result<i32> {
         let mut seq: i32 = 0;
         flux_try!(flux_kvs_getroot_get_sequence(
             self.future.c_future.as_mut_ptr(),
@@ -349,7 +344,7 @@ impl Getroot {
         Ok(seq)
     }
 
-    pub fn get_owner(&mut self) -> Result<u32> {
+    pub fn get_owner(&self) -> Result<u32> {
         let mut owner: u32 = 0;
         flux_try!(flux_kvs_getroot_get_owner(
             self.future.c_future.as_mut_ptr(),
@@ -396,7 +391,7 @@ impl Commit {
 
     // TODO implment get_treeobj and
 
-    pub fn get_sequence(&mut self) -> Result<i32> {
+    pub fn get_sequence(&self) -> Result<i32> {
         let mut seq: i32 = 0;
         flux_try!(flux_kvs_commit_get_sequence(
             self.future.c_future.as_mut_ptr(),

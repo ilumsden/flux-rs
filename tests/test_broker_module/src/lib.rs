@@ -18,7 +18,7 @@ set_global_panicking_allocator!();
 fn info(handle: FluxHandle, _msg_handler: BorrowedMsgHandler<'_>, msg: Message) {
     flux_log_info!(handle, "INFO - Getting service name");
     let service_name = match handle.get_aux_raw("flux::name") {
-        Ok(c_str_ptr) => unsafe { CStr::from_ptr(c_str_ptr as *const u8) },
+        Ok(c_str_ptr) => unsafe { CStr::from_ptr(c_str_ptr as *const _) },
         Err(e) => {
             flux_log_error!(handle, "Error getting service name: {}", e);
             c""
@@ -142,7 +142,7 @@ fn module_main(handle: FluxHandle, args: Vec<String>) -> Result<()> {
         handle,
         "Creating Vec of MsgHandlerSpecs for topics/callbacks"
     );
-    let service_name = unsafe { CStr::from_ptr(handle.get_aux_raw("flux::name")? as *const u8) };
+    let service_name = unsafe { CStr::from_ptr(handle.get_aux_raw("flux::name")? as *const _) };
     let service_name_ru = service_name.to_string_lossy();
     let handler_vec = vec![
         MsgHandlerSpec::new(MessageType::REQUEST, "info", info, MessageRolemask::NONE),

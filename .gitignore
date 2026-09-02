@@ -1,3 +1,6 @@
+coverage-html/**
+lcov.info
+
 .VSCodeCounter
 .DS_Store
 

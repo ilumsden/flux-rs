@@ -13,14 +13,14 @@ use crate::tests::common::with_handle;
 #[test]
 fn kvs_dir_read_and_inspect_entries() {
     with_handle(|h| {
-        let mut kvs = Kvs::new(h);
+        let kvs = Kvs::new(h);
         let mut txn = KvsTransaction::new().unwrap();
 
         txn.put("test_kvs_dir.file1", b"val1", KvsFlags::NONE)
             .unwrap();
         txn.put("test_kvs_dir.file2", b"val2", KvsFlags::NONE)
             .unwrap();
-        let mut commit = kvs.commit(&txn, KvsFlags::NONE, None).unwrap();
+        let commit = kvs.commit(&txn, KvsFlags::NONE, None).unwrap();
         assert!(commit.future.wait_for(5.0).unwrap());
 
         let dir = KvsDir::new(h, Some("test_kvs_dir"), None).unwrap();
@@ -47,12 +47,12 @@ fn kvs_dir_read_and_inspect_entries() {
 #[test]
 fn kvs_dir_cursor_and_iter() {
     with_handle(|h| {
-        let mut kvs = Kvs::new(h);
+        let kvs = Kvs::new(h);
         let mut txn = KvsTransaction::new().unwrap();
 
         txn.put("test_cursor_dir.a", b"1", KvsFlags::NONE).unwrap();
         txn.put("test_cursor_dir.b", b"2", KvsFlags::NONE).unwrap();
-        let mut commit = kvs.commit(&txn, KvsFlags::NONE, None).unwrap();
+        let commit = kvs.commit(&txn, KvsFlags::NONE, None).unwrap();
         assert!(commit.future.wait_for(5.0).unwrap());
 
         let dir = KvsDir::new(h, Some("test_cursor_dir"), None).unwrap();
@@ -92,10 +92,10 @@ fn kvs_dir_cursor_and_iter() {
 #[test]
 fn pointer_management_traits() {
     with_handle(|h| {
-        let mut kvs = Kvs::new(h);
+        let kvs = Kvs::new(h);
         let mut txn = KvsTransaction::new().unwrap();
         txn.put("test_ptr_dir.x", b"0", KvsFlags::NONE).unwrap();
-        let mut commit = kvs.commit(&txn, KvsFlags::NONE, None).unwrap();
+        let commit = kvs.commit(&txn, KvsFlags::NONE, None).unwrap();
         assert!(commit.future.wait_for(5.0).unwrap());
 
         let dir = KvsDir::new(h, Some("test_ptr_dir"), None).unwrap();

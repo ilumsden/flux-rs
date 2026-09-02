@@ -547,7 +547,7 @@ fn into_raw_returns_non_null_and_suppresses_destructor() {
 
 #[test]
 fn check_error_on_fresh_future_returns_ok() {
-    let mut future = make_wait_all();
+    let future = make_wait_all();
     assert!(future.check_error().is_ok());
 }
 
@@ -718,7 +718,7 @@ fn fulfill_next_on_non_streaming_future_returns_false() {
 fn wait_for_zero_timeout_on_unfulfilled_child_returns_false() {
     // An empty wait_all with one unfulfilled child can never complete,
     // so wait_for(0.0) reliably times out.
-    let mut future = make_wait_all_with_child("pending");
+    let future = make_wait_all_with_child("pending");
     assert!(!future.wait_for(0.0).unwrap());
 }
 

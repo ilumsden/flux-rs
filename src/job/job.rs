@@ -61,7 +61,7 @@ impl<'a, State: PossiblyDroppablePtr<flux_t>> Job<'a, State> {
     /// Build a Job from a FluxHandle reference and a FluxFuture from submit_async.
     ///
     /// This function is an alias to `Job::try_from`, provided by the implementation of `TryFrom<(&FluxHandle, FluxFuture)>`.
-    pub fn try_from_handle_and_future<FutureState>(
+    pub fn try_from_handle_and_future<FutureState: PossiblyDroppablePtr<flux_future_t>>(
         handle: &'a FluxHandle<State>,
         future: FluxFuture<FutureState>,
     ) -> Result<Self>
@@ -92,7 +92,7 @@ impl<'a, State: PossiblyDroppablePtr<flux_t>> Job<'a, State> {
     // TODO implement something related to watch_eventlog, list_id
 
     pub fn raise(
-        &self,
+        &mut self,
         severity: Option<JobEventSeverity>,
         message: Option<&str>,
         exception_type: Option<&str>,
@@ -110,7 +110,7 @@ impl<'a, State: PossiblyDroppablePtr<flux_t>> Job<'a, State> {
         unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
-    pub fn cancel(&self, reason: Option<&str>) -> Result<OwnedFluxFuture> {
+    pub fn cancel(&mut self, reason: Option<&str>) -> Result<OwnedFluxFuture> {
         let c_reason = reason.map(CString::new).transpose()?;
         let future_ptr = flux_try!(flux_job_cancel(
             self.handle.h.as_mut_ptr(),
@@ -122,7 +122,7 @@ impl<'a, State: PossiblyDroppablePtr<flux_t>> Job<'a, State> {
         unsafe { FluxFuture::from_ptr(future_ptr) }
     }
 
-    pub fn kill(&self, signal: SignalCode) -> Result<OwnedFluxFuture> {
+    pub fn kill(&mut self, signal: SignalCode) -> Result<OwnedFluxFuture> {
         let future_ptr = flux_try!(flux_job_kill(
             self.handle.h.as_mut_ptr(),
             *self.id,

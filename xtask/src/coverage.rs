@@ -38,24 +38,6 @@ fn print_test_end(msg: &str, res: Result<()>) -> Result<()> {
 pub fn run_code_coverage(sh: &Shell, args: CoverageArgs) -> Result<()> {
     cmd!(sh, "cargo llvm-cov clean --workspace").run()?;
 
-    print_test_start("Unit Test Coverage");
-    let res = if args.release {
-        cmd!(
-            sh,
-            "flux start cargo llvm-cov test --no-report --all-features --release"
-        )
-        .run()
-        .context("Unit tests failed")
-    } else {
-        cmd!(
-            sh,
-            "flux start cargo llvm-cov test --no-report --all-features"
-        )
-        .run()
-        .context("Unit tests failed")
-    };
-    print_test_end("Unit Test Coverage", res)?;
-
     let cov_env_output = cmd!(sh, "cargo llvm-cov show-env").read()?;
 
     let env_map: HashMap<String, String> = cov_env_output
@@ -71,6 +53,24 @@ pub fn run_code_coverage(sh: &Shell, args: CoverageArgs) -> Result<()> {
 
     let _env_updates = update_shell_env(sh, &env_map);
 
+    print_test_start("Unit Test Coverage");
+    let res = if args.release {
+        cmd!(
+            sh,
+            "flux start cargo test --all-features --release" // "flux start cargo llvm-cov test --no-report --all-features --release"
+        )
+        .run()
+        .context("Unit tests failed")
+    } else {
+        cmd!(
+            sh,
+            "flux start cargo test --all-features" //"flux start cargo llvm-cov test --no-report --all-features"
+        )
+        .run()
+        .context("Unit tests failed")
+    };
+    print_test_end("Unit Test Coverage", res)?;
+
     print_test_start("Broker Module/RPC Integration Test Coverage");
     let res = if args.release {
         cmd!(sh, "cargo xtask test-broker-rpc --release")
@@ -84,15 +84,18 @@ pub fn run_code_coverage(sh: &Shell, args: CoverageArgs) -> Result<()> {
     print_test_end("Broker Module/RPC Integration Test Coverage", res)?;
 
     print_test_start("LCOV Report Generation");
-    let res = cmd!(sh, "cargo llvm-cov report --lcov --output-path lcov.info")
-        .run()
-        .context("Failed to generate LCOV report");
+    let res = cmd!(
+        sh,
+        "cargo llvm-cov report --package flux-core --lcov --output-path lcov.info"
+    )
+    .run()
+    .context("Failed to generate LCOV report");
     print_test_end("LCOV Report Generation", res)?;
 
     print_test_start("HTML Report Generation");
     let res = cmd!(
         sh,
-        "cargo llvm-cov report --html --output-dir coverage-html"
+        "cargo llvm-cov report --package flux-core --html --output-dir coverage-html"
     )
     .run()
     .context("Failed to generate HTML report");

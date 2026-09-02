@@ -5,9 +5,9 @@ use std::task::{Context, Poll};
 
 use bitflags::bitflags;
 use flux_sys::core::{
-    FLUX_NODEID_ANY, FLUX_NODEID_UPSTREAM, FLUX_RPC_NORESPONSE, FLUX_RPC_STREAMING, flux_rpc_get,
-    flux_rpc_get_matchtag, flux_rpc_get_nodeid, flux_rpc_get_raw, flux_rpc_message, flux_rpc_raw,
-    flux_t,
+    FLUX_NODEID_ANY, FLUX_NODEID_UPSTREAM, FLUX_RPC_NORESPONSE, FLUX_RPC_STREAMING, flux_msg_t,
+    flux_rpc_get, flux_rpc_get_matchtag, flux_rpc_get_nodeid, flux_rpc_get_raw, flux_rpc_message,
+    flux_rpc_raw, flux_t,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -115,9 +115,9 @@ impl<'a, FhState: PossiblyDroppablePtr<flux_t>> Rpc<'a, FhState> {
         Self::create(handle, topic, &data_vec, nodeid, flags)
     }
 
-    pub fn create_message(
+    pub fn create_message<MsgState: PossiblyDroppablePtr<flux_msg_t>>(
         handle: &'a FluxHandle<FhState>,
-        msg: &Message,
+        msg: &Message<MsgState>,
         nodeid: RpcNodeId,
         flags: RpcFlags,
     ) -> Result<Self> {

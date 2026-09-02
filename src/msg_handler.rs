@@ -1,5 +1,5 @@
 use std::ffi::{CString, c_void};
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 use flux_sys::core::{
     flux_match, flux_msg_handler_allow_rolemask, flux_msg_handler_create,
@@ -118,13 +118,13 @@ impl OwnedMsgHandler {
 }
 
 impl<State: PossiblyDroppablePtr<flux_msg_handler_t>> MsgHandler<State> {
-    pub fn start(&self) {
+    pub fn start(&mut self) {
         unsafe {
             flux_msg_handler_start(self.c_handler.as_mut_ptr());
         }
     }
 
-    pub fn stop(&self) {
+    pub fn stop(&mut self) {
         unsafe {
             flux_msg_handler_stop(self.c_handler.as_mut_ptr());
         }
@@ -211,9 +211,15 @@ impl Deref for MsgHandlerVec {
     }
 }
 
+impl DerefMut for MsgHandlerVec {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 impl Drop for MsgHandlerVec {
     fn drop(&mut self) {
-        for handler in &self.0 {
+        for handler in &mut self.0 {
             handler.stop();
         }
     }

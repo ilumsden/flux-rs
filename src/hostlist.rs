@@ -96,6 +96,11 @@ impl<State: PossiblyDroppablePtr<hostlist>> Hostlist<State> {
         }
     }
 
+    /// Search for the index of the specified hostname in the hostlist.
+    ///
+    /// If found, the index of the hostname is returned, and the internal cursor
+    /// of the `Hostlist` is updated to point to that index.
+    /// If not found, `Ok(None)` is returned.
     pub fn find(&mut self, hostname: &str) -> Result<Option<usize>> {
         let c_hostname = CString::new(hostname)?;
         let pos = unsafe { hostlist_find(self.c_hostlist.as_mut_ptr(), c_hostname.as_ptr()) };
@@ -106,6 +111,11 @@ impl<State: PossiblyDroppablePtr<hostlist>> Hostlist<State> {
         }
     }
 
+    /// Get the nth hostname in the hostlist.
+    ///
+    /// If found, the hostname is returned, and the internal cursor of the `Hostlist`
+    /// is updated to point to that index.
+    /// If not found, `None` is returned.
     pub fn nth(&mut self, n: usize) -> Option<String> {
         let ptr = unsafe { hostlist_nth(self.c_hostlist.as_mut_ptr(), n as _) };
         if ptr.is_null() {

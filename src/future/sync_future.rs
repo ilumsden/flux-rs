@@ -216,7 +216,7 @@ impl<State: PossiblyDroppablePtr<flux_future_t>> FluxFuture<State> {
     /// Check if an error was reported on the future.
     ///
     /// This method is a thin wrapper around `flux_future_has_error` and `flux_future_error_string`.
-    pub fn check_error(&mut self) -> Result<()> {
+    pub fn check_error(&self) -> Result<()> {
         let has_error = unsafe { flux_future_has_error(self.c_future.as_mut_ptr()) };
         if has_error {
             let errstr = unsafe { flux_future_error_string(self.c_future.as_mut_ptr()) };
@@ -465,7 +465,7 @@ impl<State: PossiblyDroppablePtr<flux_future_t>> FluxFuture<State> {
     /// * `Ok(true)` if the future was successfully waited on.
     /// * `Ok(false)` if the wait timed out.
     /// * `Err(FluxError)` on error.
-    pub fn wait_for(&mut self, timeout: f64) -> Result<bool> {
+    pub fn wait_for(&self, timeout: f64) -> Result<bool> {
         let rc = unsafe { flux_future_wait_for(self.c_future.as_mut_ptr(), timeout) };
         if rc == -1 {
             let last_os_error = std::io::Error::last_os_error();
@@ -508,7 +508,7 @@ impl<State: PossiblyDroppablePtr<flux_future_t>> FluxFuture<State> {
         Ok(Some(unsafe { FluxFuture::borrow_ptr(flux_future_ptr)? }))
     }
 
-    pub fn get(&mut self) -> Result<*const c_void> {
+    pub fn get(&self) -> Result<*const c_void> {
         let mut result_ptr: *const c_void = std::ptr::null();
         flux_try!(flux_future_get(self.c_future.as_mut_ptr(), &mut result_ptr))?;
         Ok(result_ptr)

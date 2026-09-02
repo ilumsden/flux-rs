@@ -42,7 +42,12 @@ smol = ["dep:smol", "dep:async-io"]
 jobtap = ["flux-sys/jobtap"]
 
 [package.metadata.llvm-cov]
-ignore-filename-regex = ["src/**/tests/", "build\\.rs"]
+ignore-filename-regex = [
+    "src/**/tests/",
+    "build\\.rs",
+    "tests/test_jobtap_plugin/",
+    "xtask/",
+]
 
 [workspace]
 members = [

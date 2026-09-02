@@ -91,12 +91,12 @@ impl<State: PossiblyDroppablePtr<idset>> Idset<State> {
     }
 
     /// Add an id into the Idset.
-    pub fn insert(&self, value: u32) -> Result<()> {
+    pub fn insert(&mut self, value: u32) -> Result<()> {
         flux_try!(empty_ok idset_set(self.c_idset.as_mut_ptr(), value))
     }
 
     /// Insert a range of ids into the Idset.
-    pub fn insert_range(&self, range: Range<u32>) -> Result<()> {
+    pub fn insert_range(&mut self, range: Range<u32>) -> Result<()> {
         let range_start = range.start;
         // We subtract 1 here because Rust Range represents the open interval
         // [start, end)
@@ -125,7 +125,10 @@ impl<State: PossiblyDroppablePtr<idset>> Idset<State> {
         Some(last_id)
     }
 
-    pub fn union(&self, other: &Self) -> Result<OwnedIdset> {
+    pub fn union<OtherState: PossiblyDroppablePtr<idset>>(
+        &self,
+        other: &Idset<OtherState>,
+    ) -> Result<OwnedIdset> {
         let union_ptr = flux_try!(idset_union(
             self.c_idset.as_mut_ptr(),
             other.c_idset.as_mut_ptr()
@@ -135,7 +138,10 @@ impl<State: PossiblyDroppablePtr<idset>> Idset<State> {
         })
     }
 
-    pub fn intersection(&self, other: &Self) -> Result<OwnedIdset> {
+    pub fn intersection<OtherState: PossiblyDroppablePtr<idset>>(
+        &self,
+        other: &Idset<OtherState>,
+    ) -> Result<OwnedIdset> {
         let intersection_ptr = flux_try!(idset_intersect(
             self.c_idset.as_mut_ptr(),
             other.c_idset.as_mut_ptr()
@@ -145,7 +151,10 @@ impl<State: PossiblyDroppablePtr<idset>> Idset<State> {
         })
     }
 
-    pub fn difference(&self, other: &Self) -> Result<OwnedIdset> {
+    pub fn difference<OtherState: PossiblyDroppablePtr<idset>>(
+        &self,
+        other: &Idset<OtherState>,
+    ) -> Result<OwnedIdset> {
         let difference_ptr = flux_try!(idset_difference(
             self.c_idset.as_mut_ptr(),
             other.c_idset.as_mut_ptr()
@@ -155,7 +164,10 @@ impl<State: PossiblyDroppablePtr<idset>> Idset<State> {
         })
     }
 
-    pub fn is_disjoint(&self, other: &Self) -> bool {
+    pub fn is_disjoint<OtherState: PossiblyDroppablePtr<idset>>(
+        &self,
+        other: &Idset<OtherState>,
+    ) -> bool {
         unsafe { !idset_has_intersection(self.c_idset.as_mut_ptr(), other.c_idset.as_mut_ptr()) }
     }
 
@@ -171,8 +183,10 @@ impl<State: PossiblyDroppablePtr<idset>> Idset<State> {
     }
 }
 
-impl<State: PossiblyDroppablePtr<idset>> PartialEq for Idset<State> {
-    fn eq(&self, other: &Self) -> bool {
+impl<SelfState: PossiblyDroppablePtr<idset>, OtherState: PossiblyDroppablePtr<idset>>
+    PartialEq<Idset<OtherState>> for Idset<SelfState>
+{
+    fn eq(&self, other: &Idset<OtherState>) -> bool {
         unsafe { idset_equal(self.c_idset.as_mut_ptr(), other.c_idset.as_mut_ptr()) }
     }
 }

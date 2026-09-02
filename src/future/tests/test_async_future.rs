@@ -329,8 +329,8 @@ mod smol_tests {
             let result = f();
             let _ = tx.send(result);
         });
-        rx.recv_timeout(Duration::from_secs(10))
-            .expect("smol await test did not complete within 5 s")
+        rx.recv_timeout(Duration::from_secs(30))
+            .expect("smol await test did not complete within 30 s")
     }
 
     #[test]

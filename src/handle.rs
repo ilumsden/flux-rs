@@ -10,12 +10,12 @@ use flux_sys::core::{
     flux_get_reactor, flux_get_size, flux_incref, flux_log, flux_log_set_appname,
     flux_log_set_procid, flux_match, flux_msg_t, flux_open, flux_pollevents, flux_pollfd,
     flux_reactor_t, flux_reconnect, flux_recv, flux_requeue, flux_respond, flux_respond_error,
-    flux_respond_raw, flux_send_new, flux_set_reactor, flux_t,
+    flux_respond_raw, flux_send, flux_set_reactor, flux_t,
 };
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::error::{FluxError, FluxReturnType, Result, flux_try};
+use crate::error::{FluxError, Result, flux_try};
 use crate::flux_ptr_management::{
     AsFluxPtr, BorrowFluxPtr, BorrowFluxPtrNoArgs, Borrowed, FluxPtr, FromFluxPtr,
     FromFluxPtrNoArgs, IntoFluxPtr, Owned, PossiblyDroppablePtr, define_as_flux_ptr_body,
@@ -448,23 +448,13 @@ impl<State: PossiblyDroppablePtr<flux_t>> FluxHandle<State> {
     }
 
     /// Send the provided message with the Flux broker associated with the handle.
-    pub fn send(&self, msg: Message, flags: HandleFlags) -> Result<()> {
-        let mut raw_msg = msg.c_msg.as_mut_ptr();
-        let rc = unsafe {
-            flux_send_new(
-                self.h.as_mut_ptr(),
-                &mut raw_msg as *mut *mut flux_msg_t,
-                flags.bits() as _,
-            )
-        };
-        // flux_send_new only frees the message if it succeeds.
-        // To work around this, only assume ownership of the raw pointer
-        // (which prevents freeing in Drop) if flux_send_new succeeds.
-        // Otherwise, preserve ownership so that Drop frees the flux_msg_t pointer
-        if rc == 0 {
-            let _ = msg.c_msg.into_raw();
-        }
-        FluxReturnType::check_flux_return(rc, "flux_send_new").map(|_| ())
+    pub fn send<MsgState: PossiblyDroppablePtr<flux_msg_t>>(
+        &self,
+        msg: Message<MsgState>,
+        flags: HandleFlags,
+    ) -> Result<()> {
+        let raw_msg = msg.c_msg.as_mut_ptr();
+        flux_try!(empty_ok flux_send(self.h.as_mut_ptr(), raw_msg as *const flux_msg_t, flags.bits() as _))
     }
 
     /// Receive a message using the Flux broker associated with the handle.
@@ -475,7 +465,11 @@ impl<State: PossiblyDroppablePtr<flux_t>> FluxHandle<State> {
     }
 
     /// Requeue the provided Message using the handle.
-    pub fn requeue(&self, msg: Message, flags: HandleFlags) -> Result<()> {
+    pub fn requeue<MsgState: PossiblyDroppablePtr<flux_msg_t>>(
+        &self,
+        msg: Message<MsgState>,
+        flags: HandleFlags,
+    ) -> Result<()> {
         flux_try!(empty_ok
             flux_requeue(
                 self.h.as_mut_ptr(),
@@ -600,7 +594,11 @@ impl<State: PossiblyDroppablePtr<flux_t>> FluxHandle<State> {
     }
 
     /// Respond to the provided Request with an optional data payload consisting of arbitrary bytes.
-    pub fn respond_raw(&self, request: &Request, data: Option<&[u8]>) -> Result<()> {
+    pub fn respond_raw<ReqState: PossiblyDroppablePtr<flux_msg_t>>(
+        &self,
+        request: &Request<ReqState>,
+        data: Option<&[u8]>,
+    ) -> Result<()> {
         let (data_ptr, data_len) = match data {
             Some(data_slice) => (data_slice.as_ptr(), data_slice.len()),
             None => (std::ptr::null(), 0),
@@ -615,7 +613,11 @@ impl<State: PossiblyDroppablePtr<flux_t>> FluxHandle<State> {
         )
     }
 
-    pub fn respond(&self, request: &Request, data: Option<&CStr>) -> Result<()> {
+    pub fn respond<ReqState: PossiblyDroppablePtr<flux_msg_t>>(
+        &self,
+        request: &Request<ReqState>,
+        data: Option<&CStr>,
+    ) -> Result<()> {
         let data_ptr = match data {
             Some(s) => s.as_ptr(),
             None => std::ptr::null(),
@@ -629,14 +631,18 @@ impl<State: PossiblyDroppablePtr<flux_t>> FluxHandle<State> {
     }
 
     /// Respond to the provided Request with an optional data payload consisting of `serde`-serialized JSON data.
-    pub fn respond_json(&self, request: &Request, data: Option<&Value>) -> Result<()> {
+    pub fn respond_json<ReqState: PossiblyDroppablePtr<flux_msg_t>>(
+        &self,
+        request: &Request<ReqState>,
+        data: Option<&Value>,
+    ) -> Result<()> {
         self.respond_serializable(request, data)
     }
 
     /// Respond to the provided Request with an optional data payload consisting of arbitrary `serde`-serializable data.
-    pub fn respond_serializable<T: Serialize>(
+    pub fn respond_serializable<T: Serialize, ReqState: PossiblyDroppablePtr<flux_msg_t>>(
         &self,
-        request: &Request,
+        request: &Request<ReqState>,
         data: Option<&T>,
     ) -> Result<()> {
         let data_cstring = data
@@ -648,7 +654,11 @@ impl<State: PossiblyDroppablePtr<flux_t>> FluxHandle<State> {
     }
 
     /// Respond to the provided Request with an optional data payload consisting of a UTF-8 string.
-    pub fn respond_string(&self, request: &Request, data: Option<&str>) -> Result<()> {
+    pub fn respond_string<ReqState: PossiblyDroppablePtr<flux_msg_t>>(
+        &self,
+        request: &Request<ReqState>,
+        data: Option<&str>,
+    ) -> Result<()> {
         let c_data = data.map(CString::new).transpose()?;
         self.respond(request, c_data.as_deref())
     }
@@ -657,9 +667,9 @@ impl<State: PossiblyDroppablePtr<flux_t>> FluxHandle<State> {
     ///
     /// This method represents the error code with a `std::io::Error` object. To use a C-style
     /// `errno` value, use `respond_raw_error` instead.
-    pub fn respond_error(
+    pub fn respond_error<ReqState: PossiblyDroppablePtr<flux_msg_t>>(
         &self,
-        request: &Request,
+        request: &Request<ReqState>,
         error: std::io::Error,
         errmsg: Option<&str>,
     ) -> Result<()> {
@@ -673,9 +683,9 @@ impl<State: PossiblyDroppablePtr<flux_t>> FluxHandle<State> {
     ///
     /// This method represents the error code with a C-style `errno` value. To use a
     /// `std::io::Error` object, use `respond_error` instead.
-    pub fn respond_raw_error(
+    pub fn respond_raw_error<ReqState: PossiblyDroppablePtr<flux_msg_t>>(
         &self,
-        request: &Request,
+        request: &Request<ReqState>,
         errnum: i32,
         errmsg: Option<&str>,
     ) -> Result<()> {

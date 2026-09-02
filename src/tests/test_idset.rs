@@ -10,7 +10,7 @@ use crate::idset::{Idset, IdsetFlags};
 
 /// Build an auto-growing `Idset` pre-populated with the given ids.
 fn make_idset(ids: &[u32]) -> Idset {
-    let idset = Idset::new(0, IdsetFlags::AUTOGROW).expect("Failed to create Idset");
+    let mut idset = Idset::new(0, IdsetFlags::AUTOGROW).expect("Failed to create Idset");
     for &id in ids {
         idset.insert(id).expect("Failed to insert id");
     }
@@ -89,7 +89,7 @@ fn from_str_invalid_string_returns_error() {
 
 #[test]
 fn insert_makes_id_present() {
-    let idset = Idset::new(0, IdsetFlags::AUTOGROW).unwrap();
+    let mut idset = Idset::new(0, IdsetFlags::AUTOGROW).unwrap();
     idset.insert(42).unwrap();
     assert!(idset.contains(42));
 }
@@ -102,7 +102,7 @@ fn contains_absent_id_returns_false() {
 
 #[test]
 fn insert_duplicate_does_not_increase_len() {
-    let idset = Idset::new(0, IdsetFlags::AUTOGROW).unwrap();
+    let mut idset = Idset::new(0, IdsetFlags::AUTOGROW).unwrap();
     idset.insert(7).unwrap();
     idset.insert(7).unwrap();
     assert_eq!(idset.len(), 1);
@@ -114,7 +114,7 @@ fn insert_duplicate_does_not_increase_len() {
 
 #[test]
 fn insert_range_multi_element_inserts_all() {
-    let idset = Idset::new(0, IdsetFlags::AUTOGROW).unwrap();
+    let mut idset = Idset::new(0, IdsetFlags::AUTOGROW).unwrap();
     idset.insert_range(0..5).unwrap();
     assert_eq!(idset.len(), 5);
     for i in 0..5 {
@@ -125,7 +125,7 @@ fn insert_range_multi_element_inserts_all() {
 #[test]
 fn insert_range_single_element_uses_insert_path() {
     // 5..6 → range_end (5) == range_start (5) → delegates to insert(5)
-    let idset = Idset::new(0, IdsetFlags::AUTOGROW).unwrap();
+    let mut idset = Idset::new(0, IdsetFlags::AUTOGROW).unwrap();
     idset.insert_range(5..6).unwrap();
     assert_eq!(idset.len(), 1);
     assert!(idset.contains(5));
@@ -134,7 +134,7 @@ fn insert_range_single_element_uses_insert_path() {
 #[test]
 fn insert_range_zero_based_single_element() {
     // 0..1 → range_end (0) == range_start (0) → delegates to insert(0)
-    let idset = Idset::new(0, IdsetFlags::AUTOGROW).unwrap();
+    let mut idset = Idset::new(0, IdsetFlags::AUTOGROW).unwrap();
     idset.insert_range(0..1).unwrap();
     assert_eq!(idset.len(), 1);
     assert!(idset.contains(0));
@@ -146,7 +146,7 @@ fn insert_range_zero_based_single_element() {
 
 #[test]
 fn len_reflects_number_of_insertions() {
-    let idset = Idset::new(0, IdsetFlags::AUTOGROW).unwrap();
+    let mut idset = Idset::new(0, IdsetFlags::AUTOGROW).unwrap();
     assert_eq!(idset.len(), 0);
     idset.insert(1).unwrap();
     assert_eq!(idset.len(), 1);
@@ -162,7 +162,7 @@ fn is_empty_true_for_new_idset() {
 
 #[test]
 fn is_empty_false_after_insert() {
-    let idset = Idset::new(0, IdsetFlags::AUTOGROW).unwrap();
+    let mut idset = Idset::new(0, IdsetFlags::AUTOGROW).unwrap();
     idset.insert(0).unwrap();
     assert!(!idset.is_empty());
 }
@@ -243,7 +243,7 @@ fn try_clone_produces_equal_idset() {
 #[test]
 fn try_clone_is_independent_of_original() {
     let idset = make_idset(&[1, 2]);
-    let clone = idset.try_clone().unwrap();
+    let mut clone = idset.try_clone().unwrap();
     clone.insert(3).unwrap();
     // Original must be unaffected.
     assert_eq!(idset.len(), 2);

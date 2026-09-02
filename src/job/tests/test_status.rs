@@ -57,7 +57,7 @@ fn get_errstr_uncached_dummy_future_returns_error() {
 
 #[test]
 fn deref_exposes_inner_future_methods() {
-    let mut status = make_dummy_status();
+    let status = make_dummy_status();
     // Deref allows calling check_error directly on JobStatus
     assert!(status.check_error().is_ok());
 }
