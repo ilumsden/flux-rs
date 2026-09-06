@@ -61,7 +61,7 @@ impl<'a, State: PossiblyDroppablePtr<flux_t>> Job<'a, State> {
     /// Build a Job from a FluxHandle reference and a FluxFuture from submit_async.
     ///
     /// This function is an alias to `Job::try_from`, provided by the implementation of `TryFrom<(&FluxHandle, FluxFuture)>`.
-    pub fn try_from_handle_and_future<FutureState: PossiblyDroppablePtr<flux_future_t>>(
+    pub fn try_from_handle_and_future<FutureState>(
         handle: &'a FluxHandle<State>,
         future: FluxFuture<FutureState>,
     ) -> Result<Self>

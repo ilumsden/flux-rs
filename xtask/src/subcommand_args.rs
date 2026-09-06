@@ -26,3 +26,12 @@ pub struct CoverageArgs {
     #[arg(short, long, default_value_t = false)]
     pub release: bool,
 }
+
+#[derive(Args)]
+pub struct SetupPreCommitArgs {
+    #[arg(long, default_value_t = false)]
+    pub skip_pre_commit_install: bool,
+}
+
+#[derive(Args)]
+pub struct UpdateDenyDbArgs {}

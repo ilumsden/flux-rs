@@ -1,0 +1,57 @@
+repos:
+  - repo: local
+    hooks:
+      # --- commit-time: fast, offline-safe ---
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all -- --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-machete
+        name: cargo machete
+        entry: cargo machete
+        language: system
+        pass_filenames: false
+        files: '^(Cargo\.toml|src/.*\.rs)$'
+
+      # --- push-time: slower and/or network-dependent ---
+      - id: cargo-check
+        name: cargo check
+        entry: cargo check --all-features --all-targets
+        language: system
+        pass_filenames: false
+        types: [rust]
+        stages: [pre-push]
+
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: cargo clippy --all-targets --all-features -- -D warnings
+        language: system
+        pass_filenames: false
+        types: [rust]
+        stages: [pre-push]
+
+      - id: cargo-deny
+        name: cargo deny
+        entry: cargo deny --all-features check
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: mixed-line-ending
+      - id: check-added-large-files
+      - id: check-merge-conflict
+
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.24.6
+    hooks:
+      - id: typos
