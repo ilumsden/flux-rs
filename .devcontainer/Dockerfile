@@ -1,4 +1,4 @@
-FROM fluxrm/flux-sched:noble-v0.53.0
+FROM fluxrm/flux-core:noble-v0.89.0
 
 LABEL maintainer="Vanessasaurus <@vsoch>"
 
@@ -15,7 +15,7 @@ USER root
 
 # Note: Added `sudo` and `curl` to ensure they are available
 RUN apt-get update && \
-    apt-get install -y libclang-dev sudo curl && \
+    apt-get install -y libclang-dev sudo curl python3-pip && \
     apt-get clean
 
 # Assuming installing to /usr/local
