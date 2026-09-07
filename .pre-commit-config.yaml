@@ -35,7 +35,7 @@ repos:
 
       - id: cargo-deny
         name: cargo deny
-        entry: cargo deny --all-features check
+        entry: ./scripts/cargo-deny-hook.sh
         language: system
         pass_filenames: false
         stages: [pre-push]
