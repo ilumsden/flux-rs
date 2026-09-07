@@ -8,8 +8,8 @@ mod flux_utils;
 mod run_broker_rpc_tests;
 mod setup_pre_commit;
 mod subcommand_args;
-mod ui;
 mod update_deny_db;
+mod utils;
 
 use crate::build_integration_tests::build_integration_tests;
 use crate::coverage::run_code_coverage;

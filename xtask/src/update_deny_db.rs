@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use xshell::{Shell, cmd};
 
 use crate::subcommand_args::UpdateDenyDbArgs;
-use crate::ui::{print_test_end, print_test_start};
+use crate::utils::{print_test_end, print_test_start};
 
 pub fn run_update_deny_db(sh: &Shell) -> Result<()> {
     cmd!(sh, "cargo deny fetch")

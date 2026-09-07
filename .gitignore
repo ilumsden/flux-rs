@@ -1,3 +1,4 @@
+*.profraw
 coverage-html/**
 lcov.info
 

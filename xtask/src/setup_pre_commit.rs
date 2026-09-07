@@ -2,17 +2,8 @@ use anyhow::{Context, Result};
 use xshell::{Shell, cmd};
 
 use crate::subcommand_args::SetupPreCommitArgs;
-use crate::ui::{print_test_end, print_test_start};
 use crate::update_deny_db::run_update_deny_db;
-
-fn tool_available(sh: &Shell, bin: &str) -> bool {
-    cmd!(sh, "{bin} --version")
-        .quiet()
-        .ignore_stdout()
-        .ignore_stderr()
-        .run()
-        .is_ok()
-}
+use crate::utils::{print_test_end, print_test_start, tool_available};
 
 /// Returns whichever pre-commit-compatible binary is available, preferring
 /// `prek` over `pre-commit` since it's Rust-native and faster.

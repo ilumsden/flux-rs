@@ -1,4 +1,14 @@
 use anyhow::Result;
+use xshell::{Shell, cmd};
+
+pub fn tool_available(sh: &Shell, bin: &str) -> bool {
+    cmd!(sh, "{bin} --version")
+        .quiet()
+        .ignore_stdout()
+        .ignore_stderr()
+        .run()
+        .is_ok()
+}
 
 pub fn print_test_start(msg: &str) {
     let width = msg.chars().count() + 2;

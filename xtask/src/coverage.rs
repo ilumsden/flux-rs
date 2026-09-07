@@ -5,9 +5,17 @@ use xshell::{Shell, cmd};
 
 use crate::flux_utils::update_shell_env;
 use crate::subcommand_args::CoverageArgs;
-use crate::ui::{print_test_end, print_test_start};
+use crate::utils::{print_test_end, print_test_start, tool_available};
 
 pub fn run_code_coverage(sh: &Shell, args: CoverageArgs) -> Result<()> {
+    if !tool_available(sh, "cargo llvm-cov") {
+        print_test_start("Install cargo-llvm-cov");
+        let res = cmd!(sh, "cargo install --locked cargo-llvm-cov")
+            .run()
+            .context("Could not install cargo-llvm-cov");
+        print_test_end("Install cargo-llvm-cov", res)?;
+    }
+
     cmd!(sh, "cargo llvm-cov clean --workspace").run()?;
 
     let cov_env_output = cmd!(sh, "cargo llvm-cov show-env").read()?;
