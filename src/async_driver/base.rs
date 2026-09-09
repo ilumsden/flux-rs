@@ -1,6 +1,10 @@
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
+use convert_case::ccase;
+
+use crate::duration::FluxDuration;
 use crate::error::{FluxError, Result};
 use crate::handle::{OwnedFluxHandle, PollEvents};
 use crate::reactor::{FluxReactorThread, OwnedReactor, ReactorFlags};
@@ -41,6 +45,26 @@ impl AsFd for RawFdWrapper {
     }
 }
 
+pub(super) enum WaitResult {
+    FdReadable,
+    Timeout,
+}
+
+pub(super) fn get_default_reactor_sleep_duration(driver_name: &str) -> Duration {
+    let env_var_name = format!(
+        "FLUX_CORE_RS_{}_DRIVER_REACTOR_SLEEP",
+        ccase!(constant, driver_name)
+    );
+    if let Ok(val) = std::env::var(env_var_name) {
+        let flux_dur = FluxDuration::from(val.as_str());
+        match f64::try_from(flux_dur) {
+            Ok(parsed_duration) => return Duration::from_secs_f64(parsed_duration),
+            Err(e) => println!("Invalid reactor sleep duration, defaulting to 50ms:\n{e}"),
+        }
+    }
+    Duration::from_millis(50)
+}
+
 pub(super) fn get_poll_fd_for_async(handle: Arc<Mutex<OwnedFluxHandle>>) -> Result<RawFdWrapper> {
     handle
         .lock()
@@ -53,24 +77,39 @@ pub(super) fn get_poll_fd_for_async(handle: Arc<Mutex<OwnedFluxHandle>>) -> Resu
         .map(RawFdWrapper)
 }
 
-pub(super) fn process_readable_event_for_async(handle: Arc<Mutex<OwnedFluxHandle>>) -> Result<()> {
-    let locked_handle = handle.lock().map_err(|_| {
-        FluxError::Logic(String::from(
-            "Cannot get a reactor and pollevents because the mutex is poisoned",
-        ))
-    })?;
-    // 1. Get events and clear the edge-triggered POLLIN state
-    let events = locked_handle.get_pollevents()?;
-    let mut reactor = locked_handle.get_reactor()?;
-    // 2. If there is data to read, tick the reactor ONCE without blocking
-    if (events & PollEvents::POLLIN) != PollEvents::NONE
-        || (events & PollEvents::POLLOUT) != PollEvents::NONE
-    {
+pub(super) fn process_readable_event_for_async(
+    handle: Arc<Mutex<OwnedFluxHandle>>,
+    check_poll_events: bool,
+) -> Result<()> {
+    // 1. Get reactor. Also, get pollevents if `check_poll_events` is `true`
+    let (mut reactor, pollevents) = {
+        let locked_handle = handle.lock().map_err(|_| {
+            FluxError::Logic(String::from(
+                "Cannot get a reactor and pollevents because the mutex is poisoned",
+            ))
+        })?;
+        (
+            locked_handle.get_reactor()?.to_owned()?,
+            check_poll_events
+                .then(|| locked_handle.get_pollevents())
+                .transpose()?,
+        )
+    };
+    // 2. Tick the reactor ONCE without blocking.
+    if let Some(events) = pollevents {
+        if (events & PollEvents::POLLIN) != PollEvents::NONE
+            || (events & PollEvents::POLLOUT) != PollEvents::NONE
+        {
+            reactor.run(ReactorFlags::NOWAIT)?;
+        }
+    } else {
         reactor.run(ReactorFlags::NOWAIT)?;
     }
 
     // 3. Handle errors
-    if (events & PollEvents::POLLERR) != PollEvents::NONE {
+    if let Some(events) = pollevents
+        && (events & PollEvents::POLLERR) != PollEvents::NONE
+    {
         return Err(FluxError::Logic(
             "Flux handle experienced a POLLERR".to_string(),
         ));

@@ -347,6 +347,11 @@ mod smol_tests {
             }
 
             let af = AsyncFluxFuture::new(future).unwrap();
+            // {
+            //     let handle = shared.lock().unwrap();
+            //     let mut reactor = handle.get_reactor().unwrap();
+            //     reactor.run(crate::reactor::ReactorFlags::NOWAIT).unwrap();
+            // }
 
             smol::block_on(af);
 

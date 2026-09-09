@@ -197,14 +197,14 @@ fn process_readable_event_on_fresh_handle_succeeds() {
     let shared = make_shared_handle();
     // Trigger pollfd creation first (required before get_pollevents works).
     let _ = get_poll_fd_for_async(shared.clone());
-    let result = process_readable_event_for_async(shared);
+    let result = process_readable_event_for_async(shared, true);
     assert!(result.is_ok());
 }
 
 #[test]
 fn process_readable_event_poisoned_mutex_returns_logic_error() {
     let poisoned = make_poisoned_mutex();
-    let result = process_readable_event_for_async(poisoned);
+    let result = process_readable_event_for_async(poisoned, true);
     assert!(matches!(result, Err(FluxError::Logic(_))));
 }
 
@@ -212,8 +212,8 @@ fn process_readable_event_poisoned_mutex_returns_logic_error() {
 fn process_readable_event_can_be_called_multiple_times() {
     let shared = make_shared_handle();
     let _ = get_poll_fd_for_async(shared.clone());
-    assert!(process_readable_event_for_async(shared.clone()).is_ok());
-    assert!(process_readable_event_for_async(shared).is_ok());
+    assert!(process_readable_event_for_async(shared.clone(), true).is_ok());
+    assert!(process_readable_event_for_async(shared, true).is_ok());
 }
 
 // =========================================================================

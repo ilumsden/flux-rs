@@ -65,6 +65,7 @@ impl AsyncFluxFuture {
 
     /// The continuation callback invoked by the Flux reactor.
     extern "C" fn c_callback(f: *mut flux_future_t, arg: *mut c_void) {
+        eprintln!("[c_callback] fired");
         // Reclaim the Arc from the raw pointer to prevent memory leaks.
         let state = unsafe { Arc::from_raw(arg as *const Mutex<SharedState>) };
 
@@ -78,6 +79,7 @@ impl AsyncFluxFuture {
             unsafe { FluxFuture::from_ptr(f) }
                 .expect("Got a NULL future pointer in a Flux future callback"),
         );
+        eprintln!("[c_callback] result set, waking: {}", lock.waker.is_some());
 
         // Wake the Rust async runtime to make progress
         if let Some(waker) = lock.waker.take() {
@@ -92,6 +94,7 @@ impl Future for AsyncFluxFuture {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // Lock the shared state for the async runtime
         let mut state = self.state.lock().unwrap();
+        eprintln!("[poll] called, result present: {}", state.result.is_some());
 
         // If there is a result in the shared state, tell the async runtime that the future has been
         // fulfilled with the result. Otherwise, update the shared state with the async runtime's

@@ -1,12 +1,15 @@
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use async_io::Async;
 use smol::channel::{Receiver, Sender, bounded};
-use smol::{Executor, Task};
+use smol::future;
+use smol::{Executor, Task, Timer};
 
 use crate::async_driver::base::{
-    AsyncDriver, get_poll_fd_for_async, process_readable_event_for_async,
+    AsyncDriver, WaitResult, get_default_reactor_sleep_duration, get_poll_fd_for_async,
+    process_readable_event_for_async,
 };
 use crate::error::{FluxError, Result};
 use crate::handle::OwnedFluxHandle;
@@ -14,74 +17,109 @@ use crate::reactor::FluxReactorThread;
 
 pub struct SmolDriver {
     pub(crate) handle: Option<Arc<Mutex<OwnedFluxHandle>>>,
+    pub(crate) reactor_sleep_duration: Duration,
     executor: Arc<Executor<'static>>,
-    /// True if this driver created its own private `Executor` (via `new`),
-    /// in which case it is also responsible for running it on a dedicated
-    /// background thread. False if the executor was supplied by the caller
-    /// (via `with_executor`), in which case the caller is responsible for
-    /// actually driving it - `SmolDriver` will only ever spawn a task onto
-    /// it, never a thread.
     owns_executor: bool,
     pub(crate) task_handle: Option<Task<Result<()>>>,
-    /// Present only when `owns_executor` is true and `spawn()` has run:
-    /// the background thread driving the private executor, plus a sender
-    /// used to signal it to stop.
     owned_runner: Option<(JoinHandle<()>, Sender<()>)>,
 }
 
 impl SmolDriver {
-    /// Creates a driver that will own a private `Executor` and a dedicated
-    /// background thread to run it, created when `spawn()` is called. This
-    /// is the path used by `AsyncDriver::spawn_async_driver` and gives each
-    /// `SmolDriver` instance its own isolated executor, with no state shared
-    /// between separate instances.
-    pub fn new(handle: Arc<Mutex<OwnedFluxHandle>>) -> Result<Self> {
-        Ok(Self {
+    pub fn new(handle: Arc<Mutex<OwnedFluxHandle>>) -> Self {
+        Self {
             handle: Some(handle),
+            reactor_sleep_duration: get_default_reactor_sleep_duration("smol"),
             executor: Arc::new(Executor::new()),
             owns_executor: true,
             task_handle: None,
             owned_runner: None,
-        })
+        }
     }
 
-    /// Creates a driver that spawns its polling task onto a caller-supplied
-    /// `Executor` instead of a private one.
-    ///
-    /// The caller remains fully responsible for actually running this
-    /// executor (e.g. via their own `smol::block_on(executor.run(..))` loop
-    /// on some thread) for the lifetime of the driver - `SmolDriver` will
-    /// not spawn a background thread for it, and the polling task will
-    /// simply never make progress if nothing ever ticks the executor.
+    pub fn with_sleep_duration(
+        handle: Arc<Mutex<OwnedFluxHandle>>,
+        sleep_duration: Duration,
+    ) -> Self {
+        Self {
+            handle: Some(handle),
+            reactor_sleep_duration: sleep_duration,
+            executor: Arc::new(Executor::new()),
+            owns_executor: true,
+            task_handle: None,
+            owned_runner: None,
+        }
+    }
+
     pub fn with_executor(
         handle: Arc<Mutex<OwnedFluxHandle>>,
         executor: Arc<Executor<'static>>,
-    ) -> Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             handle: Some(handle),
+            reactor_sleep_duration: get_default_reactor_sleep_duration("smol"),
             executor,
             owns_executor: false,
             task_handle: None,
             owned_runner: None,
-        })
+        }
     }
 
-    pub(crate) async fn driver_with_reactor_fd(handle: Arc<Mutex<OwnedFluxHandle>>) -> Result<()> {
+    pub fn with_executor_and_sleep_duration(
+        handle: Arc<Mutex<OwnedFluxHandle>>,
+        executor: Arc<Executor<'static>>,
+        sleep_duration: Duration,
+    ) -> Self {
+        Self {
+            handle: Some(handle),
+            reactor_sleep_duration: sleep_duration,
+            executor,
+            owns_executor: false,
+            task_handle: None,
+            owned_runner: None,
+        }
+    }
+
+    pub(crate) async fn driver_with_reactor_fd(
+        handle: Arc<Mutex<OwnedFluxHandle>>,
+        started: Option<Sender<()>>,
+        reactor_sleep_time: Duration,
+    ) -> Result<()> {
         let fd = get_poll_fd_for_async(handle.clone())?;
         let async_fd = Async::new(fd)?;
 
         // Drain any pre-existing events before awaiting I/O readiness
-        process_readable_event_for_async(handle.clone())?;
+        process_readable_event_for_async(handle.clone(), false)?;
+
+        if let Some(started) = started {
+            // Best-effort: if the receiver already gave up (e.g. spawn()
+            // timed out waiting), there's nothing more to do here.
+            let _ = started.try_send(());
+        }
 
         loop {
-            async_fd.readable().await?;
-            process_readable_event_for_async(handle.clone())?;
+            // Wait until either the pollfd is readable or enough time
+            // has passed and then run the reactor
+            eprintln!("[smol-driver] waiting for readable...");
+            let await_branch = future::or(
+                async {
+                    async_fd.readable().await?;
+                    Ok::<_, std::io::Error>(WaitResult::FdReadable)
+                },
+                async {
+                    Timer::after(reactor_sleep_time).await;
+                    Ok::<_, std::io::Error>(WaitResult::Timeout)
+                },
+            )
+            .await?;
+            eprintln!("[smol-driver] got readable, processing");
+            process_readable_event_for_async(
+                handle.clone(),
+                matches!(await_branch, WaitResult::FdReadable),
+            )?;
+            eprintln!("[smol-driver] processed");
         }
     }
 
-    /// Returns a reference to the `Executor` driving this instance's polling
-    /// task - either the private one created by `new`, or the one supplied
-    /// via `with_executor`.
     pub fn get_executor(&self) -> &Executor<'static> {
         &self.executor
     }
@@ -91,7 +129,7 @@ impl TryFrom<Arc<Mutex<OwnedFluxHandle>>> for SmolDriver {
     type Error = FluxError;
 
     fn try_from(value: Arc<Mutex<OwnedFluxHandle>>) -> Result<Self> {
-        SmolDriver::new(value)
+        Ok(SmolDriver::new(value))
     }
 }
 
@@ -111,28 +149,44 @@ impl AsyncDriver for SmolDriver {
             "Cannot spawn a driver for smol when there is no underlying FluxHandle object",
         )))?;
 
-        let task = self
-            .executor
-            .spawn(async move { Self::driver_with_reactor_fd(flux_handle).await });
+        // Signaled once the driver task has been polled for the first time
+        // and has completed its pre-drain - only used when we're about to
+        // spin up a fresh thread, since that's the only case where a
+        // "hasn't started yet" race is possible.
+        let (started_tx, started_rx) = bounded::<()>(1);
+        let started_tx = self.owns_executor.then_some(started_tx);
+        let sleep_duration = self.reactor_sleep_duration;
+
+        let task = self.executor.spawn(async move {
+            Self::driver_with_reactor_fd(flux_handle, started_tx, sleep_duration).await
+        });
         self.task_handle = Some(task);
 
-        // Only spin up a dedicated background thread when we privately own
-        // the executor - a caller-supplied executor (via `with_executor`) is
-        // the caller's responsibility to drive.
         if self.owns_executor && self.owned_runner.is_none() {
             let executor = self.executor.clone();
-            let (tx, rx): (Sender<()>, Receiver<()>) = bounded(1);
+            let (stop_tx, stop_rx): (Sender<()>, Receiver<()>) = bounded(1);
             let thread = std::thread::Builder::new()
                 .name("smol-driver".into())
                 .spawn(move || {
                     smol::block_on(executor.run(async {
-                        let _ = rx.recv().await;
+                        let _ = stop_rx.recv().await;
                     }));
                 })
                 .map_err(|e| {
                     FluxError::Logic(format!("Failed to spawn smol driver thread: {e}"))
                 })?;
-            self.owned_runner = Some((thread, tx));
+
+            // Block until the driver task has actually been polled once,
+            // closing the race where a very-fast-completing future finishes
+            // before the new background thread has even started ticking
+            // the executor.
+            started_rx.recv_blocking().map_err(|_| {
+                FluxError::Logic(String::from(
+                    "smol driver thread exited before completing startup",
+                ))
+            })?;
+
+            self.owned_runner = Some((thread, stop_tx));
         }
 
         Ok(())
