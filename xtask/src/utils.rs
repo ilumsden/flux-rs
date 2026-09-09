@@ -1,9 +1,10 @@
 use anyhow::Result;
 use xshell::{Shell, cmd};
 
-pub fn tool_available(sh: &Shell, bin: &str) -> bool {
-    cmd!(sh, "{bin} --version")
-        .quiet()
+pub fn tool_available(sh: &Shell, bin: &str, subcmds: Option<&[&str]>) -> bool {
+    let subcommands = subcmds.unwrap_or(&[]);
+    cmd!(sh, "{bin} {subcommands...} --version")
+        // .quiet()
         .ignore_stdout()
         .ignore_stderr()
         .run()

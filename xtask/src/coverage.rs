@@ -8,7 +8,7 @@ use crate::subcommand_args::CoverageArgs;
 use crate::utils::{print_test_end, print_test_start, tool_available};
 
 pub fn run_code_coverage(sh: &Shell, args: CoverageArgs) -> Result<()> {
-    if !tool_available(sh, "cargo llvm-cov") {
+    if !tool_available(sh, "cargo", Some(&["llvm-cov"])) {
         print_test_start("Install cargo-llvm-cov");
         let res = cmd!(sh, "cargo install --locked cargo-llvm-cov")
             .run()

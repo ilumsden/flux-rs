@@ -8,9 +8,9 @@ use crate::utils::{print_test_end, print_test_start, tool_available};
 /// Returns whichever pre-commit-compatible binary is available, preferring
 /// `prek` over `pre-commit` since it's Rust-native and faster.
 fn resolve_hook_runner(sh: &Shell) -> Option<&'static str> {
-    if tool_available(sh, "prek") {
+    if tool_available(sh, "prek", None) {
         Some("prek")
-    } else if tool_available(sh, "pre-commit") {
+    } else if tool_available(sh, "pre-commit", None) {
         Some("pre-commit")
     } else {
         None
