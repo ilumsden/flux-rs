@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [ "main", "master" ]
   merge_group:
-    
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -44,7 +44,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install System Dependencies
         run: |
           apt-get update
@@ -72,7 +72,7 @@ jobs:
 
       - name: Run Unit Tests under Flux
         run: flux start cargo test --all-features
-        
+
       - name: Run Broker Module/RPC Integration Test
         run: cargo xtask test-broker-rpc -r
 
@@ -84,7 +84,7 @@ jobs:
       options: --user root
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install System Dependencies
         run: |
           apt-get update
