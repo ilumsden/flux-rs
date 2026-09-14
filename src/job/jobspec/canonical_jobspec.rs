@@ -79,7 +79,7 @@ macro_rules! create_jobspec_getters_setters {
 // TODO uncomment if the utility macro is needed elsewhere
 // pub(super) use create_jobspec_getters_setters;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(try_from = "RawJobspec")]
 pub struct Jobspec {
     pub resources: Vec<ResourceVertex>,

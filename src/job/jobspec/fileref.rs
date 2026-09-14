@@ -26,7 +26,7 @@ pub enum FilerefData {
 fn default_mode() -> u32 {
     let permissions = Mode::S_IRUSR | Mode::S_IWUSR;
     let file_type = SFlag::S_IFREG;
-    permissions.bits() | file_type.bits()
+    (permissions.bits() | file_type.bits()) as _
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -56,7 +56,7 @@ impl Fileref {
         encoding: Option<FilerefEncoding>,
         data: Option<FilerefData>,
     ) -> Self {
-        let real_mode = mode.map_or_else(default_mode, |m| m.bits()) | SFlag::S_IFREG.bits();
+        let real_mode = mode.map_or_else(default_mode, |m| m.bits() | SFlag::S_IFREG.bits());
         Self {
             path: path.as_ref().to_path_buf(),
             mode: real_mode,

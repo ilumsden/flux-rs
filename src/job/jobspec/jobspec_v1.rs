@@ -22,7 +22,7 @@ pub enum PerResourceType {
     Core,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(try_from = "Jobspec")]
 pub struct JobspecV1(pub Jobspec);
 

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::error::FluxError;
+use crate::error::{FluxError, Result};
 use crate::idset::Idset;
 use crate::utils::impl_serde_repr_str;
 
@@ -32,6 +32,23 @@ pub enum ResourceCount {
     Integer(usize),
     Idset(Idset),
     Dict(ResourceCountDict),
+}
+
+impl ResourceCount {
+    pub fn try_clone(&self) -> Result<ResourceCount> {
+        match self {
+            ResourceCount::Integer(i) => Ok(ResourceCount::Integer(*i)),
+            ResourceCount::Idset(idset) => Ok(ResourceCount::Idset(idset.try_clone()?)),
+            ResourceCount::Dict(d) => Ok(ResourceCount::Dict(*d)),
+        }
+    }
+}
+
+impl Clone for ResourceCount {
+    fn clone(&self) -> Self {
+        self.try_clone()
+            .expect("Failed to clone the ResourceCount. This means that cloning an Idset failed.")
+    }
 }
 
 impl_serde_repr_str!(no_debug ResourceCountOperator);

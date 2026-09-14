@@ -22,7 +22,7 @@ pub enum TaskCount {
     Extension(String, Value),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Task {
     pub command: Vec<String>,
     pub slot: String,

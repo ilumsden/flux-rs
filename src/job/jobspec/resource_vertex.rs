@@ -3,7 +3,7 @@ use crate::{error::FluxError, utils::impl_serde_repr_str};
 use super::resource_count::ResourceCount;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(try_from = "RawResourceVertex")]
 pub struct ResourceVertex {
     #[serde(rename = "type")]
