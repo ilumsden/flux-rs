@@ -36,5 +36,10 @@
       "version": "latest"
     }
   },
-  "postStartCommand": "git config --global --add safe.directory /workspaces/flux-sys-rs"
+  "mounts": [
+    "source=${localWorkspaceFolder}/.devcontainer/certs,target=/usr/local/share/ca-certificates/extra,type=bind,consistency=cached"
+  ],
+  "postCreateCommand": "bash .devcontainer/postCreate.sh",
+  "waitFor": "postCreateCommand",
+  "postStartCommand": "git config --global --add safe.directory /workspaces/flux-core-rs"
 }

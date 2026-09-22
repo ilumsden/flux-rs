@@ -26,14 +26,15 @@ ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH
 
-# Install rust nightly (Architecture-agnostic using the official script)
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain nightly && \
-    chmod -R a+w $RUSTUP_HOME $CARGO_HOME
-
 # Add the group and user that match our ids
 RUN groupadd -g ${USER_GID} ${USERNAME} && \
     adduser --disabled-password --uid ${USER_UID} --gid ${USER_GID} --gecos "" ${USERNAME} && \
     echo "${USERNAME} ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/${USERNAME} && \
     chmod 0440 /etc/sudoers.d/${USERNAME}
 
+RUN mkdir -p ${RUSTUP_HOME} ${CARGO_HOME} && \
+    chown -R ${USERNAME}:${USERNAME} ${RUSTUP_HOME} ${CARGO_HOME}
+
 USER $USERNAME
+
+RUN echo '[ -f /usr/local/rustup/.postcreate-ok ] || echo -e "\033[1;31m⚠ postCreate.sh failed or has not finished — see: cat /tmp/postcreate.log\033[0m"' >> /home/${USERNAME}/.bashrc

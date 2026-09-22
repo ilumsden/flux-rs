@@ -1,3 +1,7 @@
+.devcontainer/certs/*
+!.devcontainer/certs/.gitkeep
+.devcontainer/devcontainer-lock.json
+
 *.profraw
 coverage-html/**
 lcov.info
