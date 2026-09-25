@@ -1,15 +1,16 @@
 use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
+use std::path::Path;
 
 use bitflags::bitflags;
 use flux_sys::core::{
     FLUX_PLUGIN_ARG_IN, FLUX_PLUGIN_ARG_OUT, FLUX_PLUGIN_ARG_REPLACE, FLUX_PLUGIN_RTLD_DEEPBIND,
     FLUX_PLUGIN_RTLD_GLOBAL, FLUX_PLUGIN_RTLD_LAZY, FLUX_PLUGIN_RTLD_NOW, flux_plugin_add_handler,
-    flux_plugin_arg_create, flux_plugin_arg_destroy, flux_plugin_arg_get, flux_plugin_arg_strerror,
-    flux_plugin_arg_t, flux_plugin_aux_get, flux_plugin_aux_set, flux_plugin_create,
-    flux_plugin_destroy, flux_plugin_get_flags, flux_plugin_get_name, flux_plugin_get_path,
-    flux_plugin_get_uuid, flux_plugin_remove_handler, flux_plugin_set_flags, flux_plugin_set_name,
-    flux_plugin_t,
+    flux_plugin_arg_create, flux_plugin_arg_destroy, flux_plugin_arg_get, flux_plugin_arg_set,
+    flux_plugin_arg_strerror, flux_plugin_arg_t, flux_plugin_aux_get, flux_plugin_aux_set,
+    flux_plugin_call, flux_plugin_create, flux_plugin_destroy, flux_plugin_get_flags,
+    flux_plugin_get_name, flux_plugin_get_path, flux_plugin_get_uuid, flux_plugin_load_dso,
+    flux_plugin_remove_handler, flux_plugin_set_flags, flux_plugin_set_name, flux_plugin_t,
 };
 use indexmap::IndexMap;
 
@@ -42,6 +43,13 @@ bitflags! {
         const OUT = FLUX_PLUGIN_ARG_OUT;
         const REPLACE = FLUX_PLUGIN_ARG_REPLACE;
     }
+}
+
+#[derive(Default)]
+pub enum PluginArgUpdateDirection {
+    #[default]
+    PushToC,
+    PullFromC,
 }
 
 pub struct PluginArgs<State: PossiblyDroppablePtr<flux_plugin_arg_t> = Owned<flux_plugin_arg_t>> {
@@ -156,6 +164,113 @@ impl<State: PossiblyDroppablePtr<flux_plugin_arg_t>> PluginArgs<State> {
     pub fn get_output<T: for<'de> Deserialize<'de>>(&self, key: &str) -> Option<T> {
         self.get(key, PluginArgFlag::OUT)
     }
+
+    pub fn update(&mut self, direction: PluginArgUpdateDirection) -> Result<()> {
+        match direction {
+            PluginArgUpdateDirection::PushToC => {
+                let in_args_ser = serde_json::to_string(&self.in_args)?;
+                let c_in_args = CString::new(in_args_ser)?;
+                let rc = unsafe {
+                    flux_plugin_arg_set(
+                        self.c_args.as_mut_ptr(),
+                        (PluginArgFlag::IN | PluginArgFlag::REPLACE).bits() as _,
+                        c_in_args.as_ptr(),
+                    )
+                };
+                if rc == -1 {
+                    let err_ptr = unsafe { flux_plugin_arg_strerror(self.c_args.as_mut_ptr()) };
+                    if err_ptr.is_null() {
+                        return Err(FluxError::System(
+                            "flux_plugin_arg_set",
+                            std::io::Error::last_os_error(),
+                        ));
+                    } else {
+                        return Err(FluxError::Logic(unsafe {
+                            CStr::from_ptr(err_ptr).to_string_lossy().to_string()
+                        }));
+                    }
+                }
+                let out_args_ser = serde_json::to_string(&self.out_args)?;
+                let c_out_args = CString::new(out_args_ser)?;
+                let rc = unsafe {
+                    flux_plugin_arg_set(
+                        self.c_args.as_mut_ptr(),
+                        (PluginArgFlag::OUT | PluginArgFlag::REPLACE).bits() as _,
+                        c_out_args.as_ptr(),
+                    )
+                };
+                if rc == -1 {
+                    let err_ptr = unsafe { flux_plugin_arg_strerror(self.c_args.as_mut_ptr()) };
+                    if err_ptr.is_null() {
+                        Err(FluxError::System(
+                            "flux_plugin_arg_set",
+                            std::io::Error::last_os_error(),
+                        ))
+                    } else {
+                        Err(FluxError::Logic(unsafe {
+                            CStr::from_ptr(err_ptr).to_string_lossy().to_string()
+                        }))
+                    }
+                } else {
+                    Ok(())
+                }
+            }
+            PluginArgUpdateDirection::PullFromC => {
+                self.in_args =
+                    Self::extract_args_from_c(self.c_args.as_mut_ptr(), PluginArgFlag::IN)?;
+                self.out_args =
+                    Self::extract_args_from_c(self.c_args.as_mut_ptr(), PluginArgFlag::OUT)?;
+                Ok(())
+            }
+        }
+    }
+
+    fn extract_args_from_c(
+        ptr: *mut flux_plugin_arg_t,
+        flags: PluginArgFlag,
+    ) -> Result<Map<String, Value>> {
+        let mut json_c_str: *mut c_char = std::ptr::null_mut();
+        let rc = unsafe {
+            flux_plugin_arg_get(ptr, flags.bits() as _, &mut json_c_str as *mut *mut c_char)
+        };
+        let args = if rc == -1 {
+            let last_system_error = std::io::Error::last_os_error();
+            if let Some(raw_os_error) = last_system_error.raw_os_error()
+                && raw_os_error == libc::ENOENT
+            {
+                Ok(Map::new())
+            } else {
+                let plugin_arg_strerror_ptr = unsafe { flux_plugin_arg_strerror(ptr) };
+                if plugin_arg_strerror_ptr.is_null() {
+                    return Err(FluxError::System(
+                        "flux_plugin_arg_get",
+                        std::io::Error::last_os_error(),
+                    ));
+                }
+                return Err(FluxError::Logic(unsafe {
+                    CStr::from_ptr(plugin_arg_strerror_ptr)
+                        .to_string_lossy()
+                        .to_string()
+                }));
+            }
+        } else if json_c_str.is_null() {
+            return Err(FluxError::Logic("flux_plugin_arg_get reported success, but returned a NULL pointer for the JSON string".to_string()));
+        } else {
+            unsafe {
+                CStr::from_ptr(json_c_str)
+                    .to_str()
+                    .map_err(FluxError::from)
+                    .and_then(|str_slice| {
+                        serde_json::from_str::<Map<String, Value>>(str_slice)
+                            .map_err(FluxError::from)
+                    })
+            }
+        };
+        unsafe {
+            libc::free(json_c_str as *mut c_void);
+        }
+        args
+    }
 }
 
 unsafe impl<'a> BorrowFluxPtr for BorrowedPluginArgs<'a> {
@@ -169,78 +284,8 @@ unsafe impl<'a> BorrowFluxPtr for BorrowedPluginArgs<'a> {
                     .to_string(),
             ));
         }
-        let mut json_c_str: *mut c_char = std::ptr::null_mut();
-        let rc = unsafe {
-            flux_plugin_arg_get(
-                ptr,
-                PluginArgFlag::IN.bits() as _,
-                &mut json_c_str as *mut *mut c_char,
-            )
-        };
-        if rc == -1 {
-            let plugin_arg_strerror_ptr = unsafe { flux_plugin_arg_strerror(ptr) };
-            if plugin_arg_strerror_ptr.is_null() {
-                return Err(FluxError::System(
-                    "flux_plugin_arg_get",
-                    std::io::Error::last_os_error(),
-                ));
-            }
-            return Err(FluxError::Logic(unsafe {
-                CStr::from_ptr(plugin_arg_strerror_ptr)
-                    .to_string_lossy()
-                    .to_string()
-            }));
-        }
-        if json_c_str.is_null() {
-            return Err(FluxError::Logic("flux_plugin_arg_get reported success, but returned a NULL pointer for the JSON string".to_string()));
-        }
-        let in_args = unsafe {
-            CStr::from_ptr(json_c_str)
-                .to_str()
-                .map_err(FluxError::from)
-                .and_then(|str_slice| {
-                    serde_json::from_str::<Map<String, Value>>(str_slice).map_err(FluxError::from)
-                })
-        };
-        unsafe {
-            libc::free(json_c_str as *mut c_void);
-        }
-        json_c_str = std::ptr::null_mut();
-        let rc = unsafe {
-            flux_plugin_arg_get(
-                ptr,
-                PluginArgFlag::OUT.bits() as _,
-                &mut json_c_str as *mut *mut c_char,
-            )
-        };
-        if rc == -1 {
-            let plugin_arg_strerror_ptr = unsafe { flux_plugin_arg_strerror(ptr) };
-            if plugin_arg_strerror_ptr.is_null() {
-                return Err(FluxError::System(
-                    "flux_plugin_arg_get",
-                    std::io::Error::last_os_error(),
-                ));
-            }
-            return Err(FluxError::Logic(unsafe {
-                CStr::from_ptr(plugin_arg_strerror_ptr)
-                    .to_string_lossy()
-                    .to_string()
-            }));
-        }
-        if json_c_str.is_null() {
-            return Err(FluxError::Logic("flux_plugin_arg_get reported success, but returned a NULL pointer for the JSON string".to_string()));
-        }
-        let out_args = unsafe {
-            CStr::from_ptr(json_c_str)
-                .to_str()
-                .map_err(FluxError::from)
-                .and_then(|str_slice| {
-                    serde_json::from_str::<Map<String, Value>>(str_slice).map_err(FluxError::from)
-                })
-        };
-        unsafe {
-            libc::free(json_c_str as *mut c_void);
-        }
+        let in_args = Self::extract_args_from_c(ptr, PluginArgFlag::IN);
+        let out_args = Self::extract_args_from_c(ptr, PluginArgFlag::OUT);
         Ok(Self {
             c_args: FluxPtr::create_borrowed(ptr)?,
             in_args: in_args?,
@@ -260,78 +305,8 @@ unsafe impl FromFluxPtr for OwnedPluginArgs {
                     .to_string(),
             ));
         }
-        let mut json_c_str: *mut c_char = std::ptr::null_mut();
-        let rc = unsafe {
-            flux_plugin_arg_get(
-                ptr,
-                PluginArgFlag::IN.bits() as _,
-                &mut json_c_str as *mut *mut c_char,
-            )
-        };
-        if rc == -1 {
-            let plugin_arg_strerror_ptr = unsafe { flux_plugin_arg_strerror(ptr) };
-            if plugin_arg_strerror_ptr.is_null() {
-                return Err(FluxError::System(
-                    "flux_plugin_arg_get",
-                    std::io::Error::last_os_error(),
-                ));
-            }
-            return Err(FluxError::Logic(unsafe {
-                CStr::from_ptr(plugin_arg_strerror_ptr)
-                    .to_string_lossy()
-                    .to_string()
-            }));
-        }
-        if json_c_str.is_null() {
-            return Err(FluxError::Logic("flux_plugin_arg_get reported success, but returned a NULL pointer for the JSON string".to_string()));
-        }
-        let in_args = unsafe {
-            CStr::from_ptr(json_c_str)
-                .to_str()
-                .map_err(FluxError::from)
-                .and_then(|str_slice| {
-                    serde_json::from_str::<Map<String, Value>>(str_slice).map_err(FluxError::from)
-                })
-        };
-        unsafe {
-            libc::free(json_c_str as *mut c_void);
-        }
-        json_c_str = std::ptr::null_mut();
-        let rc = unsafe {
-            flux_plugin_arg_get(
-                ptr,
-                PluginArgFlag::OUT.bits() as _,
-                &mut json_c_str as *mut *mut c_char,
-            )
-        };
-        if rc == -1 {
-            let plugin_arg_strerror_ptr = unsafe { flux_plugin_arg_strerror(ptr) };
-            if plugin_arg_strerror_ptr.is_null() {
-                return Err(FluxError::System(
-                    "flux_plugin_arg_get",
-                    std::io::Error::last_os_error(),
-                ));
-            }
-            return Err(FluxError::Logic(unsafe {
-                CStr::from_ptr(plugin_arg_strerror_ptr)
-                    .to_string_lossy()
-                    .to_string()
-            }));
-        }
-        if json_c_str.is_null() {
-            return Err(FluxError::Logic("flux_plugin_arg_get reported success, but returned a NULL pointer for the JSON string".to_string()));
-        }
-        let out_args = unsafe {
-            CStr::from_ptr(json_c_str)
-                .to_str()
-                .map_err(FluxError::from)
-                .and_then(|str_slice| {
-                    serde_json::from_str::<Map<String, Value>>(str_slice).map_err(FluxError::from)
-                })
-        };
-        unsafe {
-            libc::free(json_c_str as *mut c_void);
-        }
+        let in_args = Self::extract_args_from_c(ptr, PluginArgFlag::IN);
+        let out_args = Self::extract_args_from_c(ptr, PluginArgFlag::OUT);
         Ok(Self {
             c_args: FluxPtr::create_owned(ptr, flux_plugin_arg_destroy)?,
             in_args: in_args?,
@@ -369,7 +344,7 @@ macro_rules! check_plugin_strerror {
 }
 
 pub type PluginCallback =
-    Box<dyn FnMut(BorrowedPlugin<'_>, &str, BorrowedPluginArgs<'_>) -> Result<()>>;
+    Box<dyn FnMut(BorrowedPlugin<'_>, &str, &mut BorrowedPluginArgs<'_>) -> Result<()>>;
 
 pub struct Plugin<State: PossiblyDroppablePtr<flux_plugin_t> = Owned<flux_plugin_t>> {
     pub(crate) c_plugin: FluxPtr<flux_plugin_t, State>,
@@ -386,6 +361,19 @@ impl OwnedPlugin {
             c_plugin: FluxPtr::create_owned(plugin_ptr, flux_plugin_destroy)?,
             _cb_boxes: IndexMap::new(),
         })
+    }
+
+    pub fn load_dso(dso_path: &Path) -> Result<Self> {
+        let new_plugin = Self::new()?;
+        let ru_path = dso_path.to_str().ok_or(FluxError::Logic(
+            "Cannot convert dso path into a Rust str".to_string(),
+        ))?;
+        let c_path = CString::new(ru_path)?;
+        let rc = unsafe { flux_plugin_load_dso(new_plugin.c_plugin.as_mut_ptr(), c_path.as_ptr()) };
+        if rc == -1 {
+            check_plugin_strerror!(new_plugin.c_plugin.as_mut_ptr())?;
+        }
+        Ok(new_plugin)
     }
 }
 
@@ -505,7 +493,7 @@ impl<State: PossiblyDroppablePtr<flux_plugin_t>> Plugin<State> {
         }
         let closure = unsafe { &mut *(data as *mut PluginCallback) };
         let rust_topic = unsafe { CStr::from_ptr(topic).to_string_lossy() };
-        let plugin_args = match unsafe { PluginArgs::borrow_ptr(args) } {
+        let mut plugin_args = match unsafe { PluginArgs::borrow_ptr(args) } {
             Ok(pa) => pa,
             Err(err) => {
                 return to_flux_rc(Err(err), None);
@@ -516,11 +504,13 @@ impl<State: PossiblyDroppablePtr<flux_plugin_t>> Plugin<State> {
             Err(e) => return to_flux_rc(Err(e), None),
         };
         let panic_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            closure(plugin, &rust_topic, plugin_args)
+            closure(plugin, &rust_topic, &mut plugin_args)
         }));
-        match panic_res {
-            Ok(res) => to_flux_rc(res, None),
-            Err(_) => -1,
+        let update_res = plugin_args.update(PluginArgUpdateDirection::PushToC);
+        match (panic_res, update_res) {
+            (Ok(Ok(())), Err(e)) => to_flux_rc(Err(e), None),
+            (Ok(res), _) => to_flux_rc(res, None),
+            (Err(_panic), _) => -1,
         }
     }
 
@@ -588,6 +578,28 @@ impl<State: PossiblyDroppablePtr<flux_plugin_t>> Plugin<State> {
             self.add_handler(&topic, cb)?;
         }
         Ok(())
+    }
+
+    pub fn call(&self, name: &str, args: &mut PluginArgs) -> Result<()> {
+        let c_name = CString::new(name)?;
+        args.update(PluginArgUpdateDirection::PushToC)?;
+        let rc = unsafe {
+            flux_plugin_call(
+                self.c_plugin.as_mut_ptr(),
+                c_name.as_ptr(),
+                args.as_mut_ptr(),
+            )
+        };
+        if rc == -1 {
+            check_plugin_strerror!(self.c_plugin.as_mut_ptr()).map(|_| ())
+        } else if rc == 0 {
+            Err(FluxError::Logic(format!(
+                "Tried calling a plugin callback with an unknown name: {}",
+                name
+            )))
+        } else {
+            args.update(PluginArgUpdateDirection::PullFromC)
+        }
     }
 }
 
