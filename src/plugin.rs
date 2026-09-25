@@ -463,6 +463,17 @@ impl<State: PossiblyDroppablePtr<flux_plugin_t>> Plugin<State> {
         }
     }
 
+    pub fn unset_aux(&mut self, key: &str) -> Result<()> {
+        let c_key = CString::new(key)?;
+        flux_try!(flux_plugin_aux_set(
+            self.c_plugin.as_mut_ptr(),
+            c_key.as_ptr(),
+            std::ptr::null_mut(),
+            None
+        ))
+        .map(|_| ())
+    }
+
     pub fn get_aux<T: 'static>(&self, key: &str) -> Result<&T> {
         let raw_ptr = self.get_aux_raw(key)?;
         let wrapper = unsafe { &*(raw_ptr as *const AuxThinPtrWrapper) };
