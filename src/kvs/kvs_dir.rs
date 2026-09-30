@@ -189,6 +189,8 @@ unsafe impl IntoFluxPtr for OwnedKvsDir {
     define_into_flux_ptr_body!(c_kvsdir);
 }
 
+unsafe impl<State: PossiblyDroppablePtr<flux_kvsdir_t>> Send for KvsDir<State> {}
+
 pub struct KvsDirCursor<'a, State: PossiblyDroppablePtr<flux_kvsdir_t>> {
     _dir: &'a KvsDir<State>,
     iter: FluxPtr<flux_kvsitr_t, Owned<flux_kvsitr_t>>,

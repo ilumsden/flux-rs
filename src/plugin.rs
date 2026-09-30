@@ -323,6 +323,8 @@ unsafe impl IntoFluxPtr for OwnedPluginArgs {
     define_into_flux_ptr_body!(c_args);
 }
 
+unsafe impl<State: PossiblyDroppablePtr<flux_plugin_arg_t>> Send for PluginArgs<State> {}
+
 macro_rules! check_plugin_strerror {
     ($plugin_ptr:expr) => {{
         let check_plugin_strerror_raw_ptr =
@@ -645,3 +647,5 @@ unsafe impl<State: PossiblyDroppablePtr<flux_plugin_t>> AsFluxPtr for Plugin<Sta
 unsafe impl IntoFluxPtr for OwnedPlugin {
     define_into_flux_ptr_body!(c_plugin);
 }
+
+unsafe impl<State: PossiblyDroppablePtr<flux_plugin_t>> Send for Plugin<State> {}

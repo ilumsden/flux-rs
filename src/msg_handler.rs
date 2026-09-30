@@ -171,6 +171,8 @@ unsafe impl<State: PossiblyDroppablePtr<flux_msg_handler_t>> AsFluxPtr for MsgHa
     define_as_flux_ptr_body!(flux_msg_handler_t, c_handler);
 }
 
+unsafe impl<State: PossiblyDroppablePtr<flux_msg_handler_t>> Send for MsgHandler<State> {}
+
 pub struct MsgHandlerSpec {
     pub typemask: MessageType,
     pub topic_glob: String,

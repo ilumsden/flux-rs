@@ -247,6 +247,8 @@ impl<'de> Deserialize<'de> for OwnedHostlist {
     }
 }
 
+unsafe impl<State: PossiblyDroppablePtr<hostlist>> Send for Hostlist<State> {}
+
 pub struct HostlistCursor<'a, State: PossiblyDroppablePtr<hostlist>> {
     hostlist: &'a mut Hostlist<State>,
     is_first: bool,

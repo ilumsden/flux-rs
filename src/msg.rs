@@ -514,3 +514,5 @@ unsafe impl<State: PossiblyDroppablePtr<flux_msg_t>> AsFluxPtr for Message<State
 unsafe impl IntoFluxPtr for OwnedMessage {
     define_into_flux_ptr_body!(c_msg);
 }
+
+unsafe impl<State: PossiblyDroppablePtr<flux_msg_t>> Send for Message<State> {}

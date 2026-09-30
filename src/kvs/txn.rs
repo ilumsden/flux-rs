@@ -173,3 +173,5 @@ unsafe impl<State: PossiblyDroppablePtr<flux_kvs_txn_t>> AsFluxPtr for KvsTransa
 unsafe impl IntoFluxPtr for OwnedKvsTransaction {
     define_into_flux_ptr_body!(c_txn);
 }
+
+unsafe impl<State: PossiblyDroppablePtr<flux_kvs_txn_t>> Send for KvsTransaction<State> {}

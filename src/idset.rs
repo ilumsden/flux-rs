@@ -297,6 +297,8 @@ impl<'de> Deserialize<'de> for OwnedIdset {
 impl_serde_repr_str!(no_display BorrowedIdset<'a>);
 impl_serde_repr_str!(no_display OwnedIdset);
 
+unsafe impl<State: PossiblyDroppablePtr<idset>> Send for Idset<State> {}
+
 pub struct Iter<'r, State: PossiblyDroppablePtr<idset>> {
     idset: &'r Idset<State>,
     current: u32,
