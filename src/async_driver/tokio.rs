@@ -108,6 +108,7 @@ impl AsyncDriver for TokioDriver {
 }
 
 impl AsyncWaitableDriver for TokioDriver {
+    #[allow(clippy::manual_async_fn)]
     fn wait(&mut self) -> impl std::future::Future<Output = Result<()>> + Send {
         async {
             let Some(join_handle) = self.task_handle.take() else {
