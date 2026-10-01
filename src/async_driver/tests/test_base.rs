@@ -1,7 +1,7 @@
 use std::os::fd::{AsFd, AsRawFd};
 use std::sync::Arc;
 
-use parking_lot::Mutex;
+use parking_lot::ReentrantMutex;
 
 use crate::async_driver::base::{
     AsyncDriver, RawFdWrapper, get_poll_fd_for_async, process_readable_event_for_async,
@@ -15,16 +15,16 @@ use crate::reactor::{FluxReactorThread, Reactor};
 // Helpers
 // =========================================================================
 
-/// Open a fresh handle wrapped in Arc<Mutex<>> for async driver tests.
-fn make_shared_handle() -> Arc<Mutex<FluxHandle>> {
-    Arc::new(Mutex::new(
+/// Open a fresh handle wrapped in Arc<ReentrantMutex<>> for async driver tests.
+fn make_shared_handle() -> Arc<ReentrantMutex<FluxHandle>> {
+    Arc::new(ReentrantMutex::new(
         FluxHandle::new_from_str_uri("", HandleFlags::NONE)
             .expect("Failed to open FluxHandle for async driver test"),
     ))
 }
 
 /// Poison a mutex by panicking inside a thread that holds it.
-fn make_poisoned_mutex() -> Arc<Mutex<FluxHandle>> {
+fn make_poisoned_mutex() -> Arc<ReentrantMutex<FluxHandle>> {
     let shared = make_shared_handle();
     let shared_clone = shared.clone();
     let _ = std::thread::spawn(move || {
@@ -38,13 +38,13 @@ fn make_poisoned_mutex() -> Arc<Mutex<FluxHandle>> {
 /// A minimal AsyncDriver that records whether spawn was called.
 struct MockDriver {
     #[allow(dead_code)]
-    handle: Arc<Mutex<FluxHandle>>,
+    handle: Arc<ReentrantMutex<FluxHandle>>,
     spawned: bool,
 }
 
-impl TryFrom<Arc<Mutex<FluxHandle>>> for MockDriver {
+impl TryFrom<Arc<ReentrantMutex<FluxHandle>>> for MockDriver {
     type Error = FluxError;
-    fn try_from(handle: Arc<Mutex<FluxHandle>>) -> Result<Self> {
+    fn try_from(handle: Arc<ReentrantMutex<FluxHandle>>) -> Result<Self> {
         Ok(Self {
             handle,
             spawned: false,
@@ -76,9 +76,9 @@ impl AsyncDriver for MockDriver {
 /// An AsyncDriver whose spawn always fails.
 struct FailingMockDriver;
 
-impl TryFrom<Arc<Mutex<FluxHandle>>> for FailingMockDriver {
+impl TryFrom<Arc<ReentrantMutex<FluxHandle>>> for FailingMockDriver {
     type Error = FluxError;
-    fn try_from(_: Arc<Mutex<FluxHandle>>) -> Result<Self> {
+    fn try_from(_: Arc<ReentrantMutex<FluxHandle>>) -> Result<Self> {
         Ok(Self)
     }
 }
@@ -100,12 +100,12 @@ impl AsyncDriver for FailingMockDriver {
     }
 }
 
-/// An AsyncDriver whose try_from(Arc<Mutex<FluxHandle>>) always fails.
+/// An AsyncDriver whose try_from(Arc<ReentrantMutex<FluxHandle>>) always fails.
 struct FailingFromHandleMockDriver;
 
-impl TryFrom<Arc<Mutex<FluxHandle>>> for FailingFromHandleMockDriver {
+impl TryFrom<Arc<ReentrantMutex<FluxHandle>>> for FailingFromHandleMockDriver {
     type Error = FluxError;
-    fn try_from(_: Arc<Mutex<FluxHandle>>) -> Result<Self> {
+    fn try_from(_: Arc<ReentrantMutex<FluxHandle>>) -> Result<Self> {
         Err(FluxError::Logic("try_from handle always fails".to_string()))
     }
 }

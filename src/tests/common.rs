@@ -1,4 +1,6 @@
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::OnceLock;
+
+use parking_lot::{Mutex, MutexGuard};
 
 use crate::handle::{FluxHandle, HandleFlags, OwnedFluxHandle};
 
@@ -39,7 +41,6 @@ where
                 .expect("Failed to open Flux handle for testing");
             Mutex::new(h)
         })
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+        .lock();
     f(&guard)
 }

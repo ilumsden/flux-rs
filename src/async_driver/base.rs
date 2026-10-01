@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use convert_case::ccase;
-use parking_lot::Mutex;
+use parking_lot::ReentrantMutex;
 
 use crate::duration::FluxDuration;
 use crate::error::{FluxError, Result};
@@ -12,13 +12,13 @@ use crate::reactor::{FluxReactorThread, OwnedReactor, ReactorFlags};
 
 pub trait AsyncDriver:
     Sized
-    + TryFrom<Arc<Mutex<OwnedFluxHandle>>, Error = FluxError>
+    + TryFrom<Arc<ReentrantMutex<OwnedFluxHandle>>, Error = FluxError>
     + TryFrom<FluxReactorThread, Error = FluxError>
 {
     fn spawn(&mut self) -> Result<()>;
     fn stop(&mut self) -> Result<()>;
 
-    fn spawn_async_driver(handle: Arc<Mutex<OwnedFluxHandle>>) -> Result<Self> {
+    fn spawn_async_driver(handle: Arc<ReentrantMutex<OwnedFluxHandle>>) -> Result<Self> {
         let mut driver = Self::try_from(handle)?;
         driver.spawn()?;
         Ok(driver)
@@ -66,24 +66,22 @@ pub(super) fn get_default_reactor_sleep_duration(driver_name: &str) -> Duration 
     Duration::from_millis(50)
 }
 
-pub(super) fn get_poll_fd_for_async(handle: Arc<Mutex<OwnedFluxHandle>>) -> Result<RawFdWrapper> {
+pub(super) fn get_poll_fd_for_async(
+    handle: Arc<ReentrantMutex<OwnedFluxHandle>>,
+) -> Result<RawFdWrapper> {
     handle.lock().get_pollfd().map(RawFdWrapper)
 }
 
 pub(super) fn process_readable_event_for_async(
-    handle: Arc<Mutex<OwnedFluxHandle>>,
+    handle: Arc<ReentrantMutex<OwnedFluxHandle>>,
     check_poll_events: bool,
 ) -> Result<()> {
+    let locked_handle = handle.lock();
     // 1. Get reactor. Also, get pollevents if `check_poll_events` is `true`
-    let (mut reactor, pollevents) = {
-        let locked_handle = handle.lock();
-        (
-            locked_handle.get_reactor()?.to_owned()?,
-            check_poll_events
-                .then(|| locked_handle.get_pollevents())
-                .transpose()?,
-        )
-    };
+    let mut reactor = locked_handle.get_reactor()?.to_owned()?;
+    let pollevents = check_poll_events
+        .then(|| locked_handle.get_pollevents())
+        .transpose()?;
     // 2. Tick the reactor ONCE without blocking.
     if let Some(events) = pollevents {
         if (events & PollEvents::POLLIN) != PollEvents::NONE

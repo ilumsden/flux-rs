@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use parking_lot::Mutex;
+use parking_lot::ReentrantMutex;
 
 use crate::async_driver::AsyncDriver;
 use crate::async_driver::thread::ThreadDriver;
@@ -25,9 +25,9 @@ fn make_thread_driver() -> ThreadDriver {
         .expect("Failed to create ThreadDriver from FluxReactorThread")
 }
 
-/// Open a fresh FluxHandle wrapped in Arc<Mutex<>> for TryFrom tests.
-fn make_shared_handle() -> Arc<Mutex<FluxHandle>> {
-    Arc::new(Mutex::new(
+/// Open a fresh FluxHandle wrapped in Arc<ReentrantMutex<>> for TryFrom tests.
+fn make_shared_handle() -> Arc<ReentrantMutex<FluxHandle>> {
+    Arc::new(ReentrantMutex::new(
         FluxHandle::new_from_str_uri("", HandleFlags::NONE)
             .expect("Failed to open FluxHandle for ThreadDriver test"),
     ))
@@ -52,7 +52,7 @@ fn try_from_reactor_thread_stores_driver_in_some() {
 }
 
 // =========================================================================
-// TryFrom<Arc<Mutex<FluxHandle>>>
+// TryFrom<Arc<ReentrantMutex<FluxHandle>>>
 // =========================================================================
 
 #[test]

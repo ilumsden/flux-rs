@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use parking_lot::Mutex;
+use parking_lot::ReentrantMutex;
 use tokio::io::unix::AsyncFd;
 use tokio::task::JoinHandle;
 
@@ -14,13 +14,13 @@ use crate::handle::OwnedFluxHandle;
 use crate::reactor::FluxReactorThread;
 
 pub struct TokioDriver {
-    pub(crate) handle: Option<Arc<Mutex<OwnedFluxHandle>>>,
+    pub(crate) handle: Option<Arc<ReentrantMutex<OwnedFluxHandle>>>,
     pub(crate) reactor_sleep_duration: Duration,
     pub(crate) task_handle: Option<JoinHandle<Result<()>>>,
 }
 
 impl TokioDriver {
-    pub fn new(handle: Arc<Mutex<OwnedFluxHandle>>) -> Self {
+    pub fn new(handle: Arc<ReentrantMutex<OwnedFluxHandle>>) -> Self {
         Self {
             handle: Some(handle),
             reactor_sleep_duration: get_default_reactor_sleep_duration("tokio"),
@@ -29,7 +29,7 @@ impl TokioDriver {
     }
 
     pub fn with_sleep_duration(
-        handle: Arc<Mutex<OwnedFluxHandle>>,
+        handle: Arc<ReentrantMutex<OwnedFluxHandle>>,
         sleep_duration: Duration,
     ) -> Self {
         Self {
@@ -40,7 +40,7 @@ impl TokioDriver {
     }
 
     pub(crate) async fn drive_with_reactor_fd(
-        handle: Arc<Mutex<OwnedFluxHandle>>,
+        handle: Arc<ReentrantMutex<OwnedFluxHandle>>,
         reactor_sleep_time: Duration,
     ) -> Result<()> {
         // Get the polling file descriptor
@@ -68,10 +68,10 @@ impl TokioDriver {
     }
 }
 
-impl TryFrom<Arc<Mutex<OwnedFluxHandle>>> for TokioDriver {
+impl TryFrom<Arc<ReentrantMutex<OwnedFluxHandle>>> for TokioDriver {
     type Error = FluxError;
 
-    fn try_from(handle: Arc<Mutex<OwnedFluxHandle>>) -> Result<Self> {
+    fn try_from(handle: Arc<ReentrantMutex<OwnedFluxHandle>>) -> Result<Self> {
         Ok(Self::new(handle))
     }
 }
@@ -81,7 +81,7 @@ impl TryFrom<FluxReactorThread> for TokioDriver {
 
     fn try_from(_: FluxReactorThread) -> Result<Self> {
         Err(FluxError::Logic(String::from(
-            "Cannot create a TokioDriver with a FluxReactorThread. Use Arc<Mutex<FluxHandle>> instead.",
+            "Cannot create a TokioDriver with a FluxReactorThread. Use Arc<ReentrantMutex<FluxHandle>> instead.",
         )))
     }
 }

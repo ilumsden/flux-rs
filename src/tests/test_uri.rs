@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use parking_lot::Mutex;
 
 use crate::error::FluxError;
 use crate::uri::{BaseUri, JobUri, UriResolverUri};
@@ -238,7 +238,7 @@ fn as_local_result_is_cached_on_second_call() {
 
 #[test]
 fn display_without_env_var_shows_base_uri() {
-    let _guard = ENV_MUTEX.lock().unwrap();
+    let _guard = ENV_MUTEX.lock();
     unsafe { std::env::remove_var("FLUX_URI_RESOLVE_LOCAL") };
     let raw = "local:///run/flux/local";
     let uri = JobUri::new(raw, None).unwrap();
@@ -247,7 +247,7 @@ fn display_without_env_var_shows_base_uri() {
 
 #[test]
 fn display_with_env_var_set_local_scheme_shows_original_uri() {
-    let _guard = ENV_MUTEX.lock().unwrap();
+    let _guard = ENV_MUTEX.lock();
     unsafe { std::env::set_var("FLUX_URI_RESOLVE_LOCAL", "1") };
     let raw = "local:///run/flux/local";
     let uri = JobUri::new(raw, None).unwrap();
@@ -259,7 +259,7 @@ fn display_with_env_var_set_local_scheme_shows_original_uri() {
 
 #[test]
 fn display_with_env_var_set_ssh_scheme_shows_local_form() {
-    let _guard = ENV_MUTEX.lock().unwrap();
+    let _guard = ENV_MUTEX.lock();
     unsafe { std::env::set_var("FLUX_URI_RESOLVE_LOCAL", "1") };
     let uri = JobUri::new("ssh://hostname.example.com/path/to/socket", None).unwrap();
     let display = uri.to_string();
@@ -269,7 +269,7 @@ fn display_with_env_var_set_ssh_scheme_shows_local_form() {
 
 #[test]
 fn display_with_env_var_set_falls_back_to_base_uri_on_as_local_error() {
-    let _guard = ENV_MUTEX.lock().unwrap();
+    let _guard = ENV_MUTEX.lock();
     unsafe { std::env::set_var("FLUX_URI_RESOLVE_LOCAL", "1") };
     // custom scheme → as_local() returns Err → Display falls back to base.uri
     let uri = JobUri::new("custom:///some/path", None).unwrap();

@@ -149,7 +149,7 @@ mod tokio_tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use parking_lot::Mutex;
+    use parking_lot::ReentrantMutex;
 
     use super::*;
     use crate::async_driver::AsyncDriver;
@@ -157,8 +157,8 @@ mod tokio_tests {
     use crate::future::BorrowedFluxFuture;
     use crate::handle::{FluxHandle, HandleFlags};
 
-    fn open_shared_handle() -> Arc<Mutex<FluxHandle>> {
-        Arc::new(Mutex::new(
+    fn open_shared_handle() -> Arc<ReentrantMutex<FluxHandle>> {
+        Arc::new(ReentrantMutex::new(
             FluxHandle::new_from_str_uri("", HandleFlags::NONE)
                 .expect("Failed to open FluxHandle for AsyncFluxFuture tokio test"),
         ))
@@ -280,7 +280,7 @@ mod smol_tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use parking_lot::Mutex;
+    use parking_lot::ReentrantMutex;
 
     use super::*;
     use crate::async_driver::AsyncDriver;
@@ -288,8 +288,8 @@ mod smol_tests {
     use crate::future::BorrowedFluxFuture;
     use crate::handle::{FluxHandle, HandleFlags};
 
-    fn open_shared_handle() -> Arc<Mutex<FluxHandle>> {
-        Arc::new(Mutex::new(
+    fn open_shared_handle() -> Arc<ReentrantMutex<FluxHandle>> {
+        Arc::new(ReentrantMutex::new(
             FluxHandle::new_from_str_uri("", HandleFlags::NONE)
                 .expect("Failed to open FluxHandle for AsyncFluxFuture smol test"),
         ))

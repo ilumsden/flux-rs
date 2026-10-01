@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use parking_lot::Mutex;
+use parking_lot::ReentrantMutex;
 
 use crate::async_driver::AsyncDriver;
 use crate::async_driver::tokio::TokioDriver;
@@ -13,8 +13,8 @@ use crate::reactor::{FluxReactorThread, Reactor};
 // Helpers
 // =========================================================================
 
-fn make_shared_handle() -> Arc<Mutex<FluxHandle>> {
-    Arc::new(Mutex::new(
+fn make_shared_handle() -> Arc<ReentrantMutex<FluxHandle>> {
+    Arc::new(ReentrantMutex::new(
         FluxHandle::new_from_str_uri("", HandleFlags::NONE)
             .expect("Failed to open FluxHandle for TokioDriver test"),
     ))
@@ -26,7 +26,7 @@ fn make_reactor_thread() -> FluxReactorThread {
 }
 
 // =========================================================================
-// TryFrom<Arc<Mutex<FluxHandle>>>
+// TryFrom<Arc<ReentrantMutex<FluxHandle>>>
 // =========================================================================
 
 #[test]
@@ -41,7 +41,7 @@ fn try_from_shared_handle_stores_handle() {
     let driver = TokioDriver::try_from(shared).unwrap();
     assert!(
         driver.handle.is_some(),
-        "handle field should be Some after construction from Arc<Mutex<FluxHandle>>"
+        "handle field should be Some after construction from Arc<ReentrantMutex<FluxHandle>>"
     );
 }
 

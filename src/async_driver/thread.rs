@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use parking_lot::Mutex;
+use parking_lot::ReentrantMutex;
 
 use crate::async_driver::AsyncDriver;
 use crate::error::{FluxError, Result};
@@ -32,10 +32,10 @@ impl TryFrom<FluxReactorThread> for ThreadDriver {
     }
 }
 
-impl TryFrom<Arc<Mutex<OwnedFluxHandle>>> for ThreadDriver {
+impl TryFrom<Arc<ReentrantMutex<OwnedFluxHandle>>> for ThreadDriver {
     type Error = FluxError;
 
-    fn try_from(_: Arc<Mutex<OwnedFluxHandle>>) -> Result<Self> {
+    fn try_from(_: Arc<ReentrantMutex<OwnedFluxHandle>>) -> Result<Self> {
         Err(FluxError::Logic(String::from(
             "ThreadDriver does not use file descriptor polling",
         )))

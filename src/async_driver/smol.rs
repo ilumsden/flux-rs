@@ -3,7 +3,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use async_io::Async;
-use parking_lot::Mutex;
+use parking_lot::ReentrantMutex;
 use smol::channel::{Receiver, Sender, bounded};
 use smol::future;
 use smol::{Executor, Task, Timer};
@@ -17,7 +17,7 @@ use crate::handle::OwnedFluxHandle;
 use crate::reactor::FluxReactorThread;
 
 pub struct SmolDriver {
-    pub(crate) handle: Option<Arc<Mutex<OwnedFluxHandle>>>,
+    pub(crate) handle: Option<Arc<ReentrantMutex<OwnedFluxHandle>>>,
     pub(crate) reactor_sleep_duration: Duration,
     executor: Arc<Executor<'static>>,
     owns_executor: bool,
@@ -26,7 +26,7 @@ pub struct SmolDriver {
 }
 
 impl SmolDriver {
-    pub fn new(handle: Arc<Mutex<OwnedFluxHandle>>) -> Self {
+    pub fn new(handle: Arc<ReentrantMutex<OwnedFluxHandle>>) -> Self {
         Self {
             handle: Some(handle),
             reactor_sleep_duration: get_default_reactor_sleep_duration("smol"),
@@ -38,7 +38,7 @@ impl SmolDriver {
     }
 
     pub fn with_sleep_duration(
-        handle: Arc<Mutex<OwnedFluxHandle>>,
+        handle: Arc<ReentrantMutex<OwnedFluxHandle>>,
         sleep_duration: Duration,
     ) -> Self {
         Self {
@@ -52,7 +52,7 @@ impl SmolDriver {
     }
 
     pub fn with_executor(
-        handle: Arc<Mutex<OwnedFluxHandle>>,
+        handle: Arc<ReentrantMutex<OwnedFluxHandle>>,
         executor: Arc<Executor<'static>>,
     ) -> Self {
         Self {
@@ -66,7 +66,7 @@ impl SmolDriver {
     }
 
     pub fn with_executor_and_sleep_duration(
-        handle: Arc<Mutex<OwnedFluxHandle>>,
+        handle: Arc<ReentrantMutex<OwnedFluxHandle>>,
         executor: Arc<Executor<'static>>,
         sleep_duration: Duration,
     ) -> Self {
@@ -81,7 +81,7 @@ impl SmolDriver {
     }
 
     pub(crate) async fn driver_with_reactor_fd(
-        handle: Arc<Mutex<OwnedFluxHandle>>,
+        handle: Arc<ReentrantMutex<OwnedFluxHandle>>,
         started: Option<Sender<()>>,
         reactor_sleep_time: Duration,
     ) -> Result<()> {
@@ -126,10 +126,10 @@ impl SmolDriver {
     }
 }
 
-impl TryFrom<Arc<Mutex<OwnedFluxHandle>>> for SmolDriver {
+impl TryFrom<Arc<ReentrantMutex<OwnedFluxHandle>>> for SmolDriver {
     type Error = FluxError;
 
-    fn try_from(value: Arc<Mutex<OwnedFluxHandle>>) -> Result<Self> {
+    fn try_from(value: Arc<ReentrantMutex<OwnedFluxHandle>>) -> Result<Self> {
         Ok(SmolDriver::new(value))
     }
 }
@@ -139,7 +139,7 @@ impl TryFrom<FluxReactorThread> for SmolDriver {
 
     fn try_from(_: FluxReactorThread) -> Result<Self> {
         Err(FluxError::Logic(String::from(
-            "Cannot create a SmolDriver with a FluxReactorThread. Use Arc<Mutex<FluxHandle>> instead.",
+            "Cannot create a SmolDriver with a FluxReactorThread. Use Arc<ReentrantMutex<FluxHandle>> instead.",
         )))
     }
 }

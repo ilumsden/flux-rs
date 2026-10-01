@@ -1,10 +1,11 @@
 use std::ffi::c_void;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 
 use flux_sys::core::{flux_future_incref, flux_future_t, flux_future_then};
+use parking_lot::Mutex;
 
 use crate::error::{FluxError, Result};
 use crate::flux_ptr_management::FromFluxPtrNoArgs;
@@ -74,7 +75,7 @@ impl AsyncFluxFuture {
         }
 
         // Update the shared state with the result
-        let mut lock = state.lock().unwrap();
+        let mut lock = state.lock();
         lock.result = Some(
             unsafe { FluxFuture::from_ptr(f) }
                 .expect("Got a NULL future pointer in a Flux future callback"),
@@ -93,7 +94,7 @@ impl Future for AsyncFluxFuture {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // Lock the shared state for the async runtime
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock();
         eprintln!("[poll] called, result present: {}", state.result.is_some());
 
         // If there is a result in the shared state, tell the async runtime that the future has been
