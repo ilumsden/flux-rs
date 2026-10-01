@@ -9,8 +9,8 @@ use smol::future;
 use smol::{Executor, Task, Timer};
 
 use crate::async_driver::base::{
-    AsyncDriver, WaitResult, get_default_reactor_sleep_duration, get_poll_fd_for_async,
-    process_readable_event_for_async,
+    AsyncDriver, AsyncWaitableDriver, WaitResult, get_default_reactor_sleep_duration,
+    get_poll_fd_for_async, process_readable_event_for_async,
 };
 use crate::error::{FluxError, Result};
 use crate::handle::OwnedFluxHandle;
@@ -202,6 +202,17 @@ impl AsyncDriver for SmolDriver {
             let _ = thread.join();
         }
         Ok(())
+    }
+}
+
+impl AsyncWaitableDriver for SmolDriver {
+    fn wait(&mut self) -> impl std::future::Future<Output = Result<()>> + Send {
+        async {
+            let Some(task) = self.task_handle.take() else {
+                return Ok(());
+            };
+            task.await
+        }
     }
 }
 

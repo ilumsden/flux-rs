@@ -6,7 +6,7 @@ use tokio::io::unix::AsyncFd;
 use tokio::task::JoinHandle;
 
 use crate::async_driver::base::{
-    AsyncDriver, get_default_reactor_sleep_duration, get_poll_fd_for_async,
+    AsyncDriver, AsyncWaitableDriver, get_default_reactor_sleep_duration, get_poll_fd_for_async,
     process_readable_event_for_async,
 };
 use crate::error::{FluxError, Result};
@@ -104,6 +104,25 @@ impl AsyncDriver for TokioDriver {
             handle.abort();
         }
         Ok(())
+    }
+}
+
+impl AsyncWaitableDriver for TokioDriver {
+    fn wait(&mut self) -> impl std::future::Future<Output = Result<()>> + Send {
+        async {
+            let Some(join_handle) = self.task_handle.take() else {
+                return Ok(());
+            };
+            match join_handle.await {
+                Ok(driver_result) => driver_result,
+                Err(join_err) if join_err.is_panic() => {
+                    std::panic::resume_unwind(join_err.into_panic())
+                }
+                Err(join_err) => Err(FluxError::Logic(format!(
+                    "TokioDriver's task ended unexpectedly: {join_err}"
+                ))),
+            }
+        }
     }
 }
 

@@ -32,6 +32,10 @@ pub trait AsyncDriver:
     }
 }
 
+pub trait AsyncWaitableDriver: AsyncDriver {
+    fn wait(&mut self) -> impl std::future::Future<Output = Result<()>> + Send;
+}
+
 pub struct RawFdWrapper(pub RawFd);
 
 impl AsRawFd for RawFdWrapper {

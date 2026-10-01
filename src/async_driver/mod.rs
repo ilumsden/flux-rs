@@ -12,7 +12,7 @@ mod smol;
 #[cfg(test)]
 mod tests;
 
-pub use self::base::AsyncDriver;
+pub use self::base::{AsyncDriver, AsyncWaitableDriver};
 pub use self::thread::ThreadDriver;
 
 #[cfg(feature = "tokio")]
