@@ -146,8 +146,10 @@ fn multiple_constructions_do_not_panic() {
 
 #[cfg(feature = "tokio")]
 mod tokio_tests {
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::time::Duration;
+
+    use parking_lot::Mutex;
 
     use super::*;
     use crate::async_driver::AsyncDriver;
@@ -198,7 +200,7 @@ mod tokio_tests {
 
         let mut future = make_wait_all();
         {
-            let handle = shared.lock().unwrap();
+            let handle = shared.lock();
             let reactor = handle.get_reactor().unwrap();
             future.set_reactor(&reactor).unwrap();
         }
@@ -227,7 +229,7 @@ mod tokio_tests {
         })
         .unwrap();
         {
-            let handle = shared.lock().unwrap();
+            let handle = shared.lock();
             let reactor = handle.get_reactor().unwrap();
             future.set_reactor(&reactor).unwrap();
         }
@@ -250,7 +252,7 @@ mod tokio_tests {
 
         let mut future = make_wait_all();
         {
-            let handle = shared.lock().unwrap();
+            let handle = shared.lock();
             let reactor = handle.get_reactor().unwrap();
             future.set_reactor(&reactor).unwrap();
         }
@@ -275,8 +277,10 @@ mod tokio_tests {
 
 #[cfg(feature = "smol")]
 mod smol_tests {
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::time::Duration;
+
+    use parking_lot::Mutex;
 
     use super::*;
     use crate::async_driver::AsyncDriver;
@@ -341,7 +345,7 @@ mod smol_tests {
 
             let mut future = make_wait_all();
             {
-                let handle = shared.lock().unwrap();
+                let handle = shared.lock();
                 let reactor = handle.get_reactor().unwrap();
                 future.set_reactor(&reactor).unwrap();
             }
@@ -373,7 +377,7 @@ mod smol_tests {
             })
             .unwrap();
             {
-                let handle = shared.lock().unwrap();
+                let handle = shared.lock();
                 let reactor = handle.get_reactor().unwrap();
                 future.set_reactor(&reactor).unwrap();
             }
@@ -393,7 +397,7 @@ mod smol_tests {
 
         let mut future = make_wait_all();
         {
-            let handle = shared.lock().unwrap();
+            let handle = shared.lock();
             let reactor = handle.get_reactor().unwrap();
             future.set_reactor(&reactor).unwrap();
         }

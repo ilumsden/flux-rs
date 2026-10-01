@@ -1,5 +1,7 @@
 use std::os::fd::{AsFd, AsRawFd};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 
 use crate::async_driver::base::{
     AsyncDriver, RawFdWrapper, get_poll_fd_for_async, process_readable_event_for_async,
@@ -26,7 +28,7 @@ fn make_poisoned_mutex() -> Arc<Mutex<FluxHandle>> {
     let shared = make_shared_handle();
     let shared_clone = shared.clone();
     let _ = std::thread::spawn(move || {
-        let _guard = shared_clone.lock().unwrap();
+        let _guard = shared_clone.lock();
         panic!("intentional panic to poison mutex");
     })
     .join();

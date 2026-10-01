@@ -1,4 +1,6 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 
 use crate::async_driver::AsyncDriver;
 use crate::async_driver::tokio::TokioDriver;

@@ -1,6 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
+use parking_lot::Mutex;
 use tokio::io::unix::AsyncFd;
 use tokio::task::JoinHandle;
 

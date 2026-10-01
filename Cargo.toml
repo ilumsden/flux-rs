@@ -26,6 +26,7 @@ chrono = "0.4"
 url = "2.5"
 indexmap = "2.14.0"
 convert_case = "0.12"
+parking_lot = "0.12"
 nix = { version = "0.31", features = ["fs"] }
 tokio = { version = "1", optional = true, features = [
     "net",

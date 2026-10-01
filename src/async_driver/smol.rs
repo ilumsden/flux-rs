@@ -1,8 +1,9 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
 use async_io::Async;
+use parking_lot::Mutex;
 use smol::channel::{Receiver, Sender, bounded};
 use smol::future;
 use smol::{Executor, Task, Timer};

@@ -1,8 +1,9 @@
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use convert_case::ccase;
+use parking_lot::Mutex;
 
 use crate::duration::FluxDuration;
 use crate::error::{FluxError, Result};
@@ -66,15 +67,7 @@ pub(super) fn get_default_reactor_sleep_duration(driver_name: &str) -> Duration 
 }
 
 pub(super) fn get_poll_fd_for_async(handle: Arc<Mutex<OwnedFluxHandle>>) -> Result<RawFdWrapper> {
-    handle
-        .lock()
-        .map_err(|_| {
-            FluxError::Logic(String::from(
-                "Cannot get polling file descriptor because the mutex is poisoned",
-            ))
-        })?
-        .get_pollfd()
-        .map(RawFdWrapper)
+    handle.lock().get_pollfd().map(RawFdWrapper)
 }
 
 pub(super) fn process_readable_event_for_async(
@@ -83,11 +76,7 @@ pub(super) fn process_readable_event_for_async(
 ) -> Result<()> {
     // 1. Get reactor. Also, get pollevents if `check_poll_events` is `true`
     let (mut reactor, pollevents) = {
-        let locked_handle = handle.lock().map_err(|_| {
-            FluxError::Logic(String::from(
-                "Cannot get a reactor and pollevents because the mutex is poisoned",
-            ))
-        })?;
+        let locked_handle = handle.lock();
         (
             locked_handle.get_reactor()?.to_owned()?,
             check_poll_events
