@@ -53,6 +53,7 @@ impl AsFd for RawFdWrapper {
 pub(super) enum WaitResult {
     FdReadable,
     Timeout,
+    Shutdown,
 }
 
 pub(super) fn get_default_reactor_sleep_duration(driver_name: &str) -> Duration {

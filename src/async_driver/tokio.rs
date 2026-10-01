@@ -4,6 +4,7 @@ use std::time::Duration;
 use parking_lot::ReentrantMutex;
 use tokio::io::unix::AsyncFd;
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 use crate::async_driver::base::{
     AsyncDriver, AsyncWaitableDriver, get_default_reactor_sleep_duration, get_poll_fd_for_async,
@@ -17,6 +18,7 @@ pub struct TokioDriver {
     pub(crate) handle: Option<Arc<ReentrantMutex<OwnedFluxHandle>>>,
     pub(crate) reactor_sleep_duration: Duration,
     pub(crate) task_handle: Option<JoinHandle<Result<()>>>,
+    shutdown: CancellationToken,
 }
 
 impl TokioDriver {
@@ -25,6 +27,7 @@ impl TokioDriver {
             handle: Some(handle),
             reactor_sleep_duration: get_default_reactor_sleep_duration("tokio"),
             task_handle: None,
+            shutdown: CancellationToken::new(),
         }
     }
 
@@ -36,12 +39,18 @@ impl TokioDriver {
             handle: Some(handle),
             reactor_sleep_duration: sleep_duration,
             task_handle: None,
+            shutdown: CancellationToken::new(),
         }
+    }
+
+    pub fn get_shutdown(&self) -> CancellationToken {
+        self.shutdown.clone()
     }
 
     pub(crate) async fn drive_with_reactor_fd(
         handle: Arc<ReentrantMutex<OwnedFluxHandle>>,
         reactor_sleep_time: Duration,
+        shutdown: CancellationToken,
     ) -> Result<()> {
         // Get the polling file descriptor
         let fd = get_poll_fd_for_async(handle.clone())?;
@@ -62,6 +71,9 @@ impl TokioDriver {
                 }
                 _ = tokio::time::sleep(reactor_sleep_time) => {
                     process_readable_event_for_async(handle.clone(), false)?;
+                }
+                _ = shutdown.cancelled() => {
+                    return Ok(())
                 }
             }
         }
@@ -92,17 +104,16 @@ impl AsyncDriver for TokioDriver {
             "Cannot spawn a driver for Tokio when there is no underlying FluxHandle object",
         )))?;
         let reactor_sleep_duration = self.reactor_sleep_duration;
+        let shutdown = self.shutdown.clone();
         let handle = tokio::spawn(async move {
-            Self::drive_with_reactor_fd(flux_handle, reactor_sleep_duration).await
+            Self::drive_with_reactor_fd(flux_handle, reactor_sleep_duration, shutdown).await
         });
         self.task_handle = Some(handle);
         Ok(())
     }
 
     fn stop(&mut self) -> Result<()> {
-        if let Some(handle) = self.task_handle.take() {
-            handle.abort();
-        }
+        self.shutdown.cancel();
         Ok(())
     }
 }

@@ -23,10 +23,13 @@ pub struct SmolDriver {
     owns_executor: bool,
     pub(crate) task_handle: Option<Task<Result<()>>>,
     owned_runner: Option<(JoinHandle<()>, Sender<()>)>,
+    shutdown_tx: Sender<()>,
+    shutdown_rx: Option<Receiver<()>>,
 }
 
 impl SmolDriver {
     pub fn new(handle: Arc<ReentrantMutex<OwnedFluxHandle>>) -> Self {
+        let (shutdown_tx, shutdown_rx) = bounded::<()>(1);
         Self {
             handle: Some(handle),
             reactor_sleep_duration: get_default_reactor_sleep_duration("smol"),
@@ -34,6 +37,8 @@ impl SmolDriver {
             owns_executor: true,
             task_handle: None,
             owned_runner: None,
+            shutdown_tx,
+            shutdown_rx: Some(shutdown_rx),
         }
     }
 
@@ -41,6 +46,7 @@ impl SmolDriver {
         handle: Arc<ReentrantMutex<OwnedFluxHandle>>,
         sleep_duration: Duration,
     ) -> Self {
+        let (shutdown_tx, shutdown_rx) = bounded::<()>(1);
         Self {
             handle: Some(handle),
             reactor_sleep_duration: sleep_duration,
@@ -48,6 +54,8 @@ impl SmolDriver {
             owns_executor: true,
             task_handle: None,
             owned_runner: None,
+            shutdown_tx,
+            shutdown_rx: Some(shutdown_rx),
         }
     }
 
@@ -55,6 +63,7 @@ impl SmolDriver {
         handle: Arc<ReentrantMutex<OwnedFluxHandle>>,
         executor: Arc<Executor<'static>>,
     ) -> Self {
+        let (shutdown_tx, shutdown_rx) = bounded::<()>(1);
         Self {
             handle: Some(handle),
             reactor_sleep_duration: get_default_reactor_sleep_duration("smol"),
@@ -62,6 +71,8 @@ impl SmolDriver {
             owns_executor: false,
             task_handle: None,
             owned_runner: None,
+            shutdown_tx,
+            shutdown_rx: Some(shutdown_rx),
         }
     }
 
@@ -70,6 +81,7 @@ impl SmolDriver {
         executor: Arc<Executor<'static>>,
         sleep_duration: Duration,
     ) -> Self {
+        let (shutdown_tx, shutdown_rx) = bounded::<()>(1);
         Self {
             handle: Some(handle),
             reactor_sleep_duration: sleep_duration,
@@ -77,13 +89,20 @@ impl SmolDriver {
             owns_executor: false,
             task_handle: None,
             owned_runner: None,
+            shutdown_tx,
+            shutdown_rx: Some(shutdown_rx),
         }
+    }
+
+    pub fn get_shutdown_channel(&self) -> Sender<()> {
+        self.shutdown_tx.clone()
     }
 
     pub(crate) async fn driver_with_reactor_fd(
         handle: Arc<ReentrantMutex<OwnedFluxHandle>>,
         started: Option<Sender<()>>,
         reactor_sleep_time: Duration,
+        shutdown_rx: Receiver<()>,
     ) -> Result<()> {
         let fd = get_poll_fd_for_async(handle.clone())?;
         let async_fd = Async::new(fd)?;
@@ -100,24 +119,32 @@ impl SmolDriver {
         loop {
             // Wait until either the pollfd is readable or enough time
             // has passed and then run the reactor
-            eprintln!("[smol-driver] waiting for readable...");
             let await_branch = future::or(
+                future::or(
+                    async {
+                        async_fd.readable().await?;
+                        Ok::<_, std::io::Error>(WaitResult::FdReadable)
+                    },
+                    async {
+                        Timer::after(reactor_sleep_time).await;
+                        Ok::<_, std::io::Error>(WaitResult::Timeout)
+                    },
+                ),
                 async {
-                    async_fd.readable().await?;
-                    Ok::<_, std::io::Error>(WaitResult::FdReadable)
-                },
-                async {
-                    Timer::after(reactor_sleep_time).await;
-                    Ok::<_, std::io::Error>(WaitResult::Timeout)
+                    let _ = shutdown_rx.recv().await;
+                    Ok::<_, std::io::Error>(WaitResult::Shutdown)
                 },
             )
             .await?;
-            eprintln!("[smol-driver] got readable, processing");
+
+            if matches!(await_branch, WaitResult::Shutdown) {
+                return Ok(());
+            }
+
             process_readable_event_for_async(
                 handle.clone(),
                 matches!(await_branch, WaitResult::FdReadable),
             )?;
-            eprintln!("[smol-driver] processed");
         }
     }
 
@@ -158,8 +185,12 @@ impl AsyncDriver for SmolDriver {
         let started_tx = self.owns_executor.then_some(started_tx);
         let sleep_duration = self.reactor_sleep_duration;
 
+        let shutdown_rx = self.shutdown_rx.take().ok_or(FluxError::Logic(
+            "Cannot spawn the same SmolDriver multiple times".to_string(),
+        ))?;
+
         let task = self.executor.spawn(async move {
-            Self::driver_with_reactor_fd(flux_handle, started_tx, sleep_duration).await
+            Self::driver_with_reactor_fd(flux_handle, started_tx, sleep_duration, shutdown_rx).await
         });
         self.task_handle = Some(task);
 
@@ -194,6 +225,8 @@ impl AsyncDriver for SmolDriver {
     }
 
     fn stop(&mut self) -> Result<()> {
+        let _ = self.shutdown_tx.try_send(());
+
         if let Some(handle) = self.task_handle.take() {
             drop(handle);
         }
