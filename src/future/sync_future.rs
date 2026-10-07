@@ -11,14 +11,13 @@ use flux_sys::core::{
     flux_future_incref, flux_future_next_child, flux_future_or_then, flux_future_push,
     flux_future_reset, flux_future_set_flux, flux_future_set_reactor, flux_future_t,
     flux_future_then, flux_future_wait_all_create, flux_future_wait_any_create,
-    flux_future_wait_for, flux_reactor_t,
+    flux_future_wait_for, flux_reactor_destroy, flux_reactor_t,
 };
 
 use crate::error::{FluxError, Result, flux_try};
 use crate::flux_ptr_management::{
     AsFluxPtr, BorrowFluxPtr, BorrowFluxPtrNoArgs, Borrowed, FluxPtr, FromFluxPtr,
     FromFluxPtrNoArgs, IntoFluxPtr, Owned, PossiblyDroppablePtr, define_as_flux_ptr_body,
-    define_into_flux_ptr_body,
 };
 use crate::handle::{AuxThinPtrWrapper, BorrowedFluxHandle, FluxHandle};
 use crate::reactor::{BorrowedReactor, Reactor};
@@ -554,8 +553,94 @@ unsafe impl<State: PossiblyDroppablePtr<flux_future_t>> AsFluxPtr for FluxFuture
     define_as_flux_ptr_body!(flux_future_t, c_future);
 }
 
+extern "C" fn drop_init_callback(ptr: *mut c_void) {
+    if !ptr.is_null() {
+        drop(unsafe { Box::from_raw(ptr as *mut FluxFutureInitializer) });
+    }
+}
+
+extern "C" fn drop_curr_reactor(ptr: *mut c_void) {
+    if !ptr.is_null() {
+        let reactor_ptr = ptr as *mut flux_reactor_t;
+        unsafe { flux_reactor_destroy(reactor_ptr) };
+    }
+}
+
 unsafe impl IntoFluxPtr for OwnedFluxFuture {
-    define_into_flux_ptr_body!(c_future);
+    // We use an alternate implementation here for `into_raw` to prevent
+    // the init callback or reactor from dangling
+    fn into_raw(self) -> *mut Self::CType {
+        // Move all fields out of the struct
+        let FluxFuture {
+            c_future,
+            _init_cb,
+            _curr_set_reactor,
+        } = self;
+        // Extract the raw flux_future_t pointer
+        let raw = c_future.into_raw();
+        // If `_init_cb` is not `None`, box it and convert it to a raw void*.
+        // Otherwise, simply set the variable to `NULL`
+        let init_ptr = _init_cb
+            .map(|cb| Box::into_raw(Box::new(cb)))
+            .unwrap_or(std::ptr::null_mut()) as *mut c_void;
+        // If `_curr_set_reactor` is not `None`, assume ownership over the underlying `flux_reactor_t` pointer.
+        // Otherwise, simply set the variable to `NULL`
+        let reactor_ptr = _curr_set_reactor
+            .map(|reactor| reactor.into_raw())
+            .unwrap_or(std::ptr::null_mut()) as *mut c_void;
+
+        // If the init pointer is not `NULL`, add this pointer to aux storage with the
+        // appropriate destructor
+        let rc_init = if !init_ptr.is_null() {
+            unsafe {
+                flux_future_aux_set(
+                    raw,
+                    c"flux.rust.__future_init_callback".as_ptr(),
+                    init_ptr,
+                    Some(drop_init_callback),
+                )
+            }
+        } else {
+            0
+        };
+
+        // If the reactor pointer is not NULL, add the pointer to aux storage with
+        // the appropriate destructor
+        let rc_reactor = if !reactor_ptr.is_null() {
+            unsafe {
+                flux_future_aux_set(
+                    raw,
+                    c"flux.rust.__future_reactor_ptr".as_ptr(),
+                    reactor_ptr,
+                    Some(drop_curr_reactor),
+                )
+            }
+        } else {
+            0
+        };
+
+        // If adding either pointer to aux storage failed, we need to clean up everything because it is
+        // in an invalid state for giving up ownership of the `flux_future_t` pointer. In that case, we return
+        // NULL. Otherwise, everything went well, and we return the `flux_future_t` pointer.
+        if rc_init < 0 || rc_reactor < 0 {
+            unsafe { flux_future_destroy(raw) };
+            // We only have to clean up this pointer when:
+            // 1. We have a pointer to clean up
+            // 2. The clean up has not already been done by Flux via aux storage
+            if !init_ptr.is_null() && rc_init < 0 {
+                drop(unsafe { Box::from_raw(init_ptr as *mut FluxFutureInitializer) });
+            }
+            // We only have to clean up this pointer when:
+            // 1. We have a pointer to clean up
+            // 2. The clean up has not already been done by Flux via aux storage
+            if !reactor_ptr.is_null() && rc_reactor < 0 {
+                unsafe { flux_reactor_destroy(reactor_ptr as *mut flux_reactor_t) };
+            }
+            std::ptr::null_mut()
+        } else {
+            raw
+        }
+    }
 }
 
 fn push_to_collective_future<State: PossiblyDroppablePtr<flux_future_t>>(
