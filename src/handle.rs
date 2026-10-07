@@ -9,8 +9,8 @@ use flux_sys::core::{
     flux_aux_get, flux_aux_set, flux_clone, flux_close, flux_comms_error_set, flux_get_rank,
     flux_get_reactor, flux_get_size, flux_incref, flux_log, flux_log_set_appname,
     flux_log_set_procid, flux_match, flux_msg_t, flux_open, flux_pollevents, flux_pollfd,
-    flux_reactor_t, flux_reconnect, flux_recv, flux_requeue, flux_respond, flux_respond_error,
-    flux_respond_raw, flux_send, flux_set_reactor, flux_t,
+    flux_reactor_destroy, flux_reactor_t, flux_reconnect, flux_recv, flux_requeue, flux_respond,
+    flux_respond_error, flux_respond_raw, flux_send, flux_set_reactor, flux_t,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -19,7 +19,6 @@ use crate::error::{FluxError, Result, flux_try};
 use crate::flux_ptr_management::{
     AsFluxPtr, BorrowFluxPtr, BorrowFluxPtrNoArgs, Borrowed, FluxPtr, FromFluxPtr,
     FromFluxPtrNoArgs, IntoFluxPtr, Owned, PossiblyDroppablePtr, define_as_flux_ptr_body,
-    define_into_flux_ptr_body,
 };
 use crate::msg::{Message, MessageMatch};
 use crate::reactor::{BorrowedReactor, OwnedReactor, Reactor};
@@ -764,8 +763,94 @@ unsafe impl<State: PossiblyDroppablePtr<flux_t>> AsFluxPtr for FluxHandle<State>
     define_as_flux_ptr_body!(flux_t, h);
 }
 
+extern "C" fn drop_comm_handler(ptr: *mut c_void) {
+    if !ptr.is_null() {
+        drop(unsafe { Box::from_raw(ptr as *mut Arc<CommErrHandler>) });
+    }
+}
+
+extern "C" fn drop_curr_reactor(ptr: *mut c_void) {
+    if !ptr.is_null() {
+        let reactor_ptr = ptr as *mut flux_reactor_t;
+        unsafe { flux_reactor_destroy(reactor_ptr) };
+    }
+}
+
 unsafe impl IntoFluxPtr for OwnedFluxHandle {
-    define_into_flux_ptr_body!(h);
+    // We use an alternate implementation here for `into_raw` to prevent
+    // the comm error handler callback or reactor from dangling
+    fn into_raw(self) -> *mut Self::CType {
+        // Move all fields out of the struct
+        let FluxHandle {
+            h,
+            comm_error_handler_cb,
+            curr_set_reactor,
+        } = self;
+        // Extract the raw flux_t pointer
+        let raw = h.into_raw();
+        // If `comm_err_handler_cb` is not `None`, box it and convert it to a raw void*.
+        // Otherwise, simply set `comm_err_handler_ptr` to `NULL`
+        let comm_err_handler_ptr = comm_error_handler_cb
+            .map(|cb| Box::into_raw(Box::new(cb)))
+            .unwrap_or(std::ptr::null_mut()) as *mut c_void;
+        // If `curr_set_reactor` is not `None`, assume ownership over the underlying `flux_reactor_t` pointer.
+        // Otherwise, simply set `reactor_ptr` to `NULL`.
+        let reactor_ptr = curr_set_reactor
+            .map(|reactor| reactor.into_raw())
+            .unwrap_or(std::ptr::null_mut()) as *mut c_void;
+
+        // If `comm_err_handler_ptr` is not `NULL`, add the pointer to aux storage with
+        // the appropriate destructor
+        let rc_comm = if !comm_err_handler_ptr.is_null() {
+            unsafe {
+                flux_aux_set(
+                    raw,
+                    c"flux.rust.__handle_comm_err_callback".as_ptr(),
+                    comm_err_handler_ptr,
+                    Some(drop_comm_handler),
+                )
+            }
+        } else {
+            0
+        };
+
+        // If `reactor_ptr` is not `NULL`, add the pointer to aux storage with
+        // the appropriate destructor
+        let rc_reactor = if !reactor_ptr.is_null() {
+            unsafe {
+                flux_aux_set(
+                    raw,
+                    c"flux.rust.__handle_curr_reactor".as_ptr(),
+                    reactor_ptr,
+                    Some(drop_curr_reactor),
+                )
+            }
+        } else {
+            0
+        };
+
+        // If adding either pointer to aux storage failed, we need to clean up everything because it is in
+        // an invalid state for giving up ownership of the `flux_t` pointer. In that case, we return `NULL`.
+        // Otherwise, everything went well, and we return the `flux_t` pointer.
+        if rc_comm < 0 || rc_reactor < 0 {
+            unsafe { flux_close(raw) };
+            // We only have to clean up `comm_err_handler_ptr` when:
+            // 1. We have a pointer to clean up
+            // 2. The clean up has not already been done by Flux via aux storage
+            if !comm_err_handler_ptr.is_null() && rc_comm < 0 {
+                drop(unsafe { Box::from_raw(comm_err_handler_ptr as *mut Arc<CommErrHandler>) });
+            }
+            // We only have to clean up `reactor_ptr` when:
+            // 1. We have a pointer to clean up
+            // 2. The clean up has not already been done by Flux via aux storage
+            if !reactor_ptr.is_null() && rc_reactor < 0 {
+                unsafe { flux_reactor_destroy(reactor_ptr as *mut flux_reactor_t) };
+            }
+            std::ptr::null_mut()
+        } else {
+            raw
+        }
+    }
 }
 
 unsafe impl<State: PossiblyDroppablePtr<flux_t>> Send for FluxHandle<State> {}
