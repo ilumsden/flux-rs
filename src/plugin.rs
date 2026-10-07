@@ -644,8 +644,51 @@ unsafe impl<State: PossiblyDroppablePtr<flux_plugin_t>> AsFluxPtr for Plugin<Sta
     define_as_flux_ptr_body!(flux_plugin_t, c_plugin);
 }
 
+extern "C" fn drop_callbacks(ptr: *mut c_void) {
+    if !ptr.is_null() {
+        drop(unsafe { Box::from_raw(ptr as *mut IndexMap<String, Box<PluginCallback>>) });
+    }
+}
+
 unsafe impl IntoFluxPtr for OwnedPlugin {
-    define_into_flux_ptr_body!(c_plugin);
+    // We use an alternate implementation here for `into_raw` to prevent
+    // the handler callbacks from dangling
+    fn into_raw(self) -> *mut Self::CType {
+        // Move all fields out of struct
+        let Plugin {
+            c_plugin,
+            _cb_boxes,
+        } = self;
+        // Assume ownership over the raw `flux_plugin_t` pointer
+        let raw = c_plugin.into_raw();
+        // Box the callback map and convert it into a `void*`
+        let callback_map_ptr = Box::into_raw(Box::new(_cb_boxes)) as *mut c_void;
+
+        // Store the callback `void*` into the aux storage of the `flux_plugin_t` pointer.
+        // This keeps the callbacks alive until the `flux_plugin_t` pointer is destroyed
+        let rc = unsafe {
+            flux_plugin_aux_set(
+                raw,
+                c"flux.rust.__plugin_callbacks".as_ptr(),
+                callback_map_ptr,
+                Some(drop_callbacks),
+            )
+        };
+
+        // If an error occured, we clean up both the callback map and the `flux_plugin_t`
+        // pointer. The later is required because we have already assumed ownership, so something
+        // needs to destroy it.
+        // Otherwise, simply return the raw pointer.
+        if rc < 0 {
+            unsafe { flux_plugin_destroy(raw) };
+            drop(unsafe {
+                Box::from_raw(callback_map_ptr as *mut IndexMap<String, Box<PluginCallback>>)
+            });
+            std::ptr::null_mut()
+        } else {
+            raw
+        }
+    }
 }
 
 unsafe impl<State: PossiblyDroppablePtr<flux_plugin_t>> Send for Plugin<State> {}
