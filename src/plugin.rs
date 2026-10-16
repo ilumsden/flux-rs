@@ -8,12 +8,14 @@ use flux_sys::core::{
     FLUX_PLUGIN_RTLD_GLOBAL, FLUX_PLUGIN_RTLD_LAZY, FLUX_PLUGIN_RTLD_NOW, flux_plugin_add_handler,
     flux_plugin_arg_create, flux_plugin_arg_destroy, flux_plugin_arg_get, flux_plugin_arg_set,
     flux_plugin_arg_strerror, flux_plugin_arg_t, flux_plugin_aux_get, flux_plugin_aux_set,
-    flux_plugin_call, flux_plugin_create, flux_plugin_destroy, flux_plugin_get_flags,
-    flux_plugin_get_name, flux_plugin_get_path, flux_plugin_get_uuid, flux_plugin_load_dso,
-    flux_plugin_remove_handler, flux_plugin_set_flags, flux_plugin_set_name, flux_plugin_t,
+    flux_plugin_call, flux_plugin_create, flux_plugin_destroy, flux_plugin_get_conf,
+    flux_plugin_get_flags, flux_plugin_get_name, flux_plugin_get_path, flux_plugin_get_uuid,
+    flux_plugin_load_dso, flux_plugin_remove_handler, flux_plugin_set_conf, flux_plugin_set_flags,
+    flux_plugin_set_name, flux_plugin_t,
 };
 use indexmap::IndexMap;
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::map::Entry;
 use serde_json::{Map, Value};
@@ -493,6 +495,36 @@ impl<State: PossiblyDroppablePtr<flux_plugin_t>> Plugin<State> {
             self.c_plugin.as_mut_ptr(),
             c_key.as_ptr()
         ))
+    }
+
+    pub fn set_conf<S: Serialize>(&mut self, conf_obj: &S) -> Result<()> {
+        let conf_str = serde_json::to_string(conf_obj)?;
+        let cconf = CString::new(conf_str)?;
+        flux_try!(empty_ok flux_plugin_set_conf(self.c_plugin.as_mut_ptr(), cconf.as_ptr()))
+    }
+
+    pub fn get_conf_raw(&self) -> Result<Option<&CStr>> {
+        let ptr = unsafe { flux_plugin_get_conf(self.c_plugin.as_mut_ptr()) };
+        if !ptr.is_null() {
+            return Ok(Some(unsafe { CStr::from_ptr(ptr) }));
+        }
+        let err = std::io::Error::last_os_error();
+        match err.raw_os_error() {
+            Some(::libc::ENOENT) => Ok(None),
+            _ => Err(FluxError::System("flux_plugin_get_conf", err)),
+        }
+    }
+
+    pub fn get_conf_str(&self) -> Result<Option<&str>> {
+        self.get_conf_raw()?
+            .map(|c| c.to_str().map_err(Into::into))
+            .transpose()
+    }
+
+    pub fn get_conf<D: DeserializeOwned>(&self) -> Result<Option<D>> {
+        self.get_conf_str()?
+            .map(|s| serde_json::from_str(s).map_err(Into::into))
+            .transpose()
     }
 
     extern "C" fn trampoline(
