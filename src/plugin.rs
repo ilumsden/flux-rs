@@ -367,8 +367,11 @@ impl OwnedPlugin {
         })
     }
 
-    pub fn load_dso(dso_path: &Path) -> Result<Self> {
-        let new_plugin = Self::new()?;
+    fn load_dso_impl<S: Serialize>(dso_path: &Path, conf: Option<&S>) -> Result<Self> {
+        let mut new_plugin = Self::new()?;
+        if let Some(conf_obj) = conf {
+            new_plugin.set_conf(conf_obj)?;
+        }
         let ru_path = dso_path.to_str().ok_or(FluxError::Logic(
             "Cannot convert dso path into a Rust str".to_string(),
         ))?;
@@ -378,6 +381,14 @@ impl OwnedPlugin {
             check_plugin_strerror!(new_plugin.c_plugin.as_mut_ptr())?;
         }
         Ok(new_plugin)
+    }
+
+    pub fn load_dso(dso_path: &Path) -> Result<Self> {
+        Self::load_dso_impl::<()>(dso_path, None)
+    }
+
+    pub fn load_dso_with_conf<S: Serialize>(dso_path: &Path, conf: &S) -> Result<Self> {
+        Self::load_dso_impl(dso_path, Some(conf))
     }
 }
 
