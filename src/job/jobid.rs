@@ -51,7 +51,7 @@ impl JobIdEncodingType {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Deserialize, Serialize, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct JobId(pub(crate) flux_jobid_t);
 
 impl JobId {
